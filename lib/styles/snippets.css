@@ -1,0 +1,1 @@
+aside{float:right;border:1px solid var(--text-accent);padding:8px;position:relative;left:10px;top:5px;width:300px;color:var(--text-faint);font-size:var(--font-smaller);border-radius:4px}aside:not(:hover){opacity:.25}
