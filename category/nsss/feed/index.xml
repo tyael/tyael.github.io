@@ -12,7 +12,7 @@
 	<atom:link href="/category/nsss/feed/" rel="self" type="application/rss+xml" />
 	<link>/</link>
 	<description></description>
-	<lastBuildDate>Sat, 03 Aug 2024 08:18:39 +0000</lastBuildDate>
+	<lastBuildDate>Mon, 12 Aug 2024 14:55:39 +0000</lastBuildDate>
 	<language>en-AU</language>
 	<sy:updatePeriod>
 	hourly	</sy:updatePeriod>
@@ -28,6 +28,47 @@
 	<height>32</height>
 </image> 
 	<item>
+		<title>Representative Post about an Event &#124; 31 October</title>
+		<link>/2024/08/13/representative-post-about-an-event-31-october/</link>
+		
+		<dc:creator><![CDATA[admin]]></dc:creator>
+		<pubDate>Mon, 12 Aug 2024 14:55:06 +0000</pubDate>
+				<category><![CDATA[NSSS News and Events]]></category>
+		<guid isPermaLink="false">/?p=105</guid>
+
+					<description><![CDATA[This is a representative post about an event. It is meant to indicate the general format that posts advertising NSSS events will take. If this post had a banner image, it would appear under the title but above the text content. Those are optional and, for the sake of simplicity, they are not part of [&#8230;]]]></description>
+										<content:encoded><![CDATA[
+<p>This is a representative post about an event. It is meant to indicate the general format that posts advertising NSSS events will take. If this post had a banner image, it would appear under the title but above the text content. Those are optional and, for the sake of simplicity, they are not part of the current plan for content creation on the site. All posts advertising events will consist of a paragraph of descriptive text&#8230;</p>
+
+
+
+<p>Or multiple paragraphs. Paragraphs can be of arbitrary length and can be formatted in <strong>all </strong><em>the </em><s>usual</s> <a href="#">ways</a>.</p>
+
+
+
+<p>Every event post will also have a table element at the bottom containing relevant information.</p>
+
+
+
+<p>A link to <a href="#">Register via QPay</a> will be provided on each Event page, either above the table&#8230;</p>
+
+
+
+<figure class="wp-block-table is-style-stripes"><table class="has-fixed-layout"><tbody><tr><td>Who?</td><td>Dr. A. Person Presenting<br>Prof. O. R. Persons-Plural<br>Dr. Will B. Displayed</td></tr><tr><td>Where?</td><td>The Location Theatre, Crawford School of Public Policy / Online via Zoom</td></tr><tr><td>When?</td><td>Day Month Year, Starttime-Endtime</td></tr><tr><td>Price</td><td>$10</td></tr></tbody></table></figure>
+
+
+
+<p>&#8230;or <a href="#">below it</a>. Still not sure which is best.</p>
+
+
+
+<p></p>
+]]></content:encoded>
+					
+		
+		
+			</item>
+		<item>
 		<title>Panel on AI in Submarine Governance &#124; 16 October</title>
 		<link>/2024/08/03/panel-on-ai-in-submarine-governance-16-october/</link>
 		

@@ -12,7 +12,7 @@
 	<atom:link href="/category/journal/feed/" rel="self" type="application/rss+xml" />
 	<link>/</link>
 	<description></description>
-	<lastBuildDate>Sat, 03 Aug 2024 08:21:16 +0000</lastBuildDate>
+	<lastBuildDate>Mon, 12 Aug 2024 15:36:54 +0000</lastBuildDate>
 	<language>en-AU</language>
 	<sy:updatePeriod>
 	hourly	</sy:updatePeriod>
@@ -28,6 +28,127 @@
 	<height>32</height>
 </image> 
 	<item>
+		<title>Representative Showcase of a Student Essay</title>
+		<link>/2024/08/13/representative-showcase-of-a-student-essay/</link>
+		
+		<dc:creator><![CDATA[admin]]></dc:creator>
+		<pubDate>Mon, 12 Aug 2024 15:16:59 +0000</pubDate>
+				<category><![CDATA[Journal of the NSSS]]></category>
+		<guid isPermaLink="false">/?p=108</guid>
+
+					<description><![CDATA[This post is representative of how student essays, solicited for and published as part of the &#8220;Journal of the NSSS&#8221; (placeholder title), will be presented. Submissions will be requested in a DOCX, ODT, MD or other format amenable to transferring relatively structured text into the WordPress editor. Procedures for streamlining that on the backend are [&#8230;]]]></description>
+										<content:encoded><![CDATA[
+<p>This post is representative of how student essays, solicited for and published as part of the &#8220;Journal of the NSSS&#8221; (placeholder title), will be presented. Submissions will be requested in a DOCX, ODT, MD or other format amenable to transferring relatively structured text into the WordPress editor. Procedures for streamlining that on the backend are being developed. One aspect of those procedures we&#8217;ve already implemented are Markdown-style footnotes using a WordPress plugin.<sup class='footnote' id='fnref-108-1'><a href='#fn-108-1' rel='footnote'>1</a></sup> These work in the following manner:</p>
+
+
+
+<pre class="wp-block-code"><code>This is a codeblock, here being used to represent how you would input this text into the WordPress editor. You won't find much use for these in formatting student essay submissions, probably. To create a markdown footnote you simply write&#91;^1] in a document.
+
+Add whatever other text you like after this, including more footnotes. 
+
+To clarify: there is a dedicated footnote utility within the WordPress backend, but it's surprisingly hard to get automated conversion to that from DOCX without things fouling up. Pandoc + Markdown is consistent as far as we can tell. But we're doing more experiments here, so watch this space.
+
+&#91;^1]: Then at the bottom you add a line like so, including the footnote text. These will render to HTML correctly, and are clickable.</code></pre>
+
+
+
+<p>There are wide range of formatting options on offer which can readily handle the types of content you&#8217;d expect out of student essays.</p>
+
+
+
+<h1 class="wp-block-heading">Headings, for example.</h1>
+
+
+
+<p>Yes, headings.</p>
+
+
+
+<h2 class="wp-block-heading">Headings of various sizes, even. (this is an H2)</h2>
+
+
+
+<p>And we can continue this.</p>
+
+
+
+<h3 class="wp-block-heading">To H3 and beyond.</h3>
+
+
+
+<p>Mind you, most students won&#8217;t use more than one layer of headings.</p>
+
+
+
+<p>Another thing we can do is tables:</p>
+
+
+
+<figure class="wp-block-table is-style-stripes"><table class="has-fixed-layout"><thead><tr><th>With</th><th>Header</th><th>Sections</th></tr></thead><tbody><tr><td>With</td><td>arbitrary</td><td>contents</td></tr><tr><td>and</td><td>horizontal</td><td>and</td></tr><tr><td>vertical</td><td>proportions</td><td>!</td></tr></tbody><tfoot><tr><td>(and)</td><td>(footer)</td><td>(sections too)</td></tr></tfoot></table><figcaption class="wp-element-caption">Table 1. And captions for them as well.</figcaption></figure>
+
+
+
+<p>In the midst of regularly formatted text we can present blockquotes:</p>
+
+
+
+<blockquote class="wp-block-quote is-layout-flow wp-block-quote-is-layout-flow">
+<p>Which are displayed like this.</p>
+
+
+
+<p>And can themselves contain arbitrary content, including tables, images, headings, etc.</p>
+
+
+
+<p>And of course markdown footnotes.<sup class='footnote' id='fnref-108-2'><a href='#fn-108-2' rel='footnote'>2</a></sup></p>
+</blockquote>
+
+
+
+<p>Another thing that you might find in some student essays. Images. WordPress has on the backend a quite straightforward feature for uploading images, so you can use any that would be provided in the original paper (assuming they aren&#8217;t under a restrictive license, of course.)</p>
+
+
+
+<figure class="wp-block-image aligncenter size-medium"><img fetchpriority="high" decoding="async" width="300" height="300" src="/wp-content/uploads/2024/08/NSS-Official-Logo_blackbg-300x300.png" alt="You can give images alt-text, though this is hardly likely to be useful for our purposes." class="wp-image-44" srcset="/wp-content/uploads/2024/08/NSS-Official-Logo_blackbg-300x300.png 300w, /wp-content/uploads/2024/08/NSS-Official-Logo_blackbg-1024x1024.png 1024w, /wp-content/uploads/2024/08/NSS-Official-Logo_blackbg-150x150.png 150w, /wp-content/uploads/2024/08/NSS-Official-Logo_blackbg-768x768.png 768w, /wp-content/uploads/2024/08/NSS-Official-Logo_blackbg-1536x1536.png 1536w, /wp-content/uploads/2024/08/NSS-Official-Logo_blackbg.png 1586w" sizes="(max-width: 300px) 100vw, 300px" /><figcaption class="wp-element-caption">Fig. 1. In this case we are just using an image that is already uploaded to this WordPress instance.</figcaption></figure>
+
+
+
+<p>By way of conclusion, it&#8217;s time to conclude.</p>
+
+
+
+<h2 class="wp-block-heading">Conclusion</h2>
+
+
+
+<p>In conclusion, the current working concept of the format has a block of metadata at the end. Something like this:</p>
+
+
+
+<pre class="wp-block-preformatted">AUTHOR: Student Name<br>COURSE: NSPO80XX National Security College Studies<br>CONVENER: Dr. Course Convener<br>YEAR: 2024 Semester 2<br>MARK: 99 HD</pre>
+
+
+
+<p>(The reason we don&#8217;t put this at the top is because it looks ugly in text previews, and the only real way to avoid that is to turn off text previews for query loop displays like that on the front page. Which we have done. But we may not want to do so in future.)</p>
+
+
+
+<hr class="wp-block-separator has-alpha-channel-opacity"/>
+
+
+
+<p><span class='footnote' id='fn-108-1'><a href='#fnref-108-1'>1</a>.</span> Like this. </p>
+
+
+
+<p><span class='footnote' id='fn-108-2'><a href='#fnref-108-2'>2</a>.</span> A blockquote I found somewhere.</p>
+]]></content:encoded>
+					
+		
+		
+			</item>
+		<item>
 		<title>The Nuclear Non-Proliferation Treaty in the 21st Century: Balancing Global Security, Diplomacy, and the Quest for Nuclear Disarmament</title>
 		<link>/2024/08/03/the-nuclear-non-proliferation-treaty-in-the-21st-century-balancing-global-security-diplomacy-and-the-quest-for-nuclear-disarmament/</link>
 		
