@@ -3,78 +3,71 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ASPI Strategist Embedding Explorer</title> <!-- Version bump -->
-
-    <!-- External Libraries -->
-    <!-- D3.js for data manipulation, scales, axes, zoom, brush, etc. -->
-    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-    <!-- jQuery for Select2 dependency -->
-    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
-    <!-- Select2 for enhanced multi-select dropdown -->
-    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <title>ASPI Strategist Embedding Explorer (Enhanced)</title> <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 
     <style>
         /* --- Base Layout and Dark Theme Styles --- */
+        :root {
+            /* Define CSS variables for dynamic colors */
+            --highlight-color: #ffcc00; /* Default active color */
+            --deemphasis-color: #c2c3c4; /* Default inactive color */
+            --timeline-hover-color: #a13b66; /* Default timeline hover color */
+        }
+
         body {
             margin: 0;
             font-family: sans-serif;
-            overflow: hidden; /* Prevent scrolling on the body */
+            overflow: hidden;
             display: flex;
             flex-direction: column;
-            height: 100vh; /* Full viewport height */
-            background-color: #1e1e1e; /* Dark background */
-            color: #cccccc; /* Light grey text */
+            height: 100vh;
+            background-color: #1e1e1e;
+            color: #cccccc;
         }
 
         #container {
-            display: flex; /* Arrange controls and viz area side-by-side */
-            flex: 1; /* Allow container to fill remaining vertical space */
-            min-height: 0; /* Prevent flexbox overflow issues */
+            display: flex;
+            flex: 1;
+            min-height: 0;
         }
 
         #controls {
-            width: 280px; /* Fixed width for the control panel */
+            width: 280px;
             padding: 15px;
-            overflow-y: auto; /* Allow scrolling if controls exceed height */
-            border-right: 1px solid #333333; /* Separator line */
-            flex-shrink: 0; /* Prevent controls from shrinking */
-            background-color: #252526; /* Slightly lighter dark shade */
+            overflow-y: auto;
+            border-right: 1px solid #333333;
+            flex-shrink: 0;
+            background-color: #252526;
         }
 
         #visualization-area {
-            flex: 1; /* Allow viz area to fill remaining horizontal space */
-            position: relative; /* Needed for absolute positioning of children */
+            flex: 1;
+            position: relative;
             display: flex;
-            flex-direction: column; /* Stack scatterplot above timeline */
-            min-width: 0; /* Prevent flexbox overflow issues */
+            flex-direction: column;
+            min-width: 0;
         }
 
         /* --- Scatterplot Area --- */
         #scatterplot-container {
-            position: relative; /* For positioning canvas and SVG */
-            flex: 1; /* Allow scatterplot to fill vertical space */
+            position: relative;
+            flex: 1;
             width: 100%;
-            min-height: 0; /* Prevent flexbox overflow issues */
+            min-height: 0;
         }
 
         #scatterplot-canvas {
             position: absolute;
             top: 0;
             left: 0;
-            /* width/height/transform set by JS */
-            /* Points are drawn here */
         }
 
         #scatterplot-svg {
             position: absolute;
             top: 0;
             left: 0;
-             /* width/height set by JS */
-            pointer-events: none; /* Allow mouse events (like zoom) to pass through to canvas below */
-            /* Axes, grid, and highlights are drawn here */
+            pointer-events: none;
         }
-        /* Allow pointer events only on specific SVG elements like axes if needed */
         #scatterplot-svg .axis, #scatterplot-svg .grid {
              pointer-events: auto;
         }
@@ -82,33 +75,30 @@
         /* --- Timeline Area --- */
         #timeline-container {
             width: 100%;
-            height: 150px; /* Fixed height */
-            border-top: 1px solid #333333; /* Separator line */
-            flex-shrink: 0; /* Prevent shrinking */
-            background-color: #2d2d2d; /* Dark shade */
-            position: relative; /* For positioning SVG */
+            height: 150px;
+            border-top: 1px solid #333333;
+            flex-shrink: 0;
+            background-color: #2d2d2d;
+            position: relative;
         }
 
         #timeline-svg {
-            position: absolute; /* Fill the container */
-            top:0;
-            left:0;
-            width: 100%;
-            height: 100%;
+            position: absolute;
+            top:0; left:0; width: 100%; height: 100%;
         }
 
         /* --- Tooltip --- */
         #tooltip {
-            position: absolute; /* Positioned relative to the page */
-            background: rgba(45, 45, 45, 0.95); /* Dark, semi-transparent */
+            position: absolute;
+            background: rgba(45, 45, 45, 0.95);
             border: 1px solid #555555;
             color: #eeeeee;
             padding: 10px;
             border-radius: 5px;
-            pointer-events: none; /* Tooltip shouldn't block mouse events */
-            display: none; /* Hidden by default */
+            pointer-events: none;
+            display: none;
             max-width: 350px;
-            z-index: 100; /* Ensure it's on top */
+            z-index: 100;
             font-size: 13px;
             line-height: 1.5;
             box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
@@ -118,10 +108,11 @@
         .control-group {
             margin-bottom: 20px;
             padding-bottom: 20px;
-            border-bottom: 1px solid #444444; /* Separator between groups */
+            border-bottom: 1px solid #444444;
+            position: relative; /* Needed for absolute positioning of autocomplete */
         }
          .control-group:last-child {
-             border-bottom: none; /* No border for the last group */
+             border-bottom: none;
              margin-bottom: 0;
              padding-bottom: 0;
          }
@@ -134,95 +125,128 @@
         }
 
         input[type="text"], select {
-            background-color: #3c3c3c; /* Dark input backgrounds */
+            background-color: #3c3c3c;
             color: #cccccc;
             border: 1px solid #555555;
             padding: 8px;
             border-radius: 4px;
-            width: 100%; /* Full width within controls */
-            box-sizing: border-box; /* Include padding/border in width */
+            width: 100%;
+            box-sizing: border-box;
         }
 
-        /* Select2 Dark Theme Adjustments */
-        .select2-container--default .select2-selection--multiple { background-color: #3c3c3c !important; border: 1px solid #555555 !important; color: #cccccc !important; }
-        .select2-container--default .select2-selection--multiple .select2-selection__choice { background-color: #555555 !important; color: #eeeeee !important; border: 1px solid #666666 !important; margin-top: 2px !important; /* Ensure choices don't overlap border */ }
-        .select2-container--default .select2-selection--multiple .select2-selection__choice__remove { color: #eeeeee !important; margin-left: 4px !important; }
-        .select2-container--default .select2-selection--multiple .select2-selection__rendered { color: #cccccc !important; list-style: none; padding: 0 5px; margin: 0; } /* Ensure selected tags are visible */
-        .select2-container--default .select2-search--inline .select2-search__field { color: #cccccc !important; margin-top: 5px !important; }
-        .select2-dropdown { background-color: #2d2d2d !important; border: 1px solid #555555 !important; }
-        .select2-results__option { color: #cccccc !important; }
-        .select2-results__option--highlighted { background-color: #555555 !important; color: #ffffff !important; }
-        .select2-container .select2-selection--multiple { min-height: 38px; } /* Ensure enough height for tags */
+        /* --- Autocomplete Suggestions --- */
+        #autocomplete-suggestions {
+            position: relative;
+            background-color: #2d2d2d;
+            border: 1px solid #555555;
+            border-top: none; /* Attach visually to input */
+            border-radius: 0 0 4px 4px;
+            width: calc(100% - 2px); /* Match input width minus borders */
+            max-height: 50%;
+            overflow-y: auto;
+            z-index: 50; /* Below tooltip, above other controls */
+            display: none; /* Hidden by default */
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            left: 1px; /* Align with input accounting for border */
+            top: 100%; /* Position below the input */
+        }
+
+        .suggestion-item {
+            padding: 6px 10px;
+            color: #cccccc;
+            cursor: pointer;
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .suggestion-item:hover, .suggestion-item.active {
+            background-color: #555555;
+            color: #ffffff;
+        }
+
+        /* --- Color Pickers --- */
+        .color-picker-container {
+            display: flex;
+            align-items: center;
+            margin-top: 8px;
+            justify-content: space-between; /* Space out label and picker */
+        }
+        .color-picker-container label {
+            margin-bottom: 0; /* Remove bottom margin for inline label */
+            margin-right: 10px;
+            flex-shrink: 0; /* Prevent label from shrinking */
+        }
+        input[type="color"] {
+            width: 50px; /* Adjust size */
+            height: 30px;
+            border: 1px solid #555555;
+            padding: 2px; /* Small padding */
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #3c3c3c; /* Match other inputs */
+        }
+        /* Optional: Style the color picker preview */
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: none; border-radius: 3px;}
+        input[type="color"]::-moz-color-swatch { border: none; border-radius: 3px;}
+
 
         /* --- D3 Element Styling --- */
-        /* Timeline Brush */
         .brush .selection { fill: #777; fill-opacity: .3; stroke: #fff; }
         .brush .handle { fill: #555; stroke: #fff; }
-
-        /* Axes */
         .axis text { font-size: 10px; fill: #cccccc; }
-        .axis line, .axis path { stroke: #555555; shape-rendering: crispEdges; } /* Crisp lines */
-
-        /* Gridlines */
+        .axis line, .axis path { stroke: #555555; shape-rendering: crispEdges; }
         .grid line { stroke: #444444; stroke-opacity: 0.7; shape-rendering: crispEdges; }
-        .grid path { stroke-width: 0; } /* Hide domain path for grid */
+        .grid path { stroke-width: 0; }
 
-        /* Timeline Bars */
-        .timeline-bar { fill: #810b36; /* Updated color */ }
-        .timeline-bar:hover { fill: #a13b66; /* Updated hover color */ }
+        /* Timeline Bars - Fill is now dynamic via JS */
+        .timeline-bar:hover {
+            /* Use CSS variable for hover color */
+            fill: var(--timeline-hover-color);
+        }
 
         /* --- Buttons and Feedback --- */
         button { background-color: #555555; color: #eeeeee; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; margin-top: 10px; margin-right: 5px; transition: background-color 0.2s ease; }
         button:hover { background-color: #666666; }
+        #reset-view-btn { display: block; width: calc(100% - 5px); margin-top: 15px; }
 
         #filter-summary { margin-top: 15px; font-size: 13px; color: #aaaaaa; line-height: 1.4; }
-
         #loading-indicator { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(0, 0, 0, 0.8); color: white; padding: 20px 30px; border-radius: 8px; z-index: 200; display: none; font-size: 1.1em;}
-
-        #error-display { color: #f88; margin-top: 10px; padding: 10px; border: 1px solid #f88; border-radius: 4px; background-color: rgba(255,0,0,0.1); display: none; /* Hidden by default */ }
+        #error-display { color: #f88; margin-top: 10px; padding: 10px; border: 1px solid #f88; border-radius: 4px; background-color: rgba(255,0,0,0.1); display: none; }
+        #query-error-display { color: #ffcc66; font-size: 12px; margin-top: 5px; display: none; }
 
          /* Basic Responsiveness */
         @media (max-width: 768px) {
-            #container { flex-direction: column; } /* Stack controls on top */
+            #container { flex-direction: column; }
             #controls { width: 100%; max-height: 250px; border-right: none; border-bottom: 1px solid #333333; }
-            #visualization-area { flex-grow: 1; } /* Allow viz area to fill remaining space */
-            #timeline-container { height: 120px; /* Slightly smaller timeline */ }
+            #visualization-area { flex-grow: 1; }
+            #timeline-container { height: 120px; }
         }
     </style>
 </head>
 <body>
-    <!-- Loading Indicator (shown during data load/resize) -->
     <div id="loading-indicator">Loading Articles...</div>
 
-    <!-- Main Container -->
     <div id="container">
 
-        <!-- Control Panel (Left Side) -->
         <div id="controls">
             <h2>ASPI <em>Strategist</em> Embedding Explorer</h2>
             <p>All <em>Strategist</em> posts up to May 4 2025 are represented as points in an embedding space, in which posts with semantically-similar content appear closer. Try searching for a tag to see how topics form clusters.</p>
-             <!-- Area to display errors -->
+            <p>Use <code>tag:</code>, <code>intitle:</code> or <code>author:</code> to specify what you're looking for. Combine search terms with <code>AND</code>, <code>OR</code>, <code>NOT</code>, and parentheses <code>()</code> for grouping.</p>
              <div id="error-display"></div>
 
-            <!-- Search Filter -->
             <div class="control-group">
-                <label for="search-input">Search Title/Author:</label>
-                <input type="text" id="search-input" placeholder="Enter keywords">
-                <button id="reset-search">Reset Search</button>
+                <label for="query-input">Search Query:</label>
+                <input type="text" id="query-input" placeholder="e.g., tag:cyber AND author:smith" autocomplete="off"> <div id="autocomplete-suggestions"></div>
+                <div id="query-error-display"></div>
+                <button id="reset-query-btn">Reset Query</button>
             </div>
 
-            <!-- Tag Filter (using Select2) -->
             <div class="control-group">
-                <label for="tag-select">Filter by Tags:</label>
-                <select id="tag-select" multiple="multiple" style="width: 100%;"></select>
-                <button id="reset-tags">Reset Tags</button>
-            </div>
-
-             <!-- Timeline Binning Control -->
-             <div class="control-group">
                  <label for="binning-select">Timeline Granularity:</label>
                  <select id="binning-select">
-                     <!-- <option value="day">Day</option> Removed Day Option -->
                      <option value="week" selected>Week</option>
                      <option value="month">Month</option>
                      <option value="year">Year</option>
@@ -230,136 +254,135 @@
                  <button id="reset-timeline">Reset Date Range</button>
              </div>
 
-             <!-- Filter Summary Text -->
+             <div class="control-group">
+                 <label>Color Settings:</label>
+                 <div class="color-picker-container">
+                     <label for="active-color-picker">Active Points:</label>
+                     <input type="color" id="active-color-picker">
+                 </div>
+                 <div class="color-picker-container">
+                     <label for="inactive-color-picker">Inactive Points:</label>
+                     <input type="color" id="inactive-color-picker">
+                 </div>
+             </div>
+
+             <!--This doesn't work at the moment. Dummied out for now, find a way to fix it later.-->
+<!--              <div class="control-group">
+                 <label>View Controls:</label>
+                 <button id="reset-view-btn">Reset Scatterplot View</button>
+             </div> -->
+
              <div id="filter-summary"></div>
         </div>
 
-        <!-- Visualization Area (Right Side) -->
         <div id="visualization-area">
-
-            <!-- Scatterplot Container -->
             <div id="scatterplot-container">
-                <!-- Canvas for drawing potentially many points efficiently -->
                 <canvas id="scatterplot-canvas"></canvas>
-                <!-- SVG overlay for axes, gridlines, and interaction highlights (hover/sticky) -->
                 <svg id="scatterplot-svg">
-                    <!-- Group for scatterplot content, translated by margin -->
                     <g class="scatterplot-content">
-                        <!-- Gridline groups -->
-                        <g class="grid x-grid"></g>
-                        <g class="grid y-grid"></g>
-                        <!-- Axis groups -->
-                        <g class="axis x-axis"></g>
-                        <g class="axis y-axis"></g>
-                        <!-- Circles for highlighting points, drawn on top -->
+                        <g class="grid x-grid"></g> <g class="grid y-grid"></g>
+                        <g class="axis x-axis"></g> <g class="axis y-axis"></g>
                         <circle class="hover-highlight" r="6" fill="none" stroke="#00ffff" stroke-width="1.5" pointer-events="none" display="none"></circle>
-                         <circle class="sticky-highlight" r="6" fill="none" stroke="#ffcc00" stroke-width="1.5" pointer-events="none" display="none"></circle>
+                        <circle class="sticky-highlight" r="6" fill="none" stroke="#ffcc00" stroke-width="1.5" pointer-events="none" display="none"></circle>
                     </g>
                 </svg>
             </div>
-
-            <!-- Timeline Container -->
             <div id="timeline-container">
-                <!-- SVG for timeline elements -->
                 <svg id="timeline-svg">
-                    <!-- Group for timeline content, translated by margin -->
                      <g class="timeline-content">
-                         <!-- Group to hold the histogram bars -->
                          <g class="timeline-bars"></g>
-                         <!-- Group for the time axis -->
                          <g class="axis time-axis"></g>
-                         <!-- Group for the D3 brush component -->
                          <g class="brush"></g>
                      </g>
                 </svg>
             </div>
-
-            <!-- Tooltip Element (absolutely positioned on the page) -->
             <div id="tooltip"></div>
         </div>
     </div>
 
-    <!-- Main JavaScript Logic -->
-    <script type="module"> // Use module scope to avoid polluting global namespace
+    <script type="module">
 
         // --- Configuration Constants ---
-        // Central place for tweaking visualization parameters
         const CONFIG = {
-            dataUrl: 'articles.json', // Path to the data file
-            scatterplotMargin: { top: 20, right: 20, bottom: 40, left: 50 }, // Margins for scatterplot SVG/Canvas layout
-            timelineMargin: { top: 10, right: 20, bottom: 30, left: 50 }, // Margins for timeline SVG layout
-            pointRadius: 3,       // Default radius of points on scatterplot
-            highlightRadius: 5,   // Radius of points highlighted by tag filter
-            pointColor: '#810b36', // Default color of points and timeline bars (Updated)
-            highlightColor: '#ffcc00', // Color for points matching selected tags
-            deEmphasisColor: '#444444', // Color for points NOT matching selected tags (when tags are selected)
-            hoverHighlightColor: '#00ffff', // Stroke color for SVG circle on hover
-            stickyHighlightColor: '#ffcc00', // Stroke color for SVG circle on click (sticky)
-            timelineBarColor: '#810b36', // Base color for timeline bars (Updated)
-            timelineBarHoverColor: '#a13b66', // Color for timeline bar on hover (Updated)
-            zoomMin: 0.5,        // Minimum zoom level for scatterplot
-            zoomMax: 20,         // Maximum zoom level for scatterplot
-            debounceTime: 250,   // Delay (ms) for debouncing search input and resize events
-            tooltipOffsetX: 0,   // Horizontal offset of tooltip from cursor (Reduced)
-            tooltipOffsetY: 0    // Vertical offset of tooltip from cursor (Reduced)
+            dataUrl: 'articles.json',
+            scatterplotMargin: { top: 20, right: 20, bottom: 40, left: 50 },
+            timelineMargin: { top: 10, right: 20, bottom: 30, left: 50 },
+            pointRadius: 3,
+            highlightRadius: 5,
+            // Default colors moved to appState.colors
+            hoverHighlightColor: '#00ffff', // Stroke for hover SVG circle
+            stickyHighlightColor: '#ffcc00', // Stroke for sticky SVG circle
+            timelineBarHoverColor: '#a13b66', // Fill for timeline bar on hover (distinct)
+            zoomMin: 0.5,
+            zoomMax: 20,
+            debounceTime: 350,
+            tooltipOffsetX: 0,
+            tooltipOffsetY: 0,
+            autocompleteLimit: 25 // Max suggestions to show
         };
 
         // --- Application State ---
-        // Single object to hold all dynamic data and state information
         const appState = {
-            fullData: [],        // Array holding all processed article objects
-            filteredData: [],    // Array holding articles matching current filters (search, tags, date)
-            uniqueTags: new Set(), // Set of all unique tags found in the data
+            fullData: [],
+            filteredData: [], // Points matching BOTH date range AND query function
+            uniqueTags: new Set(),    // Added for autocomplete
+            uniqueAuthors: new Set(), // Added for autocomplete
+            sortedUniqueTags: [],     // Sorted array version
+            sortedUniqueAuthors: [],  // Sorted array version
 
-            // Current filter settings
+            // Dynamic colors, initialized with defaults
+            colors: {
+                active: '#ffcc00',   // Default active color
+                inactive: '#c2c3c4', // Default inactive color
+            },
+
             currentFilters: {
-                dateRange: null,       // [startDate, endDate] from timeline brush, or null if no brush
-                selectedTags: new Set(), // Set of currently selected tags from dropdown
-                searchQuery: ''        // Current text in the search input
+                dateRange: null,
+                rawQuery: '',
+                queryFunction: () => true,
+                queryError: null
             },
-            // currentBinning removed - read directly from dropdown in drawTimeline
 
-            currentTransform: d3.zoomIdentity, // Current zoom/pan state from d3.zoom
+            // Autocomplete state
+            autocomplete: {
+                active: false,
+                prefix: null, // 'tag' or 'author'
+                term: '',     // Partial term being typed
+                suggestions: [],
+                selectedIndex: -1 // For keyboard navigation
+            },
 
-            // Calculated dimensions of SVG/Canvas areas (excluding margins)
-            dimensions: {
-                scatterplot: { width: 0, height: 0 },
-                timeline: { width: 0, height: 0 }
-            },
-            // D3 scale objects
-            scales: {
-                x: null,     // Scatterplot X (linear)
-                y: null,     // Scatterplot Y (linear)
-                time: null,  // Timeline X (time)
-                count: null  // Timeline Y (linear, for bar height)
-            },
-            // D3 axis generator objects
-            axes: {
-                x: null, y: null, time: null, // Base axes
-                xGrid: null, yGrid: null      // Gridline axes
-            },
-            // D3 behavior objects
-            behaviors: {
-                zoom: null, // d3.zoom behavior instance
-                brush: null // d3.brushX behavior instance
-            },
-            quadtree: null,        // d3.quadtree for efficient point lookup on scatterplot
-            hoveredPoint: null,    // Data object of the point currently hovered over
-            stickyPoint: null,     // Data object of the point last clicked (sticky tooltip)
-            timelineHoveredBin: null, // Date range {x0, x1} of the timeline bin hovered over
-            isBrushing: false,      // Flag to prevent brush event feedback loops
-            canvasContext: null     // 2D rendering context for the scatterplot canvas
+            currentTransform: d3.zoomIdentity,
+            dimensions: { scatterplot: { width: 0, height: 0 }, timeline: { width: 0, height: 0 } },
+            scales: { x: null, y: null, time: null, count: null },
+            axes: { x: null, y: null, time: null, xGrid: null, yGrid: null },
+            behaviors: { zoom: null, brush: null },
+            quadtree: null,
+            hoveredPoint: null,
+            stickyPoint: null,
+            timelineHoveredBin: null,
+            isBrushing: false,
+            canvasContext: null
         };
 
         // --- DOM Element Selectors ---
-        // Cache D3 selections for frequently accessed elements
         const ELEMENTS = {
-            loadingIndicator: d3.select("#loading-indicator"), errorDisplay: d3.select("#error-display"),
-            controls: d3.select("#controls"), searchInput: d3.select("#search-input"),
-            tagSelect: d3.select("#tag-select"), binningSelect: d3.select("#binning-select"),
-            resetSearchBtn: d3.select("#reset-search"), resetTagsBtn: d3.select("#reset-tags"), resetTimelineBtn: d3.select("#reset-timeline"),
-            filterSummary: d3.select("#filter-summary"), scatterplotContainer: d3.select("#scatterplot-container"),
-            scatterplotCanvas: d3.select("#scatterplot-canvas"), scatterplotSvg: d3.select("#scatterplot-svg"),
+            loadingIndicator: d3.select("#loading-indicator"),
+            errorDisplay: d3.select("#error-display"),
+            queryErrorDisplay: d3.select("#query-error-display"),
+            controls: d3.select("#controls"),
+            queryInput: d3.select("#query-input"),
+            autocompleteSuggestions: d3.select("#autocomplete-suggestions"), // Added
+            activeColorPicker: d3.select("#active-color-picker"),       // Added
+            inactiveColorPicker: d3.select("#inactive-color-picker"),   // Added
+            binningSelect: d3.select("#binning-select"),
+            resetQueryBtn: d3.select("#reset-query-btn"),
+            resetTimelineBtn: d3.select("#reset-timeline"),
+            resetViewBtn: d3.select("#reset-view-btn"),
+            filterSummary: d3.select("#filter-summary"),
+            scatterplotContainer: d3.select("#scatterplot-container"),
+            scatterplotCanvas: d3.select("#scatterplot-canvas"),
+            scatterplotSvg: d3.select("#scatterplot-svg"),
             scatterplotContent: d3.select("#scatterplot-svg g.scatterplot-content"),
             xAxisGroup: d3.select("#scatterplot-svg g.x-axis"), yAxisGroup: d3.select("#scatterplot-svg g.y-axis"),
             xGridGroup: d3.select("#scatterplot-svg g.x-grid"), yGridGroup: d3.select("#scatterplot-svg g.y-grid"),
@@ -371,43 +394,35 @@
         };
 
         // --- Main Initialization Function ---
-        // Orchestrates the setup process
         async function initialize() {
             showLoading("Loading data...");
-            ELEMENTS.errorDisplay.style('display', 'none'); // Hide previous errors
+            ELEMENTS.errorDisplay.style('display', 'none');
+            ELEMENTS.queryErrorDisplay.style('display', 'none');
             try {
                 // 1. Load Data
-                console.log("Fetching data...");
                 const rawData = await d3.json(CONFIG.dataUrl);
-                // Basic validation of fetched data structure
-                if (!rawData || typeof rawData !== 'object') { throw new Error(`Failed to fetch or parse data from ${CONFIG.dataUrl}. Response was not a valid object/array.`); }
-                if (!Array.isArray(rawData)) { throw new Error(`Data from ${CONFIG.dataUrl} is not an array as expected.`); }
-                if (rawData.length === 0) { console.warn("Data source is empty."); } // Allow empty data? Maybe throw error?
+                if (!rawData || !Array.isArray(rawData)) { throw new Error(`Invalid data format.`); }
 
-                // 2. Process Data
-                console.log("Processing data...");
-                processData(rawData); // Cleans data, parses dates, checks validity. Throws error if no valid points.
+                // 2. Process Data (now collects unique tags/authors)
+                processData(rawData);
+                if (appState.fullData.length === 0) { throw new Error("No valid data points found."); }
 
                 // 3. Setup UI and Visualization Components
-                console.log("Setting up UI and visualization...");
-                collectUniqueTags();    // Find all unique tags for the filter dropdown
-                populateTagFilter();    // Populate and initialize the Select2 dropdown
-                setupDimensions();      // Calculate width/height based on container size and margins
-                setupScales();          // Create D3 scales based on data extents and dimensions. Calculates initial px/py. Throws error on invalid extents.
-                setupAxes();            // Create D3 axis generators
-                setupSVGStructure();    // Setup SVG groups and apply margin transforms
-                setupCanvas();          // Setup canvas dimensions and get rendering context
-                setupInteractions();    // Initialize zoom, brush, and setup event listeners
+                setupDimensions();
+                setupScales();
+                setupAxes();
+                setupSVGStructure();
+                setupCanvas();
+                setupColorPickers(); // Initialize color pickers
+                setupInteractions(); // Includes listeners for query input, color pickers etc.
 
                 // 4. Initial Render
-                console.log("Performing initial visualization update...");
-                updateVisualization(true); // Perform the first draw of all components
-                setInitialTimelineBrush(); // Set the timeline brush to cover the full range initially
+                updateVisualization(true);
+                setInitialTimelineBrush();
 
                 console.log("Initialization complete.");
-                showLoading(false); // Hide loading indicator
+                showLoading(false);
             } catch (error) {
-                // Catch any error during initialization and display it
                 console.error("Initialization failed:", error);
                 showLoading(false);
                 displayError(`Initialization failed: ${error.message}`);
@@ -415,895 +430,469 @@
         }
 
         // --- Data Handling ---
-        // Cleans raw data, parses dates, validates required fields (date, x, y)
         function processData(rawData) {
+            const uniqueTags = new Set();
+            const uniqueAuthors = new Set();
+
             appState.fullData = rawData.map((d, i) => {
-                // Basic type check
-                if (typeof d !== 'object' || d === null) { console.warn(`Item at index ${i} is not a valid object. Skipping.`); return null; }
-
-                // Parse and validate date
+                // ... (validation as before) ...
+                if (typeof d !== 'object' || d === null) return null;
                 const date = new Date(d.date);
-                if (isNaN(date.getTime())) { console.warn(`Invalid date found for item ID ${d.id || `(index ${i})`}: '${d.date}'. Skipping item.`); return null; }
-
-                // Parse and validate coordinates
+                if (isNaN(date.getTime())) return null;
                 const xVal = +d.x; const yVal = +d.y;
-                if (d.x == null || d.y == null || isNaN(xVal) || isNaN(yVal)) { console.warn(`Invalid/missing coordinates for item ID ${d.id || `(index ${i})`}: x='${d.x}', y='${d.y}'. Skipping item.`); return null; }
+                if (d.x == null || d.y == null || isNaN(xVal) || isNaN(yVal)) return null;
 
-                // Return structured object, providing defaults for optional fields
+                const title = d.title || '';
+                const author = d.author || 'Unknown';
+                const tags = Array.isArray(d.tags) ? d.tags.map(String).filter(Boolean) : [];
+
+                // Add to unique sets (use original case for display, lowercase for search)
+                tags.forEach(tag => uniqueTags.add(tag));
+                if (author !== 'Unknown') { uniqueAuthors.add(author); }
+
                 return {
-                    id: d.id || i, // Use provided ID or index as fallback
-                    title: d.title || '',
-                    author: d.author || 'Unknown',
-                    url: d.url, // Keep URL as is
-                    date: date, // Store Date object
-                    tags: Array.isArray(d.tags) ? d.tags.map(String).filter(tag => tag && tag.trim() !== '') : [], // Ensure tags is array, clean up
-                    x: xVal,    // Store validated number
-                    y: yVal,    // Store validated number
-                    px: 0,      // Placeholder for untransformed pixel X (calculated in setupScales)
-                    py: 0       // Placeholder for untransformed pixel Y (calculated in setupScales)
+                    id: d.id || i, title: title, author: author, url: d.url, date: date, tags: tags,
+                    x: xVal, y: yVal, px: 0, py: 0,
+                    _titleLower: title.toLowerCase(),
+                    _authorLower: author.toLowerCase(),
+                    _tagsLower: tags.map(t => t.toLowerCase())
                 };
-            }).filter(d => d !== null); // Remove items that failed validation
+            }).filter(Boolean);
 
-             // Ensure we have *some* valid data to proceed
-             if (appState.fullData.length === 0) {
-                 throw new Error("No valid data points found after processing. Check source data format and values.");
-             }
-             console.log(`Processed ${appState.fullData.length} valid articles.`);
+            // Store unique sets and sorted arrays in appState
+            appState.uniqueTags = uniqueTags;
+            appState.uniqueAuthors = uniqueAuthors;
+            appState.sortedUniqueTags = Array.from(uniqueTags).sort((a, b) => a.localeCompare(b));
+            appState.sortedUniqueAuthors = Array.from(uniqueAuthors).sort((a, b) => a.localeCompare(b));
+
+            console.log(`Processed ${appState.fullData.length} articles. Found ${uniqueTags.size} tags, ${uniqueAuthors.size} authors.`);
         }
 
-        // Extracts all unique tags from the processed data
-        function collectUniqueTags() {
-            // Use flatMap to get all tags into a single array, then Set for uniqueness
-            const tags = new Set(appState.fullData.flatMap(item => item.tags));
-            appState.uniqueTags = tags;
-            console.log(`Found ${tags.size} unique tags.`);
-        }
 
-        // --- Filter Logic ---
-        // Applies current search, tag, and date filters to the full dataset
-        function applyFilters() {
-            const { dateRange, selectedTags, searchQuery } = appState.currentFilters;
-            const searchLower = searchQuery.toLowerCase().trim(); // Prepare search query once
+        // --- Query Parsing and Evaluation (Largely unchanged) ---
+        const TOKEN_TYPES = { /* ... as before ... */
+            TERM: 'TERM', PREFIX_TAG: 'PREFIX_TAG', PREFIX_AUTHOR: 'PREFIX_AUTHOR', PREFIX_INTITLE: 'PREFIX_INTITLE',
+            AND: 'AND', OR: 'OR', NOT: 'NOT', LPAREN: 'LPAREN', RPAREN: 'RPAREN', EOF: 'EOF'
+        };
+        function tokenizeQuery(query) { /* ... as before ... */
+            const tokens = []; let pos = 0; query = query.trim();
+            const patterns = [ { type: TOKEN_TYPES.LPAREN, regex: /^\(/ }, { type: TOKEN_TYPES.RPAREN, regex: /^\)/ }, { type: TOKEN_TYPES.AND, regex: /^\bAND\b/i }, { type: TOKEN_TYPES.OR, regex: /^\bOR\b/i }, { type: TOKEN_TYPES.NOT, regex: /^\bNOT\b/i }, { type: TOKEN_TYPES.PREFIX_TAG, regex: /^\bTAG:/i }, { type: TOKEN_TYPES.PREFIX_AUTHOR, regex: /^\bAUTHOR:/i }, { type: TOKEN_TYPES.PREFIX_INTITLE, regex: /^\bINTITLE:/i }, { type: TOKEN_TYPES.TERM, regex: /^"([^"]*)"/ }, { type: TOKEN_TYPES.TERM, regex: /^([^\s()]+)/ } ];
+            while (pos < query.length) {
+                let matched = false; const whitespaceMatch = query.substring(pos).match(/^\s+/); if (whitespaceMatch) { pos += whitespaceMatch[0].length; continue; }
+                for (const pattern of patterns) {
+                    const match = query.substring(pos).match(pattern.regex);
+                    if (match) { let value = match[0]; if (pattern.type === TOKEN_TYPES.TERM && match[1] !== undefined) { value = match[1]; } tokens.push({ type: pattern.type, value: value.toLowerCase() }); pos += match[0].length; matched = true; break; }
+                }
+                if (!matched) { throw new Error(`Invalid char at pos ${pos}: "${query.substring(pos, pos + 10)}..."`); }
+            }
+            tokens.push({ type: TOKEN_TYPES.EOF, value: null }); return tokens;
+         }
+        let currentTokens = []; let currentTokenIndex = 0;
+        function currentToken() { return currentTokens[currentTokenIndex]; }
+        function nextToken() { if (currentTokenIndex < currentTokens.length - 1) currentTokenIndex++; }
+        function matchToken(type) { if (currentToken().type === type) { const token = currentToken(); nextToken(); return token; } throw new Error(`Syntax Error: Expected ${type} found ${currentToken().type}`); }
+        function parseExpression() { let leftFilter = parseTerm(); while (currentToken().type === TOKEN_TYPES.OR) { nextToken(); const rightFilter = parseTerm(); const capturedLeft = leftFilter; leftFilter = (d) => capturedLeft(d) || rightFilter(d); } return leftFilter; }
+        function parseTerm() { let leftFilter = parseFactor(); while (currentToken().type === TOKEN_TYPES.AND) { nextToken(); const rightFilter = parseFactor(); const capturedLeft = leftFilter; leftFilter = (d) => capturedLeft(d) && rightFilter(d); } return leftFilter; }
+        function parseFactor() { if (currentToken().type === TOKEN_TYPES.NOT) { nextToken(); const filterToNegate = parseFactor(); return (d) => !filterToNegate(d); } else if (currentToken().type === TOKEN_TYPES.LPAREN) { nextToken(); const expressionFilter = parseExpression(); matchToken(TOKEN_TYPES.RPAREN); return expressionFilter; } else { return parseAtom(); } }
+        function parseAtom() { const token = currentToken(); let filterFunc = () => false; switch (token.type) { case TOKEN_TYPES.PREFIX_TAG: nextToken(); const tagTerm = matchToken(TOKEN_TYPES.TERM).value; filterFunc = (d) => d._tagsLower.includes(tagTerm); break; case TOKEN_TYPES.PREFIX_AUTHOR: nextToken(); const authorTerm = matchToken(TOKEN_TYPES.TERM).value; filterFunc = (d) => d._authorLower.includes(authorTerm); break; case TOKEN_TYPES.PREFIX_INTITLE: nextToken(); const titleTerm = matchToken(TOKEN_TYPES.TERM).value; filterFunc = (d) => d._titleLower.includes(titleTerm); break; case TOKEN_TYPES.TERM: nextToken(); const genericTerm = token.value; filterFunc = (d) => d._titleLower.includes(genericTerm) || d._authorLower.includes(genericTerm) || d._tagsLower.includes(genericTerm); break; default: throw new Error(`Syntax Error: Unexpected token ${token.type}`); } return filterFunc; }
+        function parseQuery(query) { if (!query || query.trim() === '') { return { queryFunction: () => true, error: null }; } try { currentTokens = tokenizeQuery(query); currentTokenIndex = 0; const queryFunction = parseExpression(); if (currentToken().type !== TOKEN_TYPES.EOF) { throw new Error(`Syntax Error: Unexpected token '${currentToken().value}'`); } return { queryFunction, error: null }; } catch (error) { console.error("Query parsing error:", error); return { queryFunction: () => false, error: error.message }; } }
 
-            // Filter the full dataset based on combined criteria
-            appState.filteredData = appState.fullData.filter(d => {
-                // 1. Date Filter (from timeline brush)
-                const meetsDate = !dateRange || (d.date >= dateRange[0] && d.date <= dateRange[1]);
-                if (!meetsDate) return false; // Early exit if date doesn't match
-
-                // 2. Tag Filter (OR logic: point must have at least ONE selected tag)
-                const meetsTags = selectedTags.size === 0 || Array.from(selectedTags).every(tag => d.tags.includes(tag));
-                if (!meetsTags) return false; // Early exit if no tag match (and tags are selected)
-
-                // 3. Search Filter (check title and author)
-                const meetsSearch = !searchLower ||
-                                    (d.title && d.title.toLowerCase().includes(searchLower)) ||
-                                    (d.author && d.author.toLowerCase().includes(searchLower));
-                if (!meetsSearch) return false; // Early exit if no search match
-
-                // If all checks pass, keep the data point
-                return true;
-            });
-
-            // After filtering, rebuild the quadtree for efficient hover/click detection
-            updateQuadtree();
-        }
-
-        // Rebuilds the quadtree based on the currently filtered data's pixel coordinates
-        function updateQuadtree() {
-             // Safety check: ensure px/py have been calculated (should happen in setupScales/handleResize)
-             if (appState.fullData.length > 0 && appState.fullData[0].px === 0 && appState.fullData[0].py === 0 && appState.scales.x) {
-                 console.warn("px/py seem uninitialized before quadtree build. Recalculating.");
-                 appState.fullData.forEach(d => { d.px = appState.scales.x(d.x); d.py = appState.scales.y(d.y); });
-             }
-             // Build quadtree using untransformed pixel coordinates for stable searching during zoom/pan
-             appState.quadtree = d3.quadtree()
-                .x(d => d.px) // Use pre-calculated pixel x
-                .y(d => d.py) // Use pre-calculated pixel y
-                .addAll(appState.filteredData); // Add only currently filtered points
-        }
+        // --- Filter Logic (Unchanged) ---
+        function isPointFiltered(d) { const { dateRange, queryFunction } = appState.currentFilters; const meetsDate = !dateRange || (d.date >= dateRange[0] && d.date <= dateRange[1]); if (!meetsDate) return false; const meetsQuery = queryFunction(d); if (!meetsQuery) return false; return true; }
+        function applyFiltersAndUpdateQuadtree() { appState.filteredData = appState.fullData.filter(isPointFiltered); updateQuadtree(); }
+        function updateQuadtree() { if (appState.fullData.length > 0 && appState.fullData[0].px === 0 && appState.fullData[0].py === 0 && appState.scales.x) { appState.fullData.forEach(d => { d.px = appState.scales.x(d.x); d.py = appState.scales.y(d.y); }); } appState.quadtree = d3.quadtree().x(d => d.px).y(d => d.py).addAll(appState.filteredData); }
 
         // --- UI Setup ---
-        // Populates the tag filter dropdown and initializes Select2
-        function populateTagFilter() {
-            const sortedTags = Array.from(appState.uniqueTags).sort((a, b) => a.localeCompare(b)); // Sort tags alphabetically
-
-            // Populate the <select> element
-            ELEMENTS.tagSelect.selectAll('option').remove(); // Clear previous options
-            ELEMENTS.tagSelect.selectAll('option')
-                .data(sortedTags)
-                .join('option') // Use D3's join pattern
-                .attr('value', d => d)
-                .text(d => d);
-
-            // Initialize Select2 on the populated element
-            $(ELEMENTS.tagSelect.node()).select2({
-                placeholder: "Filter by one or more tags", // Placeholder text
-                allowClear: true                          // Show a clear button
-            });
-
-            // Attach event listener for Select2 changes (ensure only one listener)
-            $(ELEMENTS.tagSelect.node()).off('change').on('change', handleTagChange);
+        function setupDimensions() { /* ... as before ... */
+            const scRect = ELEMENTS.scatterplotContainer.node().getBoundingClientRect(); const tlRect = ELEMENTS.timelineContainer.node().getBoundingClientRect();
+            appState.dimensions.scatterplot.width = Math.max(10, scRect.width - CONFIG.scatterplotMargin.left - CONFIG.scatterplotMargin.right); appState.dimensions.scatterplot.height = Math.max(10, scRect.height - CONFIG.scatterplotMargin.top - CONFIG.scatterplotMargin.bottom);
+            appState.dimensions.timeline.width = Math.max(10, tlRect.width - CONFIG.timelineMargin.left - CONFIG.timelineMargin.right); appState.dimensions.timeline.height = Math.max(10, tlRect.height - CONFIG.timelineMargin.top - CONFIG.timelineMargin.bottom);
+        }
+        function setupScales() { /* ... as before ... */
+            const scDims = appState.dimensions.scatterplot; const tlDims = appState.dimensions.timeline; const xExt = d3.extent(appState.fullData, d => d.x); const yExt = d3.extent(appState.fullData, d => d.y); const dateExt = d3.extent(appState.fullData, d => d.date); if (xExt[0] === undefined || yExt[0] === undefined || !dateExt[0]) { throw new Error("Invalid data extents."); }
+            appState.scales.x = d3.scaleLinear().domain(xExt).nice().range([0, scDims.width]); appState.scales.y = d3.scaleLinear().domain(yExt).nice().range([scDims.height, 0]); appState.scales.time = d3.scaleTime().domain(dateExt).nice().range([0, tlDims.width]); appState.scales.count = d3.scaleLinear().range([tlDims.height, 0]);
+            if (!appState.scales.x || !appState.scales.y) { throw new Error("Scatterplot scales failed init."); } appState.fullData.forEach(d => { d.px = appState.scales.x(d.x); d.py = appState.scales.y(d.y); });
+        }
+        function setupAxes() { /* ... as before ... */
+            if (!appState.scales.x || !appState.scales.y || !appState.scales.time) { throw new Error("Scales not initialized for axes."); } appState.axes.x = d3.axisBottom(appState.scales.x).ticks(10).tickSizeOuter(0); appState.axes.y = d3.axisLeft(appState.scales.y).ticks(10).tickSizeOuter(0); appState.axes.time = d3.axisBottom(appState.scales.time).ticks(5).tickSizeOuter(0); appState.axes.xGrid = d3.axisBottom(appState.scales.x).tickSize(-appState.dimensions.scatterplot.height).tickFormat(""); appState.axes.yGrid = d3.axisLeft(appState.scales.y).tickSize(-appState.dimensions.scatterplot.width).tickFormat("");
+        }
+        function setupSVGStructure() { /* ... as before ... */
+            const scM = CONFIG.scatterplotMargin; const tlM = CONFIG.timelineMargin; const scD = appState.dimensions.scatterplot; const tlD = appState.dimensions.timeline; ELEMENTS.scatterplotSvg.attr("width", scD.width + scM.left + scM.right).attr("height", scD.height + scM.top + scM.bottom); ELEMENTS.timelineSvg.attr("width", tlD.width + tlM.left + tlM.right).attr("height", tlD.height + tlM.top + tlM.bottom); ELEMENTS.scatterplotContent.attr("transform", `translate(${scM.left},${scM.top})`); ELEMENTS.timelineContent.attr("transform", `translate(${tlM.left},${tlM.top})`); ELEMENTS.xAxisGroup.attr("transform", `translate(0,${scD.height})`); ELEMENTS.xGridGroup.attr("transform", `translate(0,${scD.height})`); ELEMENTS.timeAxisGroup.attr("transform", `translate(0,${tlD.height})`);
+        }
+        function setupCanvas() { /* ... as before ... */
+            const scD = appState.dimensions.scatterplot; const scM = CONFIG.scatterplotMargin; ELEMENTS.scatterplotCanvas.attr("width", scD.width).attr("height", scD.height).style("transform", `translate(${scM.left}px, ${scM.top}px)`); appState.canvasContext = ELEMENTS.scatterplotCanvas.node().getContext("2d"); if (!appState.canvasContext) { throw new Error("Failed to get 2D canvas context."); }
         }
 
-        // Calculates the usable drawing dimensions based on container size and margins
-        function setupDimensions() {
-            const scRect = ELEMENTS.scatterplotContainer.node().getBoundingClientRect();
-            const tlRect = ELEMENTS.timelineContainer.node().getBoundingClientRect();
+        // Initialize color pickers with current colors
+        function setupColorPickers() {
+            ELEMENTS.activeColorPicker
+                .property('value', appState.colors.active)
+                .on('input', handleActiveColorChange); // Use 'input' for live updates
 
-            // Calculate width/height available INSIDE margins
-            appState.dimensions.scatterplot.width = Math.max(10, scRect.width - CONFIG.scatterplotMargin.left - CONFIG.scatterplotMargin.right); // Ensure min width
-            appState.dimensions.scatterplot.height = Math.max(10, scRect.height - CONFIG.scatterplotMargin.top - CONFIG.scatterplotMargin.bottom); // Ensure min height
-            appState.dimensions.timeline.width = Math.max(10, tlRect.width - CONFIG.timelineMargin.left - CONFIG.timelineMargin.right);
-            appState.dimensions.timeline.height = Math.max(10, tlRect.height - CONFIG.timelineMargin.top - CONFIG.timelineMargin.bottom);
+            ELEMENTS.inactiveColorPicker
+                .property('value', appState.colors.inactive)
+                .on('input', handleInactiveColorChange);
         }
 
-        // Creates D3 scales based on data extents and calculated dimensions
-        function setupScales() {
-            const scDims = appState.dimensions.scatterplot; const tlDims = appState.dimensions.timeline;
-
-            // Find data ranges (extents)
-            const xExt = d3.extent(appState.fullData, d => d.x);
-            const yExt = d3.extent(appState.fullData, d => d.y);
-            const dateExt = d3.extent(appState.fullData, d => d.date);
-
-            // Validate extents - crucial to prevent errors downstream
-            if (xExt[0] === undefined || xExt[1] === undefined || isNaN(xExt[0]) || isNaN(xExt[1])) { throw new Error(`Invalid numeric extent for 'x': [${xExt}]`); }
-            if (yExt[0] === undefined || yExt[1] === undefined || isNaN(yExt[0]) || isNaN(yExt[1])) { throw new Error(`Invalid numeric extent for 'y': [${yExt}]`); }
-            if (!dateExt[0] || !dateExt[1] || isNaN(dateExt[0].getTime()) || isNaN(dateExt[1].getTime())) { throw new Error(`Invalid date extent: [${dateExt}]`); }
-            console.log("Determined extents:", {x: xExt, y: yExt, date: dateExt});
-
-            // Create scales (mapping data domain to pixel range)
-            appState.scales.x = d3.scaleLinear().domain(xExt).nice().range([0, scDims.width]);           // X: linear data to horizontal pixels
-            appState.scales.y = d3.scaleLinear().domain(yExt).nice().range([scDims.height, 0]);         // Y: linear data to vertical pixels (inverted for SVG coords)
-            appState.scales.time = d3.scaleTime().domain(dateExt).nice().range([0, tlDims.width]);        // Timeline X: date data to horizontal pixels
-            appState.scales.count = d3.scaleLinear().range([tlDims.height, 0]); // Timeline Y: count data to vertical pixels (domain set later)
-
-            // Pre-calculate untransformed pixel coordinates (px, py) for each point
-            // This is done once after scales are set (and updated on resize)
-            // Used for quadtree and potentially drawing if performance needed it
-            if (!appState.scales.x || !appState.scales.y) { throw new Error("Scatterplot scales failed init before px/py calculation"); }
-            appState.fullData.forEach(d => {
-                d.px = appState.scales.x(d.x);
-                d.py = appState.scales.y(d.y);
-                // Check for issues during calculation
-                if (isNaN(d.px) || isNaN(d.py)) { console.warn(`NaN pixel coord calculated for ID ${d.id}`); }
-            });
-            console.log("Scales setup complete. px/py calculated.");
-        }
-
-        // Creates D3 axis generators
-        function setupAxes() {
-            if (!appState.scales.x || !appState.scales.y || !appState.scales.time) { throw new Error("Scales must be initialized before setting up axes."); }
-
-            // Define axis generators
-            appState.axes.x = d3.axisBottom(appState.scales.x).ticks(10).tickSizeOuter(0); // Remove outer ticks for cleaner look
-            appState.axes.y = d3.axisLeft(appState.scales.y).ticks(10).tickSizeOuter(0);
-            appState.axes.time = d3.axisBottom(appState.scales.time).ticks(5).tickSizeOuter(0); // Fewer ticks for timeline
-
-            // Define gridline generators (use axis generators with modified tick size/format)
-            appState.axes.xGrid = d3.axisBottom(appState.scales.x).tickSize(-appState.dimensions.scatterplot.height).tickFormat(""); // Extend ticks across height, no labels
-            appState.axes.yGrid = d3.axisLeft(appState.scales.y).tickSize(-appState.dimensions.scatterplot.width).tickFormat("");   // Extend ticks across width, no labels
-            console.log("Axes definitions setup complete.");
-        }
-
-        // Sets up basic SVG group structure and applies margin transformations
-        function setupSVGStructure() {
-            const scM = CONFIG.scatterplotMargin; const tlM = CONFIG.timelineMargin;
-            const scD = appState.dimensions.scatterplot; const tlD = appState.dimensions.timeline;
-
-            // Size the SVG elements
-            ELEMENTS.scatterplotSvg.attr("width", scD.width + scM.left + scM.right).attr("height", scD.height + scM.top + scM.bottom);
-            ELEMENTS.timelineSvg.attr("width", tlD.width + tlM.left + tlM.right).attr("height", tlD.height + tlM.top + tlM.bottom);
-
-            // Apply margin transformations to the main content groups
-            ELEMENTS.scatterplotContent.attr("transform", `translate(${scM.left},${scM.top})`);
-            ELEMENTS.timelineContent.attr("transform", `translate(${tlM.left},${tlM.top})`);
-
-            // Position axis groups correctly within their content groups
-            ELEMENTS.xAxisGroup.attr("transform", `translate(0,${scD.height})`); // Move to bottom
-            ELEMENTS.xGridGroup.attr("transform", `translate(0,${scD.height})`); // Move to bottom
-            ELEMENTS.timeAxisGroup.attr("transform", `translate(0,${tlD.height})`); // Move to bottom
-        }
-
-        // Sets up the scatterplot canvas dimensions and gets the drawing context
-         function setupCanvas() {
-            const scD = appState.dimensions.scatterplot; const scM = CONFIG.scatterplotMargin;
-
-            // Set canvas size and position it using CSS transform to align with SVG content area
-            ELEMENTS.scatterplotCanvas
-                .attr("width", scD.width)
-                .attr("height", scD.height)
-                .style("transform", `translate(${scM.left}px, ${scM.top}px)`);
-
-            // Get and store the 2D rendering context
-            appState.canvasContext = ELEMENTS.scatterplotCanvas.node().getContext("2d");
-            if (!appState.canvasContext) { throw new Error("Failed to get 2D rendering context for canvas."); }
-            console.log("Canvas setup complete.");
-         }
-
-        // Initializes D3 behaviors (zoom, brush) and attaches event listeners
         function setupInteractions() {
             const scD = appState.dimensions.scatterplot; const tlD = appState.dimensions.timeline;
 
-            // --- Zoom Behavior (Scatterplot) ---
-            appState.behaviors.zoom = d3.zoom()
-                .scaleExtent([CONFIG.zoomMin, CONFIG.zoomMax]) // Set min/max zoom levels
-                .translateExtent([[0, 0], [scD.width, scD.height]]) // Limit panning to plot area
-                .extent([[0, 0], [scD.width, scD.height]]) // Define viewport extent
-                .on("zoom", handleZoom); // Attach zoom event handler
-
-            // Apply zoom behavior to the canvas element (where mouse events occur)
+            // Zoom/Brush setup (as before)
+            appState.behaviors.zoom = d3.zoom().scaleExtent([CONFIG.zoomMin, CONFIG.zoomMax]).translateExtent([[0, 0], [scD.width, scD.height]]).extent([[0, 0], [scD.width, scD.height]]).on("zoom", handleZoom);
             ELEMENTS.scatterplotCanvas.call(appState.behaviors.zoom);
-
-            // --- Brush Behavior (Timeline) ---
-            appState.behaviors.brush = d3.brushX() // Horizontal brush only
-                .extent([[0, 0], [tlD.width, tlD.height]]) // Limit brush area to timeline drawing area
-                .on("start brush end", handleBrush); // Attach brush event handler (listens for start, drag, end)
-
-            // Apply brush behavior to the dedicated brush group in the timeline SVG
+            appState.behaviors.brush = d3.brushX().extent([[0, 0], [tlD.width, tlD.height]]).on("start brush end", handleBrush);
             ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush);
 
             // --- Control Panel Listeners ---
-            ELEMENTS.searchInput.on("input", debounce(handleSearchInput, CONFIG.debounceTime)); // Debounced search
-            ELEMENTS.binningSelect.on("change", handleBinningChange); // Timeline granularity change
-            ELEMENTS.resetSearchBtn.on("click", resetSearch);
-            ELEMENTS.resetTagsBtn.on("click", resetTags);
+            // Query input handles regular input and autocomplete logic
+            ELEMENTS.queryInput
+                .on("input", debounce(handleQueryInput, CONFIG.debounceTime))
+                .on("keydown", handleQueryKeyDown) // For Esc, Enter, Arrow keys in autocomplete
+                .on("blur", handleQueryBlur); // Hide autocomplete on blur
+
+            // Autocomplete suggestion clicks (using event delegation)
+            ELEMENTS.autocompleteSuggestions.on("mousedown", handleSuggestionClick); // Use mousedown to fire before blur
+
+            // Other controls
+            ELEMENTS.binningSelect.on("change", handleBinningChange);
+            ELEMENTS.resetQueryBtn.on("click", resetQuery);
             ELEMENTS.resetTimelineBtn.on("click", resetTimelineBrush);
-            // Note: Select2 tag filter listener is attached in populateTagFilter using jQuery
+            ELEMENTS.resetViewBtn.on("click", handleResetView);
+            // Color picker listeners are added in setupColorPickers
 
-            // --- Canvas Interaction Listeners ---
-            ELEMENTS.scatterplotCanvas
-                .on("mousemove", handleCanvasMouseMove) // Hover detection
-                .on("click", handleCanvasClick)         // Click detection (sticky tooltip, URL open)
-                .on("mouseout", handleCanvasMouseOut)   // Clear hover/tooltip when leaving canvas
-                .on("dblclick.zoom", null)             // Disable default D3 dblclick zoom
-                .on("dblclick", handleCanvasDoubleClick); // Attach custom double-click zoom handler
-
-            // --- Window Resize Listener ---
-            // Debounce resize events to avoid excessive recalculations
+            // Canvas interactions (as before)
+            ELEMENTS.scatterplotCanvas.on("mousemove", handleCanvasMouseMove).on("click", handleCanvasClick).on("mouseout", handleCanvasMouseOut).on("dblclick.zoom", null).on("dblclick", handleCanvasDoubleClick);
             d3.select(window).on("resize", debounce(handleResize, CONFIG.debounceTime));
-
-            console.log("Interaction listeners setup complete.");
         }
 
 
         // --- Drawing Functions ---
 
-        // Draws the scatterplot points onto the canvas
+        // Updated drawScatterplot with 2-pass rendering
         function drawScatterplot() {
             const ctx = appState.canvasContext;
-            if (!ctx) return; // Guard against missing context
+            if (!ctx) return;
             const { width, height } = appState.dimensions.scatterplot;
-            const transform = appState.currentTransform; // Current zoom/pan state
-            const { selectedTags } = appState.currentFilters;
+            const transform = appState.currentTransform;
             const timelineHoverBin = appState.timelineHoveredBin;
+            const activeColor = appState.colors.active; // Use dynamic color
+            const inactiveColor = appState.colors.inactive; // Use dynamic color
 
-            // --- Drawing Setup ---
-            ctx.save(); // Save default context state
-            ctx.clearRect(0, 0, width, height); // Clear the canvas for redraw
-            ctx.translate(transform.x, transform.y); // Apply zoom/pan translation
-            ctx.scale(transform.k, transform.k);     // Apply zoom scale
+            ctx.save();
+            ctx.clearRect(0, 0, width, height);
+            ctx.translate(transform.x, transform.y);
+            ctx.scale(transform.k, transform.k);
 
-            // --- Point Iteration and Drawing ---
-            // Iterate through only the data points that have passed the current filters
-            appState.filteredData.forEach(d => {
-                // Use pre-calculated untransformed pixel coordinates (px, py)
-                const cx = d.px;
-                const cy = d.py;
-                let radius = CONFIG.pointRadius; // Start with default appearance
-                let color = CONFIG.pointColor;
+            const inactiveRadius = CONFIG.pointRadius / transform.k;
+            const activeRadius = CONFIG.highlightRadius / transform.k;
 
-                // --- Apply Visual Encoding based on Filters/State ---
-                // 1. Tag Filtering: Check if tags are selected AND if this point matches
-                if (selectedTags.size > 0) {
-                    const isHighlightedByTag = Array.from(selectedTags).every(tag => d.tags.includes(tag));
-                    if (isHighlightedByTag) {
-                        // Apply highlight style
-                        radius = CONFIG.highlightRadius;
-                        color = CONFIG.highlightColor;
-                    } else {
-                        // Apply de-emphasis style
-                        color = CONFIG.deEmphasisColor;
-                    }
-                } // If no tags selected, color/radius remain default unless overridden below
-
-                // 2. Timeline Hover Highlighting (overrides tag color)
-                 if (timelineHoverBin && d.date >= timelineHoverBin.x0 && d.date < timelineHoverBin.x1) {
-                     color = CONFIG.timelineBarHoverColor; // Use timeline hover color
-                     radius = Math.max(radius, CONFIG.highlightRadius - 1); // Ensure highlighted size
-                 }
-
-                // --- Draw the Point ---
-                // Note: Hover/Sticky highlights are handled by SVG overlays, not drawn on canvas here
-                ctx.beginPath();
-                // Scale radius inversely with zoom for consistent apparent size on screen
-                ctx.arc(cx, cy, radius / transform.k, 0, 2 * Math.PI);
-                ctx.fillStyle = color;
-                ctx.fill();
+            // --- Pass 1: Draw Inactive Points ---
+            ctx.fillStyle = inactiveColor;
+            appState.fullData.forEach(d => {
+                if (!isPointFiltered(d)) { // Draw only if NOT matching filters
+                    ctx.beginPath();
+                    ctx.arc(d.px, d.py, inactiveRadius, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
             });
 
-            // --- Cleanup ---
-            ctx.restore(); // Restore context state (removes transform)
+            // --- Pass 2: Draw Active Points ---
+            appState.fullData.forEach(d => {
+                if (isPointFiltered(d)) { // Draw only if matching filters
+                    let color = activeColor;
+                    // Check for timeline hover override
+                    if (timelineHoverBin && d.date >= timelineHoverBin.x0 && d.date < timelineHoverBin.x1) {
+                        color = CONFIG.timelineBarHoverColor; // Use specific timeline hover color
+                    }
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    ctx.arc(d.px, d.py, activeRadius, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            });
 
-            // Update positions/visibility of SVG highlight circles after points are drawn
+            ctx.restore();
+
+            // Update SVG highlights (only apply to points in filteredData)
             updateSVGHoverHighlight();
             updateSVGStickyHighlight();
         }
 
-        // Draws the timeline histogram bars
+        // Updated drawTimeline to use dynamic active color
         function drawTimeline() {
             const { time: timeScale, count: countScale } = appState.scales;
-            if (!appState.dimensions.timeline) return; // Guard for resize timing
+            if (!appState.dimensions.timeline) return;
             const { width, height } = appState.dimensions.timeline;
+            const selectedBinKey = ELEMENTS.binningSelect.property("value");
+            const binMap = { 'week': d3.timeWeek, 'month': d3.timeMonth, 'year': d3.timeYear };
+            const binningInterval = binMap[selectedBinKey] || d3.timeWeek;
+            const timeDomain = timeScale.domain();
+            const activeColor = appState.colors.active; // Get current active color
 
-            // --- Determine Binning Interval ---
-            const selectedBinKey = ELEMENTS.binningSelect.property("value"); // Read current dropdown value
-            const binMap = { 'week': d3.timeWeek, 'month': d3.timeMonth, 'year': d3.timeYear }; // Excludes 'day'
-            const binningInterval = binMap[selectedBinKey] || d3.timeWeek; // Get the D3 interval object
-            const binningFuncName = Object.keys(binMap).find(key => binMap[key] === binningInterval) || 'unknown'; // For logging
+            if (!timeScale || !countScale || !binningInterval || width <= 0 || height <= 0 || !timeDomain || timeDomain.length !== 2) { return; }
 
-            // --- Precondition Checks ---
-            if (!timeScale || !countScale || !binningInterval || width <= 0 || height <= 0) { console.error("drawTimeline preconditions failed."); return; }
-            const timeDomain = timeScale.domain(); // Get the current domain from the time scale
-            if (!timeDomain || timeDomain.length !== 2 || !timeDomain[0] || !timeDomain[1] || isNaN(timeDomain[0].getTime()) || isNaN(timeDomain[1].getTime())) { console.error("drawTimeline: Invalid timeScale domain."); return; }
-
-            // --- Calculate Histogram Bins ---
-            let bins = []; // Initialize bins array
+            let bins = [];
             try {
-                // 1. Generate threshold dates using the .range() method of the interval object
                 const thresholds = binningInterval.range(timeDomain[0], timeDomain[1]);
-                // 2. Validate thresholds result
-                if (!Array.isArray(thresholds)) { throw new Error(`Binning interval's .range() ('${binningFuncName}') did not return an array.`); }
-
-                // 3. Create histogram generator
-                const histogram = d3.histogram()
-                    .value(d => d.date)        // Accessor for date value
-                    .domain(timeDomain)      // Set domain to match time scale
-                    .thresholds(thresholds); // Use calculated date thresholds
-
-                // 4. Calculate bins using the CURRENTLY FILTERED DATA
-                bins = histogram(appState.filteredData);
-                // console.log(`drawTimeline: ${bins.length} bins for ${appState.filteredData.length} points using '${binningFuncName}'.`); // Optional log
-
+                if (!Array.isArray(thresholds)) { throw new Error(`Binning interval range failed.`); }
+                const histogram = d3.histogram().value(d => d.date).domain(timeDomain).thresholds(thresholds);
+                bins = histogram(appState.filteredData); // Bins based on filtered data
             } catch (error) {
-                // Handle errors during bin calculation
-                console.error("Error calculating histogram bins/thresholds:", error);
-                displayError(`Failed to draw timeline: ${error.message}`); return; // Stop drawing
+                console.error("Error calculating histogram bins:", error); displayError(`Timeline error: ${error.message}`); return;
             }
 
-            // --- Update Y Scale Domain ---
-            // Set the domain of the count scale based on the maximum bin size found
-            countScale.domain([0, Math.max(1, d3.max(bins, d => d.length) || 0)]).nice(); // Ensure domain max is at least 1
+            countScale.domain([0, Math.max(1, d3.max(bins, d => d.length) || 0)]).nice();
 
-            // --- Draw Bars using D3 Join ---
             ELEMENTS.timelineBarsGroup.selectAll(".timeline-bar")
-                .data(bins) // Bind bin data
-                .join("rect") // Efficiently handle enter/update/exit
+                .data(bins)
+                .join("rect")
                 .attr("class", "timeline-bar")
-                .attr("x", d => timeScale(d.x0) + 1) // Position bar, add 1px gap
-                .attr("width", d => Math.max(0, timeScale(d.x1) - timeScale(d.x0) - 1)) // Calculate width, ensure non-negative, subtract gap
-                .attr("y", d => countScale(d.length)) // Position top of bar based on count
-                .attr("height", d => Math.max(0, height - countScale(d.length))) // Calculate height, ensure non-negative
-                .style("fill", CONFIG.timelineBarColor)
-                // Attach hover listeners directly to bars
+                .attr("x", d => timeScale(d.x0) + 1)
+                .attr("width", d => Math.max(0, timeScale(d.x1) - timeScale(d.x0) - 1))
+                .attr("y", d => countScale(d.length))
+                .attr("height", d => Math.max(0, height - countScale(d.length)))
+                .style("fill", activeColor) // Use dynamic active color for bars
                 .on("mouseover", handleTimelineBarMouseOver)
                 .on("mouseout", handleTimelineBarMouseOut);
 
-            // Update the time axis as well (in case ticks change, though unlikely here)
-             if (appState.axes.time) {
-                 ELEMENTS.timeAxisGroup.call(appState.axes.time);
-             }
+             if (appState.axes.time) { ELEMENTS.timeAxisGroup.call(appState.axes.time); }
         }
 
-        // Draws the axes and gridlines on the SVG overlay
-         function drawAxes() {
-            const { x: scaleX, y: scaleY } = appState.scales; // Use base scales
-            const transform = appState.currentTransform; // Current zoom state
-
-            // Guard against missing components
-            if (!appState.axes.x || !appState.axes.y || !appState.axes.time || !scaleX || !scaleY) return;
-
-            // Apply zoom transform to scatterplot scales
-            const currentXScale = transform.rescaleX(scaleX);
-            const currentYScale = transform.rescaleY(scaleY);
-
-            // Call axis generators with the dynamically rescaled scales
-            ELEMENTS.xAxisGroup.call(appState.axes.x.scale(currentXScale));
-            ELEMENTS.yAxisGroup.call(appState.axes.y.scale(currentYScale));
-
-            // Call gridline generators with rescaled scales
-            ELEMENTS.xGridGroup.call(appState.axes.xGrid.scale(currentXScale));
-            ELEMENTS.yGridGroup.call(appState.axes.yGrid.scale(currentYScale));
-
-            // Call timeline axis generator (doesn't zoom)
-            ELEMENTS.timeAxisGroup.call(appState.axes.time);
+         function drawAxes() { /* ... as before ... */
+            const { x: scaleX, y: scaleY } = appState.scales; const transform = appState.currentTransform; if (!appState.axes.x || !appState.axes.y || !appState.axes.time || !scaleX || !scaleY) return; const currentXScale = transform.rescaleX(scaleX); const currentYScale = transform.rescaleY(scaleY); ELEMENTS.xAxisGroup.call(appState.axes.x.scale(currentXScale)); ELEMENTS.yAxisGroup.call(appState.axes.y.scale(currentYScale)); ELEMENTS.xGridGroup.call(appState.axes.xGrid.scale(currentXScale)); ELEMENTS.yGridGroup.call(appState.axes.yGrid.scale(currentYScale)); ELEMENTS.timeAxisGroup.call(appState.axes.time);
         }
 
         // --- Update Functions ---
-
-        // Main function to update the visualization based on current state
-        // Called after interactions, filtering, or initial load
         function updateVisualization(isInitialLoad = false) {
-            // 1. Apply all current filters (search, tags, date) to update appState.filteredData
-            applyFilters();
-
-            // 2. Redraw components that depend on filtered data or zoom state
-            drawAxes();        // Update axes based on current zoom/pan
-            drawTimeline();    // Update timeline based on current filtered data
-            drawScatterplot(); // Update points based on current filtered data and zoom/pan
-
-            // 3. Update the summary text display
+            applyFiltersAndUpdateQuadtree();
+            drawAxes();
+            drawTimeline();
+            drawScatterplot();
             updateFilterSummary();
         }
-
-        // Updates the position and visibility of the SVG hover highlight circle
-         function updateSVGHoverHighlight() {
-             const point = appState.hoveredPoint;
-             const transform = appState.currentTransform;
-             // Show only if a point is hovered and it's not the sticky point
-             if (point && point.id !== appState.stickyPoint?.id) {
-                 // Apply current zoom transform to the point's base pixel coordinates
-                 const cx = transform.applyX(point.px);
-                 const cy = transform.applyY(point.py);
-                 ELEMENTS.hoverHighlight
-                     .attr("cx", cx)
-                     .attr("cy", cy)
-                     .style("display", "block"); // Make visible
-             } else {
-                 ELEMENTS.hoverHighlight.style("display", "none"); // Hide
-             }
+         function updateSVGHoverHighlight() { /* ... as before ... */
+             const point = appState.hoveredPoint; const transform = appState.currentTransform; if (point && isPointFiltered(point) && point.id !== appState.stickyPoint?.id) { const cx = transform.applyX(point.px); const cy = transform.applyY(point.py); ELEMENTS.hoverHighlight.attr("cx", cx).attr("cy", cy).style("display", "block"); } else { ELEMENTS.hoverHighlight.style("display", "none"); }
+         }
+         function updateSVGStickyHighlight() { /* ... as before ... */
+             const point = appState.stickyPoint; const transform = appState.currentTransform; if (point && isPointFiltered(point)) { const cx = transform.applyX(point.px); const cy = transform.applyY(point.py); ELEMENTS.stickyHighlight.attr("cx", cx).attr("cy", cy).style("display", "block"); } else { ELEMENTS.stickyHighlight.style("display", "none"); }
          }
 
-         // Updates the position and visibility of the SVG sticky highlight circle
-         function updateSVGStickyHighlight() {
-             const point = appState.stickyPoint;
-             const transform = appState.currentTransform;
-             if (point) { // Show if a point is sticky
-                 const cx = transform.applyX(point.px);
-                 const cy = transform.applyY(point.py);
-                 ELEMENTS.stickyHighlight
-                     .attr("cx", cx)
-                     .attr("cy", cy)
-                     .style("display", "block"); // Make visible
-             } else {
-                 ELEMENTS.stickyHighlight.style("display", "none"); // Hide
-             }
-         }
+        // --- Autocomplete Functions ---
+
+        // Updates and shows/hides the autocomplete suggestion list
+        function updateAutocompleteSuggestions() {
+            const { active, suggestions, selectedIndex } = appState.autocomplete;
+            const container = ELEMENTS.autocompleteSuggestions;
+
+            if (!active || suggestions.length === 0) {
+                container.style('display', 'none');
+                return;
+            }
+
+            container
+                .style('display', 'block')
+                .selectAll('.suggestion-item')
+                .data(suggestions, d => d) // Use suggestion text as key
+                .join('div')
+                .attr('class', (d, i) => `suggestion-item${i === selectedIndex ? ' active' : ''}`)
+                .text(d => d) // Display the suggestion text
+                .attr('title', d => d); // Add title for long suggestions
+        }
+
+        // Hides the autocomplete list
+        function hideAutocomplete() {
+            appState.autocomplete.active = false;
+            appState.autocomplete.selectedIndex = -1;
+            ELEMENTS.autocompleteSuggestions.style('display', 'none');
+        }
+
+        // Completes the query input with the selected suggestion
+        function applyAutocompleteSuggestion(suggestion) {
+            const input = ELEMENTS.queryInput.node();
+            const currentQuery = input.value;
+            const prefix = appState.autocomplete.prefix + ':'; // e.g., "tag:"
+
+            // Find the start of the prefix being autocompleted
+            const prefixIndex = currentQuery.toLowerCase().lastIndexOf(prefix.toLowerCase());
+            if (prefixIndex === -1) { // Should not happen if autocomplete is active
+                hideAutocomplete();
+                return;
+            }
+
+            // Construct the new query: text before prefix + prefix + suggestion + space
+            const textBefore = currentQuery.substring(0, prefixIndex);
+            // Add quotes if suggestion contains spaces
+            const formattedSuggestion = suggestion.includes(' ') ? `"${suggestion}"` : suggestion;
+            const newQuery = textBefore + prefix + formattedSuggestion + ' ';
+
+            // Update input value and trigger filter update
+            ELEMENTS.queryInput.property('value', newQuery);
+            input.focus(); // Keep focus on input
+            hideAutocomplete();
+            handleQueryInput({ target: input }); // Trigger update manually
+        }
+
 
         // --- Event Handlers ---
 
-        // Handles D3 zoom events on the scatterplot canvas
-        function handleZoom(event) {
-            // Ignore zoom events triggered programmatically (e.g., by transitions or .call)
-            if (!event.sourceEvent) return;
-
-            // Update the current transform state
-            appState.currentTransform = event.transform;
-
-            // Redraw components affected by zoom/pan
-            drawAxes();        // Axes need new scales
-            drawScatterplot(); // Points need new transform applied (scaling radius, culling)
-
-            // Hide tooltip during zoom/pan for cleaner interaction
-            hideTooltip();
-
-            // Update SVG highlight positions to match the new transform
-            updateSVGHoverHighlight();
-            updateSVGStickyHighlight();
+        function handleZoom(event) { /* ... as before ... */
+            if (!event.sourceEvent) return; appState.currentTransform = event.transform; drawAxes(); drawScatterplot(); hideTooltip(); updateSVGHoverHighlight(); updateSVGStickyHighlight();
+        }
+        function handleBrush(event) { /* ... as before ... */
+            if (appState.isBrushing || !event.sourceEvent) return; if (event.type === "start") { hideTooltip(); if (appState.stickyPoint) { appState.stickyPoint = null; updateSVGStickyHighlight(); } } const selection = event.selection; const newDateRange = selection ? selection.map(appState.scales.time.invert) : null; const oldStart = appState.currentFilters.dateRange?.[0]?.getTime(); const oldEnd = appState.currentFilters.dateRange?.[1]?.getTime(); const newStart = newDateRange?.[0]?.getTime(); const newEnd = newDateRange?.[1]?.getTime(); if (oldStart !== newStart || oldEnd !== newEnd) { appState.currentFilters.dateRange = newDateRange; updateVisualization(); }
         }
 
-        // Handles D3 brush events on the timeline
-        function handleBrush(event) {
-            // Ignore brush events triggered programmatically (e.g., by .move) or during internal flag
-            if (appState.isBrushing || !event.sourceEvent) return;
-
-            // On brush start, clear interactions
-            if (event.type === "start") {
-                hideTooltip();
-                if (appState.stickyPoint) { // Clear sticky point if user starts a new brush
-                    appState.stickyPoint = null;
-                    updateSVGStickyHighlight();
-                }
-            }
-
-            const selection = event.selection; // Pixel range [x0, x1] or null if cleared
-
-            if (!selection) { // Brush was cleared
-                // Update state only if a date range filter was previously active
-                if (appState.currentFilters.dateRange !== null) {
-                    appState.currentFilters.dateRange = null;
-                    updateVisualization(); // Update based on removed filter
-                }
-            } else { // Brush selected a range
-                // Convert pixel selection back to date range using the time scale
-                const newDateRange = selection.map(appState.scales.time.invert);
-
-                // Update state only if the date range actually changed
-                if (!appState.currentFilters.dateRange ||
-                    appState.currentFilters.dateRange[0].getTime() !== newDateRange[0].getTime() ||
-                    appState.currentFilters.dateRange[1].getTime() !== newDateRange[1].getTime())
-                {
-                    appState.currentFilters.dateRange = newDateRange;
-                    updateVisualization(); // Update based on new filter
-                }
-            }
-        }
-
-        // Handles input changes in the search box
-        function handleSearchInput(event) {
+        // Updated query input handler for autocomplete
+        function handleQueryInput(event) {
             const query = event.target.value;
-            // Update only if the query actually changed
-            if (appState.currentFilters.searchQuery !== query) {
-                appState.currentFilters.searchQuery = query;
-                updateVisualization(); // Trigger update with new search filter
+            appState.currentFilters.rawQuery = query;
+
+            // --- Autocomplete Logic ---
+            const cursorPos = event.target.selectionStart || query.length;
+            const textBeforeCursor = query.substring(0, cursorPos);
+            const tagMatch = textBeforeCursor.match(/\btag:([^\s()]*)$/i);
+            const authorMatch = textBeforeCursor.match(/\bauthor:([^\s()]*)$/i);
+
+            let showAutocomplete = false;
+            if (tagMatch) {
+                appState.autocomplete.prefix = 'tag';
+                appState.autocomplete.term = tagMatch[1].toLowerCase(); // Term being typed
+                const source = appState.sortedUniqueTags;
+                appState.autocomplete.suggestions = source
+                    .filter(t => t.toLowerCase().includes(appState.autocomplete.term))
+                    .slice(0, CONFIG.autocompleteLimit);
+                showAutocomplete = true;
+            } else if (authorMatch) {
+                appState.autocomplete.prefix = 'author';
+                appState.autocomplete.term = authorMatch[1].toLowerCase();
+                const source = appState.sortedUniqueAuthors;
+                appState.autocomplete.suggestions = source
+                    .filter(a => a.toLowerCase().includes(appState.autocomplete.term))
+                    .slice(0, CONFIG.autocompleteLimit);
+                showAutocomplete = true;
+            }
+
+            if (showAutocomplete && appState.autocomplete.suggestions.length > 0) {
+                appState.autocomplete.active = true;
+                appState.autocomplete.selectedIndex = -1; // Reset selection
+                updateAutocompleteSuggestions();
+            } else {
+                hideAutocomplete();
+            }
+
+            // --- Parsing and Filtering Logic (as before) ---
+            const { queryFunction, error } = parseQuery(query);
+            appState.currentFilters.queryFunction = queryFunction;
+            appState.currentFilters.queryError = error;
+            if (error) { ELEMENTS.queryErrorDisplay.text(`Syntax Error: ${error}`).style("display", "block"); }
+            else { ELEMENTS.queryErrorDisplay.style("display", "none"); }
+
+            updateVisualization();
+        }
+
+        // Handle keyboard navigation and selection in autocomplete
+        function handleQueryKeyDown(event) {
+            const { active, suggestions, selectedIndex } = appState.autocomplete;
+            if (!active || suggestions.length === 0) return; // Do nothing if autocomplete isn't active
+
+            switch (event.key) {
+                case 'ArrowDown':
+                    event.preventDefault(); // Prevent cursor move
+                    appState.autocomplete.selectedIndex = (selectedIndex + 1) % suggestions.length;
+                    updateAutocompleteSuggestions();
+                    break;
+                case 'ArrowUp':
+                    event.preventDefault(); // Prevent cursor move
+                    appState.autocomplete.selectedIndex = (selectedIndex - 1 + suggestions.length) % suggestions.length;
+                    updateAutocompleteSuggestions();
+                    break;
+                case 'Enter':
+                case 'Tab': // Also accept Tab for selection
+                    if (selectedIndex !== -1) {
+                        event.preventDefault(); // Prevent form submission or focus change
+                        applyAutocompleteSuggestion(suggestions[selectedIndex]);
+                    } else {
+                        hideAutocomplete(); // Hide if nothing selected
+                    }
+                    break;
+                case 'Escape':
+                    event.preventDefault();
+                    hideAutocomplete();
+                    break;
             }
         }
 
-        // Handles changes in the Select2 tag dropdown
-        function handleTagChange() {
-            const selectedTagsArray = $(ELEMENTS.tagSelect.node()).val() || []; // Get array of selected tag values
-            const newSelectedTags = new Set(selectedTagsArray); // Convert to Set
+        // Hide autocomplete when input loses focus
+        function handleQueryBlur(event) {
+            // Delay hiding slightly to allow clicks on suggestions to register
+            setTimeout(hideAutocomplete, 150);
+        }
 
-            // Update only if the set of selected tags actually changed
-            if (appState.currentFilters.selectedTags.size !== newSelectedTags.size ||
-                !selectedTagsArray.every(tag => appState.currentFilters.selectedTags.has(tag)))
-            {
-                appState.currentFilters.selectedTags = newSelectedTags;
-                updateVisualization(); // Trigger update with new tag filter
+        // Handle clicks on suggestion items (using event delegation)
+        function handleSuggestionClick(event) {
+            if (event.target && event.target.classList.contains('suggestion-item')) {
+                const suggestionText = event.target.textContent;
+                applyAutocompleteSuggestion(suggestionText);
             }
         }
 
-        // Handles changes in the timeline binning dropdown
-        function handleBinningChange(event) {
-            // Only need to redraw the timeline, as binning doesn't affect filtering or scatterplot directly
-            console.log("Binning selection changed, redrawing timeline.");
+
+        function handleBinningChange(event) { drawTimeline(); }
+        function resetQuery() { ELEMENTS.queryInput.property("value", ""); if (appState.currentFilters.rawQuery !== '' || appState.currentFilters.queryError) { appState.currentFilters.rawQuery = ''; appState.currentFilters.queryFunction = () => true; appState.currentFilters.queryError = null; ELEMENTS.queryErrorDisplay.style("display", "none"); hideAutocomplete(); updateVisualization(); } }
+        function resetTimelineBrush() { if (appState.currentFilters.dateRange !== null) { appState.isBrushing = true; ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush.move, null); appState.isBrushing = false; } }
+        function setInitialTimelineBrush() { const fullRangePixels = appState.scales.time.range(); appState.isBrushing = true; ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush.move, fullRangePixels); appState.isBrushing = false; appState.currentFilters.dateRange = null; updateFilterSummary(); }
+        function handleResetView() { hideTooltip(); appState.hoveredPoint = null; appState.stickyPoint = null; updateSVGHoverHighlight(); updateSVGStickyHighlight(); ELEMENTS.scatterplotCanvas.transition().duration(750).call(appState.behaviors.zoom.transform, d3.zoomIdentity); }
+
+        // --- Color Picker Handlers ---
+        function handleActiveColorChange(event) {
+            appState.colors.active = event.target.value;
+            // Update CSS variable for timeline hover if needed, or rely on JS redraw
+            // Redraw relevant parts
+            drawScatterplot();
             drawTimeline();
         }
-
-        // Resets the search filter
-        function resetSearch() {
-            ELEMENTS.searchInput.property("value", ""); // Clear the input field
-            // Update only if a search query was active
-            if (appState.currentFilters.searchQuery !== '') {
-                appState.currentFilters.searchQuery = '';
-                updateVisualization();
-            }
+        function handleInactiveColorChange(event) {
+            appState.colors.inactive = event.target.value;
+            drawScatterplot(); // Only scatterplot uses inactive color
         }
 
-        // Resets the tag filter
-        function resetTags() {
-            // Update only if tags were selected
-            if (appState.currentFilters.selectedTags.size > 0) {
-                // Use Select2's method to clear the selection and trigger its change event
-                $(ELEMENTS.tagSelect.node()).val(null).trigger('change');
-                // Note: updateVisualization() is called implicitly by handleTagChange
-            }
+        // --- Canvas Interaction Handlers (Largely unchanged, rely on isPointFiltered) ---
+        function handleCanvasMouseMove(event) { /* ... as before ... */
+            const [mouseX, mouseY] = d3.pointer(event); const transform = appState.currentTransform; const invertedX = transform.invertX(mouseX); const invertedY = transform.invertY(mouseY); const searchRadius = (CONFIG.highlightRadius + 2) / transform.k; const closest = appState.quadtree?.find(invertedX, invertedY, searchRadius); if (appState.hoveredPoint?.id !== closest?.id) { appState.hoveredPoint = closest; updateSVGHoverHighlight(); } if (!appState.stickyPoint) { if (closest) { showTooltip(event, closest); } else { hideTooltip(); } }
         }
-
-        // Resets the timeline brush (clears date range filter)
-        function resetTimelineBrush() {
-            // Update only if a date range filter is active
-            if (appState.currentFilters.dateRange !== null) {
-                appState.isBrushing = true; // Set flag to prevent feedback loop from .move
-                // Programmatically move the brush to null (clears selection)
-                ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush.move, null);
-                appState.isBrushing = false; // Clear flag
-                // Note: The 'end' event from .move(null) should trigger handleBrush, which calls updateVisualization
-            }
+        function handleCanvasClick(event) { /* ... as before ... */
+            const [mouseX, mouseY] = d3.pointer(event); const transform = appState.currentTransform; const invertedX = transform.invertX(mouseX); const invertedY = transform.invertY(mouseY); const clickRadius = (CONFIG.highlightRadius + 3) / transform.k; const clickedPoint = appState.quadtree?.find(invertedX, invertedY, clickRadius); if (clickedPoint) { if (appState.stickyPoint?.id === clickedPoint.id) { appState.stickyPoint = null; hideTooltip(); } else { appState.stickyPoint = clickedPoint; showTooltip(event, clickedPoint); if (clickedPoint.url) { try { window.open(clickedPoint.url, '_blank'); } catch (e) { console.warn("URL open failed:", e); } } } appState.hoveredPoint = null; updateSVGHoverHighlight(); updateSVGStickyHighlight(); } else { if (appState.stickyPoint) { appState.stickyPoint = null; hideTooltip(); updateSVGStickyHighlight(); } }
         }
-
-        // Sets the initial state of the timeline brush (visual only, no filter)
-        function setInitialTimelineBrush() {
-            const fullRangePixels = appState.scales.time.range(); // Get full pixel range of time scale
-            appState.isBrushing = true; // Prevent event feedback loop
-            // Move brush visually to cover the full range
-            ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush.move, fullRangePixels);
-            appState.isBrushing = false; // Clear flag
-            // Ensure the actual filter state remains null
-            appState.currentFilters.dateRange = null;
-            updateFilterSummary(); // Update text to reflect no date filter
-        }
-
-        // Handles mouse movement over the scatterplot canvas for hover effects
-        function handleCanvasMouseMove(event) {
-            const [mouseX, mouseY] = d3.pointer(event); // Get mouse coords relative to canvas
-            const transform = appState.currentTransform;
-
-            // Convert mouse coords to *untransformed* data space for quadtree search
-            const invertedX = transform.invertX(mouseX);
-            const invertedY = transform.invertY(mouseY);
-
-            // Find nearest point in quadtree within a search radius
-            // Scale search radius inversely with zoom to maintain constant screen size
-            const searchRadius = (CONFIG.highlightRadius + 2) / transform.k; // Add buffer
-            const closest = appState.quadtree?.find(invertedX, invertedY, searchRadius); // Use optional chaining
-
-            // Update hover state only if the closest point changed
-            if (appState.hoveredPoint?.id !== closest?.id) {
-                appState.hoveredPoint = closest;
-                updateSVGHoverHighlight(); // Update SVG circle
-            }
-
-            // Show/hide tooltip only if no point is currently sticky
-            if (!appState.stickyPoint) {
-                if (closest) {
-                    showTooltip(event, closest); // Show tooltip for the closest point
-                } else {
-                    hideTooltip(); // Hide if mouse isn't near any point
-                }
-            }
-        }
-
-        // Handles clicks on the scatterplot canvas
-        function handleCanvasClick(event) {
-            const [mouseX, mouseY] = d3.pointer(event);
-            const transform = appState.currentTransform;
-            const invertedX = transform.invertX(mouseX);
-            const invertedY = transform.invertY(mouseY);
-            const clickRadius = (CONFIG.highlightRadius + 3) / transform.k; // Slightly larger click radius?
-
-            // Find the point clicked on
-            const clickedPoint = appState.quadtree?.find(invertedX, invertedY, clickRadius);
-
-            if (clickedPoint) { // Clicked on a point
-                if (appState.stickyPoint?.id === clickedPoint.id) {
-                    // Clicked the *same* sticky point again: unstick it
-                    appState.stickyPoint = null;
-                    hideTooltip(); // Hide tooltip
-                } else {
-                    // Clicked a *new* or non-sticky point: make it sticky
-                    appState.stickyPoint = clickedPoint;
-                    showTooltip(event, clickedPoint); // Show and pin tooltip
-                    // Open URL associated with the point in a new tab
-                    if (clickedPoint.url) {
-                        try { window.open(clickedPoint.url, '_blank'); } catch (e) { console.warn("URL open failed:", clickedPoint.url, e); }
-                    }
-                }
-                // Clear hover state when clicking
-                appState.hoveredPoint = null;
-                updateSVGHoverHighlight(); // Hide hover circle
-                updateSVGStickyHighlight(); // Update sticky circle state
-
-            } else { // Clicked outside any point
-                // Clear sticky point if one exists
-                if (appState.stickyPoint) {
-                    appState.stickyPoint = null;
-                    hideTooltip();
-                    updateSVGStickyHighlight(); // Hide sticky circle
-                }
-            }
-        }
-
-        // Handles double-clicks on the scatterplot canvas for zoom-to-point
-        function handleCanvasDoubleClick(event) {
-             const [mouseX, mouseY] = d3.pointer(event);
-             const transform = appState.currentTransform;
-             const invertedX = transform.invertX(mouseX);
-             const invertedY = transform.invertY(mouseY);
-             const clickRadius = (CONFIG.highlightRadius + 3) / transform.k;
-
-             // Find the point double-clicked on
-             const targetPoint = appState.quadtree?.find(invertedX, invertedY, clickRadius);
-
-             if (targetPoint) { // Found a point
-                 const { width, height } = appState.dimensions.scatterplot;
-                 // Determine target zoom scale (e.g., zoom in by factor of 2, respecting limits)
-                 const targetScale = Math.min(CONFIG.zoomMax, Math.max(CONFIG.zoomMin, transform.k * 2));
-
-                 // Calculate the translation needed to center the target point
-                 // Use the pre-calculated untransformed pixel coordinates (px, py)
-                 const newTransform = d3.zoomIdentity
-                     .translate(width / 2, height / 2) // Move viewport origin to center
-                     .scale(targetScale)              // Apply desired zoom scale
-                     .translate(-targetPoint.px, -targetPoint.py); // Translate the target point to the origin
-
-                 // Apply the new transform smoothly using a D3 transition
-                 ELEMENTS.scatterplotCanvas.transition()
-                     .duration(750) // Animation duration
-                     .call(appState.behaviors.zoom.transform, newTransform);
-
-                 // Clear interactions during the transition
-                 hideTooltip();
-                 appState.hoveredPoint = null;
-                 appState.stickyPoint = null;
-                 updateSVGHoverHighlight();
-                 updateSVGStickyHighlight();
-             }
+        function handleCanvasDoubleClick(event) { /* ... as before ... */
+             const [mouseX, mouseY] = d3.pointer(event); const transform = appState.currentTransform; const invertedX = transform.invertX(mouseX); const invertedY = transform.invertY(mouseY); const clickRadius = (CONFIG.highlightRadius + 3) / transform.k; const targetPoint = appState.quadtree?.find(invertedX, invertedY, clickRadius); if (targetPoint) { const { width, height } = appState.dimensions.scatterplot; const targetScale = Math.min(CONFIG.zoomMax, Math.max(CONFIG.zoomMin, transform.k * 2)); const newTransform = d3.zoomIdentity.translate(width / 2, height / 2).scale(targetScale).translate(-targetPoint.px, -targetPoint.py); ELEMENTS.scatterplotCanvas.transition().duration(750).call(appState.behaviors.zoom.transform, newTransform); hideTooltip(); appState.hoveredPoint = null; appState.stickyPoint = null; updateSVGHoverHighlight(); updateSVGStickyHighlight(); }
          }
-
-        // Handles mouse leaving the scatterplot canvas area
-         function handleCanvasMouseOut(event) {
-             // Clear hover state
-             if (appState.hoveredPoint) {
-                 appState.hoveredPoint = null;
-                 updateSVGHoverHighlight();
-             }
-             // Hide tooltip only if it's not sticky
-             if (!appState.stickyPoint) {
-                 hideTooltip();
-             }
+         function handleCanvasMouseOut(event) { /* ... as before ... */
+             if (appState.hoveredPoint) { appState.hoveredPoint = null; updateSVGHoverHighlight(); } if (!appState.stickyPoint) { hideTooltip(); }
          }
-
-        // Handles mouse hovering over a timeline histogram bar
-         function handleTimelineBarMouseOver(event, d) { // d is the bin data {x0, x1, ...}
-             // Store the date range of the hovered bin
-             appState.timelineHoveredBin = { x0: d.x0, x1: d.x1 };
-             // Redraw scatterplot to highlight points within this bin's date range
-             drawScatterplot();
-             // Visually highlight the bar itself
-             d3.select(event.currentTarget).style("fill", CONFIG.timelineBarHoverColor);
+         function handleTimelineBarMouseOver(event, d) { /* ... as before ... */
+             appState.timelineHoveredBin = { x0: d.x0, x1: d.x1 }; drawScatterplot(); d3.select(event.currentTarget).style("fill", CONFIG.timelineBarHoverColor); // Use distinct hover color
          }
-
-        // Handles mouse leaving a timeline histogram bar
-         function handleTimelineBarMouseOut(event, d) {
-             // Clear the hovered bin state
-             appState.timelineHoveredBin = null;
-             // Redraw scatterplot to remove the timeline hover highlight
-             drawScatterplot();
-             // Restore the bar's original color
-             d3.select(event.currentTarget).style("fill", CONFIG.timelineBarColor);
+         function handleTimelineBarMouseOut(event, d) { /* ... as before ... */
+             appState.timelineHoveredBin = null; drawScatterplot(); d3.select(event.currentTarget).style("fill", appState.colors.active); // Revert to dynamic active color
          }
-
-        // Handles window resize events (debounced)
-        function handleResize() {
-            console.log("Resize detected...");
-            showLoading("Adjusting layout...");
-
-            // 1. Recalculate Dimensions
-            setupDimensions();
-
-            // 2. Update Scale Ranges to match new dimensions
-            appState.scales.x.range([0, appState.dimensions.scatterplot.width]);
-            appState.scales.y.range([appState.dimensions.scatterplot.height, 0]);
-            appState.scales.time.range([0, appState.dimensions.timeline.width]);
-            appState.scales.count.range([appState.dimensions.timeline.height, 0]);
-
-            // 3. Recalculate untransformed pixel coordinates (px, py) for all points
-            //    Crucial for quadtree and potentially drawing performance
-            appState.fullData.forEach(d => {
-                d.px = appState.scales.x(d.x);
-                d.py = appState.scales.y(d.y);
-                if (isNaN(d.px) || isNaN(d.py)) { console.warn(`NaN px/py after resize for ID ${d.id}`); }
-            });
-
-            // 4. Update Axis Generators (specifically grid tick sizes)
-            appState.axes.xGrid.tickSize(-appState.dimensions.scatterplot.height);
-            appState.axes.yGrid.tickSize(-appState.dimensions.scatterplot.width);
-
-            // 5. Update SVG/Canvas Element Attributes (size, transforms)
-            setupSVGStructure();
-            setupCanvas();
-
-            // 6. Update D3 Behavior Constraints (zoom extent, brush extent)
-            appState.behaviors.zoom.translateExtent([[0, 0], [appState.dimensions.scatterplot.width, appState.dimensions.scatterplot.height]]).extent([[0, 0], [appState.dimensions.scatterplot.width, appState.dimensions.scatterplot.height]]);
-            appState.behaviors.brush.extent([[0, 0], [appState.dimensions.timeline.width, appState.dimensions.timeline.height]]);
-            // Re-apply brush behavior AFTER setting new extent
-            ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush);
-
-            // 7. Re-apply current brush selection visually
-            const currentSelectionPixels = appState.currentFilters.dateRange
-                ? appState.currentFilters.dateRange.map(appState.scales.time) // Convert date range back to pixels using NEW scale range
-                : appState.scales.time.range(); // If no filter, visually brush full new range
-            // Use timeout to ensure DOM is updated before moving brush programmatically
-            setTimeout(() => {
-                appState.isBrushing = true; // Prevent feedback loop
-                ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush.move, currentSelectionPixels);
-                appState.isBrushing = false;
-            }, 0);
-
-            // 8. Re-apply current zoom transform IMMEDIATELY (no transition)
-            ELEMENTS.scatterplotCanvas.call(appState.behaviors.zoom.transform, appState.currentTransform);
-
-            // 9. Perform a full redraw of all components
-            //    This re-applies filters (needed for quadtree update) and redraws everything
-            updateVisualization();
-
-            console.log("Resize update complete.");
-            showLoading(false); // Hide loading indicator
+        function handleResize() { /* ... as before ... */
+            showLoading("Adjusting layout..."); setupDimensions(); appState.scales.x.range([0, appState.dimensions.scatterplot.width]); appState.scales.y.range([appState.dimensions.scatterplot.height, 0]); appState.scales.time.range([0, appState.dimensions.timeline.width]); appState.scales.count.range([appState.dimensions.timeline.height, 0]); appState.fullData.forEach(d => { d.px = appState.scales.x(d.x); d.py = appState.scales.y(d.y); }); appState.axes.xGrid.tickSize(-appState.dimensions.scatterplot.height); appState.axes.yGrid.tickSize(-appState.dimensions.scatterplot.width); setupSVGStructure(); setupCanvas(); appState.behaviors.zoom.translateExtent([[0, 0], [appState.dimensions.scatterplot.width, appState.dimensions.scatterplot.height]]).extent([[0, 0], [appState.dimensions.scatterplot.width, appState.dimensions.scatterplot.height]]); appState.behaviors.brush.extent([[0, 0], [appState.dimensions.timeline.width, appState.dimensions.timeline.height]]); ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush); const currentSelectionPixels = appState.currentFilters.dateRange ? appState.currentFilters.dateRange.map(appState.scales.time) : appState.scales.time.range(); setTimeout(() => { appState.isBrushing = true; ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush.move, currentSelectionPixels); appState.isBrushing = false; }, 0); ELEMENTS.scatterplotCanvas.call(appState.behaviors.zoom.transform, appState.currentTransform); updateVisualization(); showLoading(false);
         }
 
-        // --- Tooltip Functions ---
-        // Shows the tooltip with appropriate content near the event position
-        function showTooltip(event, data) {
-            // Use pageX/pageY from the mouse event for positioning relative to viewport
-             const pageX = event.pageX;
-             const pageY = event.pageY;
+        // --- Tooltip Functions (Unchanged) ---
+        function showTooltip(event, data) { const pageX = event.pageX; const pageY = event.pageY; ELEMENTS.tooltip.style("display", "inline-block").style("right", `${0 + CONFIG.tooltipOffsetX + 15}px`).style("top", `${0 + CONFIG.tooltipOffsetY + 15}px`).html(`<strong>${data.title || 'N/A'}</strong><br>Author: ${data.author || 'N/A'}<br>Date: ${data.date.toLocaleDateString()}<br>Tags: ${data.tags?.length > 0 ? data.tags.join(', ') : 'None'}`); }
+        function hideTooltip() { ELEMENTS.tooltip.style("display", "none"); }
 
-            ELEMENTS.tooltip
-                .style("display", "inline-block")
-                // Position slightly offset from the cursor
-                .style("right", `${10 + CONFIG.tooltipOffsetX}px`)
-                .style("top", `${10 + CONFIG.tooltipOffsetY}px`)
-                // Populate tooltip content
-                .html(`
-                    <strong>${data.title || 'N/A'}</strong><br>
-                    Author: ${data.author || 'N/A'}<br>
-                    Date: ${data.date.toLocaleDateString()}<br>
-                    Tags: ${data.tags?.length > 0 ? data.tags.join(', ') : 'None'}
-                `); // Use optional chaining and check length for tags
-        }
+        // --- UI Feedback Functions (Unchanged) ---
+        function showLoading(message) { if (message) { ELEMENTS.loadingIndicator.text(message).style("display", "block"); } else { ELEMENTS.loadingIndicator.style("display", "none"); } }
+        function displayError(message) { ELEMENTS.errorDisplay.text(`Error: ${message}`).style("display", "block"); }
+        function updateFilterSummary() { const count = appState.filteredData.length; let base = `Showing ${count} of ${appState.fullData.length} articles`; const filtersActive = []; const f = appState.currentFilters; if (f.rawQuery.trim()) { filtersActive.push(`matching query "${f.rawQuery}"`); } if (f.dateRange) { const fmt = d3.timeFormat("%b %d, %Y"); const start = fmt(f.dateRange[0]); const end = fmt(f.dateRange[1]); if (d3.timeDay.count(f.dateRange[0], f.dateRange[1]) < 1) { filtersActive.push(`from ${start}`); } else { filtersActive.push(`from ${start} to ${end}`); } } if (filtersActive.length > 0) { base += ", filtered by: " + filtersActive.join(" and ") + "."; } else { base += " (no filters applied)."; } if (f.queryError) { base += ` (Query error: ${f.queryError})`; } ELEMENTS.filterSummary.text(base); }
 
-        // Hides the tooltip
-        function hideTooltip() {
-            ELEMENTS.tooltip.style("display", "none");
-        }
-
-        // --- UI Feedback Functions ---
-        // Shows/hides the loading indicator overlay
-        function showLoading(message) {
-            if (message) {
-                ELEMENTS.loadingIndicator.text(message).style("display", "block");
-            } else {
-                ELEMENTS.loadingIndicator.style("display", "none");
-            }
-        }
-        // Displays an error message in the dedicated error area
-        function displayError(message) {
-             ELEMENTS.errorDisplay
-                 .text(`Error: ${message}`) // Add "Error: " prefix for clarity
-                 .style("display", "block"); // Make the error area visible
-        }
-        // Updates the text describing the current filter state and data count
-        function updateFilterSummary() {
-             // Start with the count of currently visible items
-             // let base = `Showing ${appState.filteredData.length} articles`;
-             const filtersActive = []; // Array to hold descriptions of active filters
-             const f = appState.currentFilters; // Shorthand
-             const anyFilter = Boolean(f.searchQuery.trim() || f.selectedTags.size > 0 || f.dateRange);
-             const count = anyFilter ? appState.filteredData.length : appState.fullData.length;
-
-             let base = `Showing ${count} articles`;
-
-             // Add descriptions for each active filter
-             if (f.searchQuery) {
-                 filtersActive.push(`matching search "${f.searchQuery}"`);
-             }
-             if (f.selectedTags.size > 0) {
-                 // Join selected tags for display
-                 filtersActive.push(`tagged "${Array.from(f.selectedTags).join(', ')}"`);
-             }
-             if (f.dateRange) {
-                 const fmt = d3.timeFormat("%b %d, %Y"); // Format dates nicely
-                 const start = fmt(f.dateRange[0]);
-                 const end = fmt(f.dateRange[1]);
-                 // Check if the range covers less than a full day for "on date" vs "from date to date"
-                 if (d3.timeDay.count(f.dateRange[0], f.dateRange[1]) < 1) {
-                      filtersActive.push(`from ${start}`); // Use "from" even for single day for consistency with brush
-                 } else {
-                     filtersActive.push(`from ${start} to ${end}`);
-                 }
-             }
-
-             // Append filter descriptions if any are active
-             if (filtersActive.length > 0) {
-                 base += " filtered by: " + filtersActive.join(" and ") + ".";
-             } else {
-                 // Explicitly state if no filters are applied
-                 base += " (all).";
-             }
-
-             // Set the text content of the summary element
-             ELEMENTS.filterSummary.text(base);
-         }
-
-
-        // --- Utility Function ---
-        // Debounces a function call to limit its execution rate
-        function debounce(func, wait) {
-            let timeout;
-            return function executedFunction(...args) {
-                const later = () => {
-                    clearTimeout(timeout);
-                    func.apply(this, args); // Call the original function
-                };
-                clearTimeout(timeout); // Reset timer on each call
-                timeout = setTimeout(later, wait); // Set new timer
-            };
-        }
+        // --- Utility Function (Unchanged) ---
+        function debounce(func, wait) { let timeout; return function executedFunction(...args) { const later = () => { clearTimeout(timeout); func.apply(this, args); }; clearTimeout(timeout); timeout = setTimeout(later, wait); }; }
 
         // --- Start the application ---
-        initialize(); // Call the main initialization function when the script loads
+        initialize();
 
     </script>
 </body>
