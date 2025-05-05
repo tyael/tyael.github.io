@@ -234,12 +234,12 @@
         <div id="controls">
             <h2>ASPI <em>Strategist</em> Embedding Explorer</h2>
             <p>All <em>Strategist</em> posts up to May 4 2025 are represented as points in an embedding space, in which posts with semantically-similar content appear closer. Try searching for a tag to see how topics form clusters.</p>
-            <p>Use <code>tag:</code>, <code>intitle:</code> or <code>author:</code> to specify what you're looking for. Combine search terms with <code>AND</code>, <code>OR</code>, <code>NOT</code>, and parentheses <code>()</code> for grouping.</p>
+            <p>Use <code>tag:</code>, <code>intitle:</code> or <code>author:</code> to specify what you're looking for. Combine search terms with <code>AND</code>, <code>OR</code>, <code>NOT</code>, and parentheses <code>()</code> for grouping. If you're searching for a term with spaces in it, put the whole thing in quotes like this: <code>"nuclear weapons"</code></p>
              <div id="error-display"></div>
 
             <div class="control-group">
                 <label for="query-input">Search Query:</label>
-                <input type="text" id="query-input" placeholder="e.g., tag:cyber AND author:smith" autocomplete="off"> <div id="autocomplete-suggestions"></div>
+                <input type="text" id="query-input" placeholder="e.g., tag:China AND author:'Alex Bristow'" autocomplete="off"> <div id="autocomplete-suggestions"></div>
                 <div id="query-error-display"></div>
                 <button id="reset-query-btn">Reset Query</button>
             </div>
@@ -257,11 +257,11 @@
              <div class="control-group">
                  <label>Color Settings:</label>
                  <div class="color-picker-container">
-                     <label for="active-color-picker">Active Points:</label>
+                     <label for="active-color-picker">Highlighted Points:</label>
                      <input type="color" id="active-color-picker">
                  </div>
                  <div class="color-picker-container">
-                     <label for="inactive-color-picker">Inactive Points:</label>
+                     <label for="inactive-color-picker">Un-highlighted Points:</label>
                      <input type="color" id="inactive-color-picker">
                  </div>
              </div>
@@ -470,11 +470,11 @@
 
 
         // --- Query Parsing and Evaluation (Largely unchanged) ---
-        const TOKEN_TYPES = { /* ... as before ... */
+        const TOKEN_TYPES = { 
             TERM: 'TERM', PREFIX_TAG: 'PREFIX_TAG', PREFIX_AUTHOR: 'PREFIX_AUTHOR', PREFIX_INTITLE: 'PREFIX_INTITLE',
             AND: 'AND', OR: 'OR', NOT: 'NOT', LPAREN: 'LPAREN', RPAREN: 'RPAREN', EOF: 'EOF'
         };
-        function tokenizeQuery(query) { /* ... as before ... */
+        function tokenizeQuery(query) { 
             const tokens = []; let pos = 0; query = query.trim();
             const patterns = [ { type: TOKEN_TYPES.LPAREN, regex: /^\(/ }, { type: TOKEN_TYPES.RPAREN, regex: /^\)/ }, { type: TOKEN_TYPES.AND, regex: /^\bAND\b/i }, { type: TOKEN_TYPES.OR, regex: /^\bOR\b/i }, { type: TOKEN_TYPES.NOT, regex: /^\bNOT\b/i }, { type: TOKEN_TYPES.PREFIX_TAG, regex: /^\bTAG:/i }, { type: TOKEN_TYPES.PREFIX_AUTHOR, regex: /^\bAUTHOR:/i }, { type: TOKEN_TYPES.PREFIX_INTITLE, regex: /^\bINTITLE:/i }, { type: TOKEN_TYPES.TERM, regex: /^"([^"]*)"/ }, { type: TOKEN_TYPES.TERM, regex: /^([^\s()]+)/ } ];
             while (pos < query.length) {
@@ -503,23 +503,23 @@
         function updateQuadtree() { if (appState.fullData.length > 0 && appState.fullData[0].px === 0 && appState.fullData[0].py === 0 && appState.scales.x) { appState.fullData.forEach(d => { d.px = appState.scales.x(d.x); d.py = appState.scales.y(d.y); }); } appState.quadtree = d3.quadtree().x(d => d.px).y(d => d.py).addAll(appState.filteredData); }
 
         // --- UI Setup ---
-        function setupDimensions() { /* ... as before ... */
+        function setupDimensions() { 
             const scRect = ELEMENTS.scatterplotContainer.node().getBoundingClientRect(); const tlRect = ELEMENTS.timelineContainer.node().getBoundingClientRect();
             appState.dimensions.scatterplot.width = Math.max(10, scRect.width - CONFIG.scatterplotMargin.left - CONFIG.scatterplotMargin.right); appState.dimensions.scatterplot.height = Math.max(10, scRect.height - CONFIG.scatterplotMargin.top - CONFIG.scatterplotMargin.bottom);
             appState.dimensions.timeline.width = Math.max(10, tlRect.width - CONFIG.timelineMargin.left - CONFIG.timelineMargin.right); appState.dimensions.timeline.height = Math.max(10, tlRect.height - CONFIG.timelineMargin.top - CONFIG.timelineMargin.bottom);
         }
-        function setupScales() { /* ... as before ... */
+        function setupScales() { 
             const scDims = appState.dimensions.scatterplot; const tlDims = appState.dimensions.timeline; const xExt = d3.extent(appState.fullData, d => d.x); const yExt = d3.extent(appState.fullData, d => d.y); const dateExt = d3.extent(appState.fullData, d => d.date); if (xExt[0] === undefined || yExt[0] === undefined || !dateExt[0]) { throw new Error("Invalid data extents."); }
             appState.scales.x = d3.scaleLinear().domain(xExt).nice().range([0, scDims.width]); appState.scales.y = d3.scaleLinear().domain(yExt).nice().range([scDims.height, 0]); appState.scales.time = d3.scaleTime().domain(dateExt).nice().range([0, tlDims.width]); appState.scales.count = d3.scaleLinear().range([tlDims.height, 0]);
             if (!appState.scales.x || !appState.scales.y) { throw new Error("Scatterplot scales failed init."); } appState.fullData.forEach(d => { d.px = appState.scales.x(d.x); d.py = appState.scales.y(d.y); });
         }
-        function setupAxes() { /* ... as before ... */
+        function setupAxes() { 
             if (!appState.scales.x || !appState.scales.y || !appState.scales.time) { throw new Error("Scales not initialized for axes."); } appState.axes.x = d3.axisBottom(appState.scales.x).ticks(10).tickSizeOuter(0); appState.axes.y = d3.axisLeft(appState.scales.y).ticks(10).tickSizeOuter(0); appState.axes.time = d3.axisBottom(appState.scales.time).ticks(5).tickSizeOuter(0); appState.axes.xGrid = d3.axisBottom(appState.scales.x).tickSize(-appState.dimensions.scatterplot.height).tickFormat(""); appState.axes.yGrid = d3.axisLeft(appState.scales.y).tickSize(-appState.dimensions.scatterplot.width).tickFormat("");
         }
-        function setupSVGStructure() { /* ... as before ... */
+        function setupSVGStructure() { 
             const scM = CONFIG.scatterplotMargin; const tlM = CONFIG.timelineMargin; const scD = appState.dimensions.scatterplot; const tlD = appState.dimensions.timeline; ELEMENTS.scatterplotSvg.attr("width", scD.width + scM.left + scM.right).attr("height", scD.height + scM.top + scM.bottom); ELEMENTS.timelineSvg.attr("width", tlD.width + tlM.left + tlM.right).attr("height", tlD.height + tlM.top + tlM.bottom); ELEMENTS.scatterplotContent.attr("transform", `translate(${scM.left},${scM.top})`); ELEMENTS.timelineContent.attr("transform", `translate(${tlM.left},${tlM.top})`); ELEMENTS.xAxisGroup.attr("transform", `translate(0,${scD.height})`); ELEMENTS.xGridGroup.attr("transform", `translate(0,${scD.height})`); ELEMENTS.timeAxisGroup.attr("transform", `translate(0,${tlD.height})`);
         }
-        function setupCanvas() { /* ... as before ... */
+        function setupCanvas() { 
             const scD = appState.dimensions.scatterplot; const scM = CONFIG.scatterplotMargin; ELEMENTS.scatterplotCanvas.attr("width", scD.width).attr("height", scD.height).style("transform", `translate(${scM.left}px, ${scM.top}px)`); appState.canvasContext = ELEMENTS.scatterplotCanvas.node().getContext("2d"); if (!appState.canvasContext) { throw new Error("Failed to get 2D canvas context."); }
         }
 
@@ -658,7 +658,7 @@
              if (appState.axes.time) { ELEMENTS.timeAxisGroup.call(appState.axes.time); }
         }
 
-         function drawAxes() { /* ... as before ... */
+         function drawAxes() { 
             const { x: scaleX, y: scaleY } = appState.scales; const transform = appState.currentTransform; if (!appState.axes.x || !appState.axes.y || !appState.axes.time || !scaleX || !scaleY) return; const currentXScale = transform.rescaleX(scaleX); const currentYScale = transform.rescaleY(scaleY); ELEMENTS.xAxisGroup.call(appState.axes.x.scale(currentXScale)); ELEMENTS.yAxisGroup.call(appState.axes.y.scale(currentYScale)); ELEMENTS.xGridGroup.call(appState.axes.xGrid.scale(currentXScale)); ELEMENTS.yGridGroup.call(appState.axes.yGrid.scale(currentYScale)); ELEMENTS.timeAxisGroup.call(appState.axes.time);
         }
 
@@ -670,10 +670,10 @@
             drawScatterplot();
             updateFilterSummary();
         }
-         function updateSVGHoverHighlight() { /* ... as before ... */
+         function updateSVGHoverHighlight() { 
              const point = appState.hoveredPoint; const transform = appState.currentTransform; if (point && isPointFiltered(point) && point.id !== appState.stickyPoint?.id) { const cx = transform.applyX(point.px); const cy = transform.applyY(point.py); ELEMENTS.hoverHighlight.attr("cx", cx).attr("cy", cy).style("display", "block"); } else { ELEMENTS.hoverHighlight.style("display", "none"); }
          }
-         function updateSVGStickyHighlight() { /* ... as before ... */
+         function updateSVGStickyHighlight() { 
              const point = appState.stickyPoint; const transform = appState.currentTransform; if (point && isPointFiltered(point)) { const cx = transform.applyX(point.px); const cy = transform.applyY(point.py); ELEMENTS.stickyHighlight.attr("cx", cx).attr("cy", cy).style("display", "block"); } else { ELEMENTS.stickyHighlight.style("display", "none"); }
          }
 
@@ -735,10 +735,10 @@
 
         // --- Event Handlers ---
 
-        function handleZoom(event) { /* ... as before ... */
+        function handleZoom(event) { 
             if (!event.sourceEvent) return; appState.currentTransform = event.transform; drawAxes(); drawScatterplot(); hideTooltip(); updateSVGHoverHighlight(); updateSVGStickyHighlight();
         }
-        function handleBrush(event) { /* ... as before ... */
+        function handleBrush(event) { 
             if (appState.isBrushing || !event.sourceEvent) return; if (event.type === "start") { hideTooltip(); if (appState.stickyPoint) { appState.stickyPoint = null; updateSVGStickyHighlight(); } } const selection = event.selection; const newDateRange = selection ? selection.map(appState.scales.time.invert) : null; const oldStart = appState.currentFilters.dateRange?.[0]?.getTime(); const oldEnd = appState.currentFilters.dateRange?.[1]?.getTime(); const newStart = newDateRange?.[0]?.getTime(); const newEnd = newDateRange?.[1]?.getTime(); if (oldStart !== newStart || oldEnd !== newEnd) { appState.currentFilters.dateRange = newDateRange; updateVisualization(); }
         }
 
@@ -857,25 +857,25 @@
         }
 
         // --- Canvas Interaction Handlers (Largely unchanged, rely on isPointFiltered) ---
-        function handleCanvasMouseMove(event) { /* ... as before ... */
+        function handleCanvasMouseMove(event) { 
             const [mouseX, mouseY] = d3.pointer(event); const transform = appState.currentTransform; const invertedX = transform.invertX(mouseX); const invertedY = transform.invertY(mouseY); const searchRadius = (CONFIG.highlightRadius + 2) / transform.k; const closest = appState.quadtree?.find(invertedX, invertedY, searchRadius); if (appState.hoveredPoint?.id !== closest?.id) { appState.hoveredPoint = closest; updateSVGHoverHighlight(); } if (!appState.stickyPoint) { if (closest) { showTooltip(event, closest); } else { hideTooltip(); } }
         }
-        function handleCanvasClick(event) { /* ... as before ... */
+        function handleCanvasClick(event) { 
             const [mouseX, mouseY] = d3.pointer(event); const transform = appState.currentTransform; const invertedX = transform.invertX(mouseX); const invertedY = transform.invertY(mouseY); const clickRadius = (CONFIG.highlightRadius + 3) / transform.k; const clickedPoint = appState.quadtree?.find(invertedX, invertedY, clickRadius); if (clickedPoint) { if (appState.stickyPoint?.id === clickedPoint.id) { appState.stickyPoint = null; hideTooltip(); } else { appState.stickyPoint = clickedPoint; showTooltip(event, clickedPoint); if (clickedPoint.url) { try { window.open(clickedPoint.url, '_blank'); } catch (e) { console.warn("URL open failed:", e); } } } appState.hoveredPoint = null; updateSVGHoverHighlight(); updateSVGStickyHighlight(); } else { if (appState.stickyPoint) { appState.stickyPoint = null; hideTooltip(); updateSVGStickyHighlight(); } }
         }
-        function handleCanvasDoubleClick(event) { /* ... as before ... */
+        function handleCanvasDoubleClick(event) { 
              const [mouseX, mouseY] = d3.pointer(event); const transform = appState.currentTransform; const invertedX = transform.invertX(mouseX); const invertedY = transform.invertY(mouseY); const clickRadius = (CONFIG.highlightRadius + 3) / transform.k; const targetPoint = appState.quadtree?.find(invertedX, invertedY, clickRadius); if (targetPoint) { const { width, height } = appState.dimensions.scatterplot; const targetScale = Math.min(CONFIG.zoomMax, Math.max(CONFIG.zoomMin, transform.k * 2)); const newTransform = d3.zoomIdentity.translate(width / 2, height / 2).scale(targetScale).translate(-targetPoint.px, -targetPoint.py); ELEMENTS.scatterplotCanvas.transition().duration(750).call(appState.behaviors.zoom.transform, newTransform); hideTooltip(); appState.hoveredPoint = null; appState.stickyPoint = null; updateSVGHoverHighlight(); updateSVGStickyHighlight(); }
          }
-         function handleCanvasMouseOut(event) { /* ... as before ... */
+         function handleCanvasMouseOut(event) { 
              if (appState.hoveredPoint) { appState.hoveredPoint = null; updateSVGHoverHighlight(); } if (!appState.stickyPoint) { hideTooltip(); }
          }
-         function handleTimelineBarMouseOver(event, d) { /* ... as before ... */
+         function handleTimelineBarMouseOver(event, d) { 
              appState.timelineHoveredBin = { x0: d.x0, x1: d.x1 }; drawScatterplot(); d3.select(event.currentTarget).style("fill", CONFIG.timelineBarHoverColor); // Use distinct hover color
          }
-         function handleTimelineBarMouseOut(event, d) { /* ... as before ... */
+         function handleTimelineBarMouseOut(event, d) { 
              appState.timelineHoveredBin = null; drawScatterplot(); d3.select(event.currentTarget).style("fill", appState.colors.active); // Revert to dynamic active color
          }
-        function handleResize() { /* ... as before ... */
+        function handleResize() { 
             showLoading("Adjusting layout..."); setupDimensions(); appState.scales.x.range([0, appState.dimensions.scatterplot.width]); appState.scales.y.range([appState.dimensions.scatterplot.height, 0]); appState.scales.time.range([0, appState.dimensions.timeline.width]); appState.scales.count.range([appState.dimensions.timeline.height, 0]); appState.fullData.forEach(d => { d.px = appState.scales.x(d.x); d.py = appState.scales.y(d.y); }); appState.axes.xGrid.tickSize(-appState.dimensions.scatterplot.height); appState.axes.yGrid.tickSize(-appState.dimensions.scatterplot.width); setupSVGStructure(); setupCanvas(); appState.behaviors.zoom.translateExtent([[0, 0], [appState.dimensions.scatterplot.width, appState.dimensions.scatterplot.height]]).extent([[0, 0], [appState.dimensions.scatterplot.width, appState.dimensions.scatterplot.height]]); appState.behaviors.brush.extent([[0, 0], [appState.dimensions.timeline.width, appState.dimensions.timeline.height]]); ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush); const currentSelectionPixels = appState.currentFilters.dateRange ? appState.currentFilters.dateRange.map(appState.scales.time) : appState.scales.time.range(); setTimeout(() => { appState.isBrushing = true; ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush.move, currentSelectionPixels); appState.isBrushing = false; }, 0); ELEMENTS.scatterplotCanvas.call(appState.behaviors.zoom.transform, appState.currentTransform); updateVisualization(); showLoading(false);
         }
 
