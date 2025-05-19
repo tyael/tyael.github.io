@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ASPI Strategist Embedding Explorer (Gradient Draw Order Fix)</title>
+    <title>ASPI Strategist Embedding Explorer</title>
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 
     <style>
@@ -306,7 +306,7 @@
 
         <div id="controls">
             <h2>ASPI <em>Strategist</em> Embedding Explorer</h2>
-            <p style="font-size:0.9em; margin-bottom:15px;">Explore semantic relationships in ASPI Strategist articles.</p>
+            <p style="font-size:0.9em; margin-bottom:15px;">All ASPI <em>Strategist</em> articles up to 11 May 2025 are here depicted as points in an embedding space, such that posts with semantically-similar content cluster together.</p>
              <div id="error-display"></div>
 
             <div class="control-group">
@@ -353,7 +353,7 @@
             <div class="control-group">
                 <h3>Clustering (K-Means)</h3>
                 <label for="num-clusters" class="inline-label">Number of Clusters (K):</label>
-                <input type="number" id="num-clusters" min="2" max="20" step="1" value="5">
+                <input type="number" id="num-clusters" min="2" max="20" step="1" value="25">
                 <button id="run-clustering-btn">Identify Clusters</button>
                 <button id="reset-clustering-btn" style="display:none; margin-top:10px;">Reset Clusters</button>
                 <p class="explanation-text">
