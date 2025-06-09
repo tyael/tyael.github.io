@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ASPI Strategist Embedding Explorer</title>
+    <title>ASPI Strategist Embedding Explorer (Feature Update)</title>
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 
     <style>
@@ -393,13 +393,13 @@
             </div>
 
             <div class="control-group">
-                <h3>Clustering (K-Means)</h3>
-                <label for="num-clusters" class="inline-label">Number of Clusters (K):</label>
+                <h3>Clustering (<em>k</em>-Means)</h3>
+                <label for="num-clusters" class="inline-label">Number of Clusters (<em>k</em>):</label>
                 <input type="number" id="num-clusters" min="2" max="25" step="1" value="25">
                 <button id="run-clustering-btn">Identify Clusters</button>
                 <button id="reset-clustering-btn" style="display:none; margin-top:10px;">Reset Clusters</button>
                 <p class="explanation-text">
-                    K-Means clustering groups articles based on their proximity in the embedding space. It tries to find 'K' distinct groups (clusters). Hulls are drawn around these groups, and labels are generated from common tags within each cluster. This helps identify thematic groupings in the currently filtered data.
+                    <em>k</em>-Means clustering groups articles based on their proximity in the embedding space. It tries to find <em>k</em> distinct groups (clusters). Hulls are drawn around these groups, and labels are generated from common tags within each cluster. This helps identify thematic groupings in the currently filtered data.
                 </p>
             </div>
             
@@ -786,8 +786,59 @@
 
 
         // --- Drawing Functions ---
-        function drawScatterplot() { const ctx = appState.canvasContext; if (!ctx) { console.error("Canvas context not available for drawing scatterplot."); return; } const { width, height } = appState.dimensions.scatterplot; const transform = appState.currentTransform; ctx.save(); ctx.clearRect(0, 0, width, height); ctx.translate(transform.x, transform.y); ctx.scale(transform.k, transform.k); drawCanvasClusterHulls(ctx);  drawInactivePoints(ctx, transform);  drawActivePoints(ctx, transform);    ctx.restore(); updateSVGHoverHighlight(); updateSVGStickyHighlight(); drawClusterLabels();  }
-        function drawCanvasClusterHulls(ctx) { if (!appState.clusters || appState.clusters.length === 0) { return; } appState.clusters.forEach(cluster => { if (!cluster.points || cluster.points.length < 3) return;  const hullPoints = d3.polygonHull(cluster.points.map(p => [p.px, p.py])); if (!hullPoints) return;  const color = d3.color(CONFIG.clustering.clusterColors[cluster.id % CONFIG.clustering.clusterColors.length]); if (!color) return;  ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${CONFIG.clustering.hullOpacity})`; ctx.beginPath(); ctx.moveTo(hullPoints[0][0], hullPoints[0][1]); for (let i = 1; i < hullPoints.length; i++) { ctx.lineTo(hullPoints[i][0], hullPoints[i][1]); } ctx.closePath(); ctx.fill(); }); }
+        function drawScatterplot() {
+            const ctx = appState.canvasContext;
+            if (!ctx) {
+                console.error("Canvas context not available for drawing scatterplot.");
+                return;
+            }
+            const { width, height } = appState.dimensions.scatterplot;
+            const transform = appState.currentTransform;
+            ctx.save();
+            ctx.clearRect(0, 0, width, height);
+            ctx.translate(transform.x, transform.y);
+            ctx.scale(transform.k, transform.k);
+            drawCanvasClusterHulls(ctx, transform); // Pass transform for stroke width scaling
+            drawInactivePoints(ctx, transform);
+            drawActivePoints(ctx, transform);
+            ctx.restore();
+            updateSVGHoverHighlight();
+            updateSVGStickyHighlight();
+            drawClusterLabels();
+        }
+
+        // MODIFIED FUNCTION
+        function drawCanvasClusterHulls(ctx, transform) {
+            if (!appState.clusters || appState.clusters.length === 0) {
+                return;
+            }
+            appState.clusters.forEach(cluster => {
+                if (!cluster.points || cluster.points.length < 3) return;
+                const hullPoints = d3.polygonHull(cluster.points.map(p => [p.px, p.py]));
+                if (!hullPoints) return;
+                const color = d3.color(CONFIG.clustering.clusterColors[cluster.id % CONFIG.clustering.clusterColors.length]);
+                if (!color) return;
+                
+                // Set fill style
+                ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${CONFIG.clustering.hullOpacity})`;
+                
+                // Set stroke style
+                ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.6)`; // Slightly more opaque stroke
+                ctx.lineWidth = CONFIG.clustering.hullStrokeWidth / transform.k; // Scale stroke width with zoom
+                
+                // Draw path
+                ctx.beginPath();
+                ctx.moveTo(hullPoints[0][0], hullPoints[0][1]);
+                for (let i = 1; i < hullPoints.length; i++) {
+                    ctx.lineTo(hullPoints[i][0], hullPoints[i][1]);
+                }
+                ctx.closePath();
+                
+                // Fill and Stroke the path
+                ctx.fill();
+                ctx.stroke(); // Draw the border
+            });
+        }
         function drawInactivePoints(ctx, transform) { const inactiveRadius = CONFIG.pointRadius / transform.k; ctx.fillStyle = getCssVariable(CONFIG.cssVarInactiveColor); appState.fullData.forEach(d => { if (!isPointFiltered(d)) { ctx.beginPath(); ctx.arc(d.px, d.py, inactiveRadius, 0, 2 * Math.PI); ctx.fill(); } }); }
         
         function drawActivePoints(ctx, transform) {
@@ -1018,7 +1069,6 @@
         function handleRunClustering() { if (appState.filteredData.length === 0) { displayError("Cannot run clustering on empty dataset. Adjust filters."); return; } showLoading("Running K-Means clustering..."); appState.currentK = +ELEMENTS.numClustersInput.property("value"); setTimeout(() => {  try { appState.fullData.forEach(d => d.clusterId = null); appState.clusters = runKMeans(appState.filteredData, appState.currentK);  ELEMENTS.resetClusteringBtn.style("display", "inline-block"); showLoading(false); updateVisualization();  } catch (error) { console.error("Clustering error:", error); displayError(`Clustering failed: ${error.message}`); showLoading(false); appState.clusters = null;  updateVisualization(); } }, 50);  }
         function handleResetClustering() { appState.clusters = null; appState.fullData.forEach(d => d.clusterId = null);  ELEMENTS.resetClusteringBtn.style("display", "none"); updateVisualization(); }
         
-        // MODIFIED FUNCTION [1 of 2]
         function handleDateInputChange() {
             const startDateString = ELEMENTS.timelineStartDateInput.property("value");
             const endDateString = ELEMENTS.timelineEndDateInput.property("value");
@@ -1054,7 +1104,6 @@
 
 
         // --- Tooltip Functions ---
-        // MODIFIED FUNCTION [2 of 2]
         function showTooltip(event, data) {
             const pageX = event.pageX;
             const pageY = event.pageY;
