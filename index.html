@@ -32,7 +32,7 @@
         }
 
         #controls {
-            width: 320px; /* Slightly wider for new stats */
+            width: 320px;
             padding: 15px;
             overflow-y: auto;
             border-right: 1px solid #333333;
@@ -74,13 +74,36 @@
         }
 
         /* --- Timeline Area --- */
-        #timeline-container {
-            width: 100%;
-            height: 150px; 
+        #main-timeline-wrapper {
+            display: flex;
             border-top: 1px solid #333333;
-            flex-shrink: 0;
             background-color: #2d2d2d;
+            height: 150px; 
+            flex-shrink: 0;
+        }
+        #timeline-container {
+            flex-grow: 1;
             position: relative;
+            height: 100%;
+        }
+        #timeline-date-inputs {
+            flex-shrink: 0;
+            width: 130px;
+            padding: 10px;
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            border-left: 1px solid #333;
+        }
+        #timeline-date-inputs label {
+            margin-bottom: 2px;
+        }
+        #timeline-date-inputs input {
+            width: 100%;
+            padding: 4px;
+            font-size: 12px;
+            margin-bottom: 8px;
         }
 
         #timeline-svg {
@@ -104,6 +127,23 @@
             line-height: 1.5;
             box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
         }
+        #tooltip .cluster-stats {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #555;
+        }
+        #tooltip .cluster-stats h4 {
+            margin: 0 0 5px 0;
+            font-size: 1.1em;
+            color: #fff;
+        }
+        #tooltip .cluster-stats ol {
+            padding-left: 18px;
+            margin: 0;
+            font-size: 0.9em;
+            color: #bbb;
+        }
+
 
         /* --- Controls Styling --- */
         .control-group {
@@ -181,7 +221,7 @@
         }
 
 
-        input[type="text"], input[type="number"], select {
+        input[type="text"], input[type="number"], select, input[type="date"] {
             background-color: #3c3c3c;
             color: #cccccc;
             border: 1px solid #555555;
@@ -270,6 +310,7 @@
         }
 
         .cluster-label { 
+            font-size: 10px;
             fill: #fff;
             text-anchor: middle;
             paint-order: stroke;
@@ -294,7 +335,9 @@
             #container { flex-direction: column; }
             #controls { width: 100%; max-height: 350px; border-right: none; border-bottom: 1px solid #333333; } 
             #visualization-area { flex-grow: 1; }
-            #timeline-container { height: 120px; }
+            #main-timeline-wrapper { height: 120px; flex-direction: column-reverse; }
+            #timeline-date-inputs { width: 100%; border-left: none; border-top: 1px solid #333; flex-direction: row; justify-content: space-around; align-items: center; padding: 5px 0;}
+            #timeline-date-inputs input { width: 40%; margin: 0 5px; }
         }
     </style>
 </head>
@@ -305,7 +348,7 @@
 
         <div id="controls">
             <h2>ASPI <em>Strategist</em> Embedding Explorer</h2>
-            <p style="font-size:0.9em; margin-bottom:15px;">All ASPI <em>Strategist</em> articles up to 11 May 2025 are here depicted as points in an embedding space, such that posts with semantically-similar content cluster together.</p>
+            <p style="font-size:0.9em; margin-bottom:15px;">All <em>Strategist</em> articles up to 5 June 2025 are represented as points in an embedding space, such that posts with semantically-similar content appear closer together.</p>
              <div id="error-display"></div>
 
             <div class="control-group">
@@ -352,7 +395,7 @@
             <div class="control-group">
                 <h3>Clustering (K-Means)</h3>
                 <label for="num-clusters" class="inline-label">Number of Clusters (K):</label>
-                <input type="number" id="num-clusters" min="2" max="20" step="1" value="25">
+                <input type="number" id="num-clusters" min="2" max="25" step="1" value="25">
                 <button id="run-clustering-btn">Identify Clusters</button>
                 <button id="reset-clustering-btn" style="display:none; margin-top:10px;">Reset Clusters</button>
                 <p class="explanation-text">
@@ -391,13 +434,21 @@
                     </g>
                 </svg>
             </div>
-            <div id="timeline-container">
-                <svg id="timeline-svg">
-                     <g class="timeline-content">
-                         <g class="axis count-axis"></g> <g class="timeline-bars"></g>
-                         <g class="axis time-axis"></g> <g class="brush"></g>
-                     </g>
-                </svg>
+            <div id="main-timeline-wrapper">
+                <div id="timeline-container">
+                    <svg id="timeline-svg">
+                         <g class="timeline-content">
+                             <g class="axis count-axis"></g> <g class="timeline-bars"></g>
+                             <g class="axis time-axis"></g> <g class="brush"></g>
+                         </g>
+                    </svg>
+                </div>
+                <div id="timeline-date-inputs">
+                    <label for="timeline-start-date">Start Date:</label>
+                    <input type="date" id="timeline-start-date">
+                    <label for="timeline-end-date">End Date:</label>
+                    <input type="date" id="timeline-end-date">
+                </div>
             </div>
             <div id="tooltip"></div>
         </div>
@@ -423,7 +474,7 @@
             searchRadiusFactor: 1.2,
             clickRadiusFactor: 1.3,
             clustering: {
-                defaultK: 5,
+                defaultK: 25,
                 maxIterations: 20,
                 labelTopNKeywords: 3,
                 clusterColors: d3.schemeCategory10,
@@ -509,6 +560,8 @@
             timelineBarsGroup: d3.select("#timeline-svg g.timeline-bars"),
             timeAxisGroup: d3.select("#timeline-svg g.time-axis"),
             timelineBrushGroup: d3.select("#timeline-svg g.brush"),
+            timelineStartDateInput: d3.select("#timeline-start-date"),
+            timelineEndDateInput: d3.select("#timeline-end-date"),
             tooltip: d3.select("#tooltip"),
             numClustersInput: d3.select("#num-clusters"),
             runClusteringBtn: d3.select("#run-clustering-btn"),
@@ -576,6 +629,8 @@
             setupFeatureControls();
             setupCoreInteractions();
             ELEMENTS.imposeGradientCheckbox.on("change", handleImposeGradientChange);
+            ELEMENTS.timelineStartDateInput.on("change", handleDateInputChange);
+            ELEMENTS.timelineEndDateInput.on("change", handleDateInputChange);
             showLoading(false);
         }
 
@@ -607,7 +662,7 @@
 
                 const title = d.title || '';
                 
-                let processedArticleAuthors = ['Unknown']; // Default for this article
+                let processedArticleAuthors = ['Unknown']; 
                 if (d.hasOwnProperty('authors') && Array.isArray(d.authors)) {
                     const extractedNames = d.authors
                         .filter(author => typeof author === 'string' && author.trim().length > 0)
@@ -799,7 +854,6 @@
                 .attr("height", d => Math.max(0, height - countScale(d.length)))
                 .style("fill", d => {
                     if (appState.imposeGradientActive && appState.gradientDateScale) {
-                        // Use the start of the bin (d.x0) for gradient color
                         return appState.gradientDateScale(d.x0);
                     }
                     return defaultBarColor;
@@ -817,29 +871,135 @@
         function initializeCentroids(data, k) { const centroids = []; const uniquePoints = Array.from(new Set(data.map(d => `${d.px},${d.py}`)))  .map(s => { const parts = s.split(','); return {px: +parts[0], py: +parts[1]}; }); if (uniquePoints.length === 0) { console.warn("K-Means: No unique points available to initialize centroids."); return [];  } const numAvailableCentroids = Math.min(k, uniquePoints.length); if (k > uniquePoints.length) { console.warn(`K-Means: Requested ${k} clusters, but only ${uniquePoints.length} unique points available. Using ${numAvailableCentroids} clusters.`); } const shuffled = uniquePoints.sort(() => 0.5 - Math.random()); for (let i = 0; i < numAvailableCentroids; i++) { centroids.push(shuffled[i]);  } return centroids.map(c => [c.px, c.py]);  }
         function assignPointsToCentroids(data, centroids) { if (centroids.length === 0) {  data.forEach(point => point.clusterId = null); return; } data.forEach(point => { let minDist = Infinity; let clusterId = 0;  centroids.forEach((centroid, i) => { const dist = Math.sqrt(Math.pow(point.px - centroid[0], 2) + Math.pow(point.py - centroid[1], 2)); if (dist < minDist) { minDist = dist; clusterId = i; } }); point.clusterId = clusterId; }); }
         function calculateNewCentroids(data, k) { if (k === 0) return []; const newCentroids = Array(k).fill(null).map(() => ({ sumX: 0, sumY: 0, count: 0 })); data.forEach(point => { if (point.clusterId !== null && point.clusterId < k && newCentroids[point.clusterId]) {  newCentroids[point.clusterId].sumX += point.px; newCentroids[point.clusterId].sumY += point.py; newCentroids[point.clusterId].count++; } }); return newCentroids.map(c => c.count > 0 ? [c.sumX / c.count, c.sumY / c.count] : null).filter(Boolean);  }
-        function runKMeans(dataToCluster, k_requested) { let k = k_requested;  if (dataToCluster.length === 0) { console.warn("K-Means: Cannot run on empty dataset."); return []; } if (dataToCluster.length < k) { console.warn(`K-Means: Not enough data points (${dataToCluster.length}) for ${k} clusters. Assigning all to one cluster or fewer if possible.`); k = Math.min(k, dataToCluster.length);  if (k === 0 && dataToCluster.length > 0) k = 1;  else if (k === 0 && dataToCluster.length === 0) return [];  } let centroids = initializeCentroids(dataToCluster, k); if (centroids.length === 0 && dataToCluster.length > 0) {  console.warn("K-Means: Centroid initialization failed, attempting to create a single cluster."); if (dataToCluster.length > 0) { assignPointsToCentroids(dataToCluster, [[dataToCluster[0].px, dataToCluster[0].py]]);  centroids = calculateNewCentroids(dataToCluster, 1); k = centroids.length; } else { return [];  } } else if (centroids.length < k) { console.warn(`K-Means: Initialized with ${centroids.length} centroids, less than requested ${k}. Proceeding with ${centroids.length}.`); k = centroids.length;  } if (k === 0) {  console.warn("K-Means: Number of clusters (k) is 0. No clustering will be performed."); dataToCluster.forEach(d => d.clusterId = null); return []; } let oldAssignments = null; let iterations = 0; while (iterations < CONFIG.clustering.maxIterations) { assignPointsToCentroids(dataToCluster, centroids); const currentAssignments = dataToCluster.map(d => d.clusterId).join(','); if (currentAssignments === oldAssignments) { console.log(`K-Means: Converged in ${iterations} iterations.`); break;  } oldAssignments = currentAssignments; const newCentroidsList = calculateNewCentroids(dataToCluster, k); if (newCentroidsList.length < k && newCentroidsList.length > 0) { console.warn(`K-Means: Some clusters became empty during iteration. Reducing k from ${k} to ${newCentroidsList.length}.`); centroids = newCentroidsList; k = newCentroidsList.length;  } else if (newCentroidsList.length === 0) { console.warn("K-Means: All clusters became empty. Stopping iteration."); break; } else { centroids = newCentroidsList; } iterations++; if (iterations === CONFIG.clustering.maxIterations) { console.log(`K-Means: Reached max iterations (${CONFIG.clustering.maxIterations}).`); } } if (k === 0 || centroids.length === 0) { dataToCluster.forEach(d => d.clusterId = null);  return [];  } const clusters = Array(k).fill(null).map((_, i) => ({ id: i, points: [], centroid: centroids[i], label: '' })); dataToCluster.forEach(p => { if (p.clusterId !== null && p.clusterId < k && clusters[p.clusterId]) {  clusters[p.clusterId].points.push(p); } }); const finalClusters = clusters.filter(c => c.points.length > 0 && c.centroid); finalClusters.forEach((cluster, i) => {  cluster.id = i;  cluster.points.forEach(p => p.clusterId = i);  cluster.label = generateClusterLabel(cluster); }); return finalClusters; }
+        
+        function runKMeans(dataToCluster, k_requested) { 
+            let k = k_requested;  
+            if (dataToCluster.length === 0) { 
+                console.warn("K-Means: Cannot run on empty dataset."); 
+                return []; 
+            } 
+            if (dataToCluster.length < k) { 
+                console.warn(`K-Means: Not enough data points (${dataToCluster.length}) for ${k} clusters. Assigning all to one cluster or fewer if possible.`); 
+                k = Math.min(k, dataToCluster.length);  
+                if (k === 0 && dataToCluster.length > 0) k = 1;  
+                else if (k === 0 && dataToCluster.length === 0) return [];  
+            } 
+            
+            let centroids = initializeCentroids(dataToCluster, k); 
+            if (centroids.length === 0 && dataToCluster.length > 0) {  
+                console.warn("K-Means: Centroid initialization failed, attempting to create a single cluster."); 
+                if (dataToCluster.length > 0) { 
+                    assignPointsToCentroids(dataToCluster, [[dataToCluster[0].px, dataToCluster[0].py]]);  
+                    centroids = calculateNewCentroids(dataToCluster, 1); 
+                    k = centroids.length; 
+                } else { 
+                    return [];  
+                } 
+            } else if (centroids.length < k) { 
+                console.warn(`K-Means: Initialized with ${centroids.length} centroids, less than requested ${k}. Proceeding with ${centroids.length}.`); 
+                k = centroids.length;  
+            } 
+            
+            if (k === 0) {  
+                console.warn("K-Means: Number of clusters (k) is 0. No clustering will be performed."); 
+                dataToCluster.forEach(d => d.clusterId = null); 
+                return []; 
+            } 
+            
+            let oldAssignments = null; 
+            let iterations = 0; 
+            while (iterations < CONFIG.clustering.maxIterations) { 
+                assignPointsToCentroids(dataToCluster, centroids); 
+                const currentAssignments = dataToCluster.map(d => d.clusterId).join(','); 
+                if (currentAssignments === oldAssignments) { 
+                    console.log(`K-Means: Converged in ${iterations} iterations.`); 
+                    break;  
+                } 
+                oldAssignments = currentAssignments; 
+                const newCentroidsList = calculateNewCentroids(dataToCluster, k); 
+                if (newCentroidsList.length < k && newCentroidsList.length > 0) { 
+                    console.warn(`K-Means: Some clusters became empty during iteration. Reducing k from ${k} to ${newCentroidsList.length}.`); 
+                    centroids = newCentroidsList; 
+                    k = newCentroidsList.length;  
+                } else if (newCentroidsList.length === 0) { 
+                    console.warn("K-Means: All clusters became empty. Stopping iteration."); 
+                    break; 
+                } else { 
+                    centroids = newCentroidsList; 
+                } 
+                iterations++; 
+                if (iterations === CONFIG.clustering.maxIterations) { 
+                    console.log(`K-Means: Reached max iterations (${CONFIG.clustering.maxIterations}).`); 
+                } 
+            } 
+            
+            if (k === 0 || centroids.length === 0) { 
+                dataToCluster.forEach(d => d.clusterId = null);  
+                return [];  
+            } 
+            
+            const clusters = Array(k).fill(null).map((_, i) => ({ id: i, points: [], centroid: centroids[i], label: '' })); 
+            dataToCluster.forEach(p => { 
+                if (p.clusterId !== null && p.clusterId < k && clusters[p.clusterId]) {  
+                    clusters[p.clusterId].points.push(p); 
+                } 
+            }); 
+            
+            const finalClusters = clusters.filter(c => c.points.length > 0 && c.centroid); 
+            finalClusters.forEach((cluster, i) => {  
+                cluster.id = i;  
+                cluster.points.forEach(p => p.clusterId = i);  
+                cluster.label = generateClusterLabel(cluster); 
+                
+                // New: Pre-calculate cluster stats
+                const clusterStats = calculateTopStatsForCluster(cluster.points);
+                cluster.topTags = clusterStats.topTags;
+                cluster.topAuthors = clusterStats.topAuthors;
+            }); 
+            return finalClusters; 
+        }
+
         function generateClusterLabel(cluster) { if (!cluster.points || cluster.points.length === 0) return `Cluster ${cluster.id} (Empty)`; const tagCounts = {}; cluster.points.forEach(point => { point.tags.forEach(tag => { tagCounts[tag] = (tagCounts[tag] || 0) + 1; }); }); const sortedTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]); const topTags = sortedTags.slice(0, CONFIG.clustering.labelTopNKeywords).map(entry => entry[0]); return topTags.length > 0 ? topTags.join(', ') : `Cluster ${cluster.id}`; }
         function drawClusterLabels() { ELEMENTS.clusterLabelsLayer.selectAll(".cluster-label").remove(); if (!appState.clusters || appState.clusters.length === 0) { return; } const transform = appState.currentTransform; const labelsData = appState.clusters.map(cluster => { if (!cluster.centroid || !cluster.points || cluster.points.length === 0) return null; const [cx, cy] = cluster.centroid;  return { id: cluster.id, x: transform.applyX(cx), y: transform.applyY(cy), label: cluster.label }; }).filter(Boolean); ELEMENTS.clusterLabelsLayer.selectAll(".cluster-label") .data(labelsData, d => d.id) .join("text") .attr("class", "cluster-label")  .attr("x", d => d.x) .attr("y", d => d.y) .text(d => d.label) .attr("dy", "0.35em"); }
 
 
         // --- Update Functions ---
-        function updateVisualization(isInitialLoad = false) { applyFiltersAndUpdateQuadtree();  if (appState.imposeGradientActive) { setupGradientScale(); } else { appState.gradientDateScale = null; } drawAxes(); drawTimeline(); drawScatterplot();  updateSelectionHighlights(); updateGradientKeyDisplay(); updateFilterSummary(); }
+        function updateVisualization(isInitialLoad = false) { applyFiltersAndUpdateQuadtree();  if (appState.imposeGradientActive) { setupGradientScale(); } else { appState.gradientDateScale = null; } drawAxes(); drawTimeline(); drawScatterplot();  updateSelectionHighlights(); updateGradientKeyDisplay(); updateFilterSummary(); updateTimelineDateInputs(appState.currentFilters.dateRange); }
         function setupGradientScale() { if (!appState.imposeGradientActive || appState.filteredData.length === 0) { appState.gradientDateScale = null; return; } const dateExtent = d3.extent(appState.filteredData, d => d.date); if (!dateExtent[0] || !dateExtent[1] || dateExtent[0].getTime() === dateExtent[1].getTime()) { appState.gradientDateScale = null; return; } const minDate = dateExtent[0]; const maxDate = dateExtent[1]; const baseColorString = getCssVariable(CONFIG.cssVarActiveColor); const baseColor = d3.hsl(baseColorString); if (isNaN(baseColor.h)) { console.warn("Base highlight color has undefined hue (e.g., black, white, grey). Gradient may not appear as expected."); const startColor = d3.color(baseColorString).brighter(0.5).toString(); const endColor = d3.color(baseColorString).darker(0.5).toString(); appState.gradientDateScale = d3.scaleTime().domain([minDate, maxDate]).range([startColor, endColor]).interpolate(d3.interpolateRgb); } else { const startHueColor = d3.hsl(baseColor.h - CONFIG.gradientHueRotation, baseColor.s, baseColor.l); const endHueColor = d3.hsl(baseColor.h + CONFIG.gradientHueRotation, baseColor.s, baseColor.l); appState.gradientDateScale = d3.scaleTime() .domain([minDate, maxDate]) .range([startHueColor.toString(), endHueColor.toString()]) .interpolate(d3.interpolateHsl); } }
         function updateGradientKeyDisplay() { const keyDisplay = ELEMENTS.gradientKeyDisplay; if (appState.imposeGradientActive && appState.gradientDateScale && appState.filteredData.length > 0) { const domain = appState.gradientDateScale.domain(); const range = appState.gradientDateScale.range ? appState.gradientDateScale.range() : [appState.gradientDateScale(domain[0]), appState.gradientDateScale(domain[1])]; const minDate = domain[0]; const maxDate = domain[1]; const startColor = range[0]; const endColor = range[1]; const dateFormat = d3.timeFormat("%b %d, %Y"); keyDisplay.html(` <div class="gradient-key-item"> <span class="gradient-key-swatch" style="background-color: ${startColor};"></span> <span>${dateFormat(minDate)} (Earliest)</span> </div> <div class="gradient-key-item"> <span class="gradient-key-swatch" style="background-color: ${endColor};"></span> <span>${dateFormat(maxDate)} (Latest)</span> </div> `).style("display", "block"); } else { keyDisplay.style("display", "none").html(''); } }
         function updateSVGHoverHighlight() { const point = appState.hoveredPoint; const transform = appState.currentTransform;  if (point && isPointFiltered(point) && point.id !== appState.stickyPoint?.id) {  const cx = transform.applyX(point.px); const cy = transform.applyY(point.py);  ELEMENTS.hoverHighlight.attr("cx", cx).attr("cy", cy).style("display", "block");  } else {  ELEMENTS.hoverHighlight.style("display", "none");  } }
         function updateSVGStickyHighlight() { const point = appState.stickyPoint; const transform = appState.currentTransform;  if (point && isPointFiltered(point)) {  const cx = transform.applyX(point.px); const cy = transform.applyY(point.py);  ELEMENTS.stickyHighlight.attr("cx", cx).attr("cy", cy).style("display", "block");  } else {  ELEMENTS.stickyHighlight.style("display", "none");  } }
         function updateSelectionHighlights() { const topN = CONFIG.topNStats; const tagCounts = new Map(); appState.filteredData.forEach(article => { article.tags.forEach(tag => { tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1); }); }); const sortedTags = Array.from(tagCounts.entries()) .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))  .slice(0, topN); ELEMENTS.topTagsDisplay.html(sortedTags.length > 0 ? '' : '<ol class="stats-list"><li>N/A</li></ol>'); if (sortedTags.length > 0) { const ol = ELEMENTS.topTagsDisplay.append('ol').attr('class', 'stats-list'); sortedTags.forEach(([tag, count]) => { ol.append('li').html(`${tag} <span class="count">(${count})</span>`); }); } const authorCounts = new Map(); appState.filteredData.forEach(article => { article.authors.forEach(author => {  authorCounts.set(author, (authorCounts.get(author) || 0) + 1); }); }); const sortedAuthors = Array.from(authorCounts.entries()) .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))  .slice(0, topN); ELEMENTS.topAuthorsDisplay.html(sortedAuthors.length > 0 ? '' : '<ol class="stats-list"><li>N/A</li></ol>'); if (sortedAuthors.length > 0) { const ol = ELEMENTS.topAuthorsDisplay.append('ol').attr('class', 'stats-list'); sortedAuthors.forEach(([author, count]) => { ol.append('li').html(`${author} <span class="count">(${count})</span>`); }); } }
 
-        // --- Event Handlers ---
-        function handleZoom(event) { if (!event.sourceEvent) return; appState.currentTransform = event.transform; drawAxes(); drawScatterplot();  hideTooltip(); }
-        function handleBrush(event) { if (appState.isBrushing || !event.sourceEvent) return; if (event.type === "start") { hideTooltip(); if (appState.stickyPoint) { appState.stickyPoint = null; updateSVGStickyHighlight(); } } const selection = event.selection; const newDateRange = selection ? selection.map(appState.scales.time.invert) : null; const oldStart = appState.currentFilters.dateRange?.[0]?.getTime(); const oldEnd = appState.currentFilters.dateRange?.[1]?.getTime(); const newStart = newDateRange?.[0]?.getTime(); const newEnd = newDateRange?.[1]?.getTime(); if (oldStart !== newStart || oldEnd !== newEnd) { appState.currentFilters.dateRange = newDateRange; if(appState.clusters) { console.warn("Date range changed while clusters are active. Cluster visuals might be stale. Re-run clustering for current data."); } updateVisualization(); } }
-        function handleQueryInput(event) { const query = event.target.value; appState.currentFilters.rawQuery = query; const cursorPos = event.target.selectionStart || query.length; const textBeforeCursor = query.substring(0, cursorPos); const tagMatch = textBeforeCursor.match(/\btag:([^\s()]*)$/i); const authorMatch = textBeforeCursor.match(/\bauthor:([^\s()]*)$/i); let showAutocomplete = false; if (tagMatch) { appState.autocomplete.prefix = 'tag'; appState.autocomplete.term = tagMatch[1].toLowerCase(); const source = appState.sortedUniqueTags; appState.autocomplete.suggestions = source.filter(t => t.toLowerCase().includes(appState.autocomplete.term)).slice(0, CONFIG.autocompleteLimit); showAutocomplete = true; } else if (authorMatch) { appState.autocomplete.prefix = 'author'; appState.autocomplete.term = authorMatch[1].toLowerCase(); const source = appState.sortedUniqueAuthors; appState.autocomplete.suggestions = source.filter(a => a.toLowerCase().includes(appState.autocomplete.term)).slice(0, CONFIG.autocompleteLimit); showAutocomplete = true; } if (showAutocomplete && appState.autocomplete.suggestions.length > 0) { appState.autocomplete.active = true; appState.autocomplete.selectedIndex = -1; updateAutocompleteSuggestions(); } else { hideAutocomplete(); } const { queryFunction, error } = parseQuery(query); appState.currentFilters.queryFunction = queryFunction; appState.currentFilters.queryError = error; if (error) { ELEMENTS.queryErrorDisplay.text(`Syntax Error: ${error}`).style("display", "block"); } else { ELEMENTS.queryErrorDisplay.style("display", "none"); } if(appState.clusters) { console.warn("Query changed while clusters are active. Cluster visuals might be stale. Re-run clustering for current data."); } updateVisualization(); }
-        function handleQueryKeyDown(event) { const { active, suggestions, selectedIndex } = appState.autocomplete; if (!active || suggestions.length === 0) return; switch (event.key) { case 'ArrowDown': event.preventDefault(); appState.autocomplete.selectedIndex = (selectedIndex + 1) % suggestions.length; updateAutocompleteSuggestions(); break; case 'ArrowUp': event.preventDefault(); appState.autocomplete.selectedIndex = (selectedIndex - 1 + suggestions.length) % suggestions.length; updateAutocompleteSuggestions(); break; case 'Enter': case 'Tab': if (selectedIndex !== -1) { event.preventDefault(); applyAutocompleteSuggestion(suggestions[selectedIndex]); } else { hideAutocomplete(); } break; case 'Escape': event.preventDefault(); hideAutocomplete(); break; } }
-        
-        function handleQueryBlur() {
-            setTimeout(hideAutocomplete, 150); 
+        function calculateTopStatsForCluster(points) {
+            const topN = CONFIG.topNStats;
+            const tagCounts = new Map();
+            const authorCounts = new Map();
+
+            points.forEach(article => {
+                article.tags.forEach(tag => tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1));
+                article.authors.forEach(author => authorCounts.set(author, (authorCounts.get(author) || 0) + 1));
+            });
+
+            const topTags = Array.from(tagCounts.entries())
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                .slice(0, topN)
+                .map(([name, count]) => ({ name, count }));
+
+            const topAuthors = Array.from(authorCounts.entries())
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                .slice(0, topN)
+                .map(([name, count]) => ({ name, count }));
+
+            return { topTags, topAuthors };
         }
 
+        // --- Event Handlers ---
+        function handleZoom(event) { if (!event.sourceEvent) return; appState.currentTransform = event.transform; drawAxes(); drawScatterplot();  hideTooltip(); }
+        function handleBrush(event) { if (appState.isBrushing) return; if (!event.sourceEvent) return; const selection = event.selection; const newDateRange = selection ? selection.map(appState.scales.time.invert) : null; const oldStart = appState.currentFilters.dateRange?.[0]?.getTime(); const oldEnd = appState.currentFilters.dateRange?.[1]?.getTime(); const newStart = newDateRange?.[0]?.getTime(); const newEnd = newDateRange?.[1]?.getTime(); if (oldStart !== newStart || oldEnd !== newEnd) { appState.currentFilters.dateRange = newDateRange; if(appState.clusters) { console.warn("Date range changed while clusters are active. Cluster visuals might be stale. Re-run clustering for current data."); } updateVisualization(); } }
+        function handleQueryInput(event) { const query = event.target.value; appState.currentFilters.rawQuery = query; const cursorPos = event.target.selectionStart || query.length; const textBeforeCursor = query.substring(0, cursorPos); const tagMatch = textBeforeCursor.match(/\btag:([^\s()]*)$/i); const authorMatch = textBeforeCursor.match(/\bauthor:([^\s()]*)$/i); let showAutocomplete = false; if (tagMatch) { appState.autocomplete.prefix = 'tag'; appState.autocomplete.term = tagMatch[1].toLowerCase(); const source = appState.sortedUniqueTags; appState.autocomplete.suggestions = source.filter(t => t.toLowerCase().includes(appState.autocomplete.term)).slice(0, CONFIG.autocompleteLimit); showAutocomplete = true; } else if (authorMatch) { appState.autocomplete.prefix = 'author'; appState.autocomplete.term = authorMatch[1].toLowerCase(); const source = appState.sortedUniqueAuthors; appState.autocomplete.suggestions = source.filter(a => a.toLowerCase().includes(appState.autocomplete.term)).slice(0, CONFIG.autocompleteLimit); showAutocomplete = true; } if (showAutocomplete && appState.autocomplete.suggestions.length > 0) { appState.autocomplete.active = true; appState.autocomplete.selectedIndex = -1; updateAutocompleteSuggestions(); } else { hideAutocomplete(); } const { queryFunction, error } = parseQuery(query); appState.currentFilters.queryFunction = queryFunction; appState.currentFilters.queryError = error; if (error) { ELEMENTS.queryErrorDisplay.text(`Syntax Error: ${error}`).style("display", "block"); } else { ELEMENTS.queryErrorDisplay.style("display", "none"); } if(appState.clusters) { console.warn("Query changed while clusters are active. Cluster visuals might be stale. Re-run clustering for current data."); } updateVisualization(); }
+        function handleQueryKeyDown(event) { const { active, suggestions, selectedIndex } = appState.autocomplete; if (!active || suggestions.length === 0) return; switch (event.key) { case 'ArrowDown': event.preventDefault(); appState.autocomplete.selectedIndex = (selectedIndex + 1) % suggestions.length; updateAutocompleteSuggestions(); break; case 'ArrowUp': event.preventDefault(); appState.autocomplete.selectedIndex = (selectedIndex - 1 + suggestions.length) % suggestions.length; updateAutocompleteSuggestions(); break; case 'Enter': case 'Tab': if (selectedIndex !== -1) { event.preventDefault(); applyAutocompleteSuggestion(suggestions[selectedIndex]); } else { hideAutocomplete(); } break; case 'Escape': event.preventDefault(); hideAutocomplete(); break; } }
+        function handleQueryBlur() { setTimeout(hideAutocomplete, 150); }
         function handleSuggestionClick(event) { if (event.target && event.target.classList.contains('suggestion-item')) { const suggestionText = event.target.textContent; applyAutocompleteSuggestion(suggestionText); } }
         function handleBinningChange() { drawTimeline(); }
         function resetQuery() { ELEMENTS.queryInput.property("value", ""); if (appState.currentFilters.rawQuery !== '' || appState.currentFilters.queryError) { appState.currentFilters.rawQuery = ''; appState.currentFilters.queryFunction = () => true; appState.currentFilters.queryError = null; ELEMENTS.queryErrorDisplay.style("display", "none"); hideAutocomplete(); updateVisualization(); } }
@@ -853,19 +1013,105 @@
         function handleCanvasDoubleClick(event) { const [mouseX, mouseY] = d3.pointer(event);  const transform = appState.currentTransform;  const invertedX = transform.invertX(mouseX);  const invertedY = transform.invertY(mouseY);  const clickRadius = (CONFIG.highlightRadius * CONFIG.clickRadiusFactor) / transform.k;   const targetPoint = appState.quadtree?.find(invertedX, invertedY, clickRadius);  if (targetPoint) {  const { width, height } = appState.dimensions.scatterplot;  const targetScale = Math.min(CONFIG.zoomMax, Math.max(CONFIG.zoomMin, transform.k * 2));  const newTransform = d3.zoomIdentity.translate(width / 2, height / 2).scale(targetScale).translate(-targetPoint.px, -targetPoint.py);  ELEMENTS.scatterplotCanvas.transition().duration(750).call(appState.behaviors.zoom.transform, newTransform);  hideTooltip();  appState.hoveredPoint = null;  appState.stickyPoint = null;  updateSVGHoverHighlight();  updateSVGStickyHighlight();  } }
         function handleCanvasMouseOut() { if (appState.hoveredPoint) { appState.hoveredPoint = null; updateSVGHoverHighlight(); }  if (!appState.stickyPoint) { hideTooltip(); }  }
         function handleTimelineBarMouseOver(event, d) { appState.timelineHoveredBin = { x0: d.x0, x1: d.x1 };  drawScatterplot();  d3.select(event.currentTarget).style("fill", getCssVariable(CONFIG.cssVarTimelineHoverColor));  }
-        function handleTimelineBarMouseOut(event, d) { appState.timelineHoveredBin = null;  drawScatterplot();  d3.select(event.currentTarget).style("fill", appState.imposeGradientActive && appState.gradientDateScale ? appState.gradientDateScale(d.x0) : getCssVariable(CONFIG.cssVarActiveColor));  } // Revert to gradient or default
+        function handleTimelineBarMouseOut(event, d) { appState.timelineHoveredBin = null;  drawScatterplot();  d3.select(event.currentTarget).style("fill", appState.imposeGradientActive && appState.gradientDateScale ? appState.gradientDateScale(d.x0) : getCssVariable(CONFIG.cssVarActiveColor));  }
         function handleResize() { showLoading("Adjusting layout..."); setupDimensions();  setupScales();      setupAxes();        setupSVGStructure();  setupCanvas();      appState.behaviors.zoom.translateExtent([[0, 0], [appState.dimensions.scatterplot.width, appState.dimensions.scatterplot.height]]) .extent([[0, 0], [appState.dimensions.scatterplot.width, appState.dimensions.scatterplot.height]]); appState.behaviors.brush.extent([[0, 0], [appState.dimensions.timeline.width, appState.dimensions.timeline.height]]); ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush);  const currentSelectionPixels = appState.currentFilters.dateRange  ? appState.currentFilters.dateRange.map(appState.scales.time)  : appState.scales.time.range();   setTimeout(() => { appState.isBrushing = true; ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush.move, currentSelectionPixels); appState.isBrushing = false; }, 0); ELEMENTS.scatterplotCanvas.call(appState.behaviors.zoom.transform, appState.currentTransform); updateVisualization();  showLoading(false); }
         function handleRunClustering() { if (appState.filteredData.length === 0) { displayError("Cannot run clustering on empty dataset. Adjust filters."); return; } showLoading("Running K-Means clustering..."); appState.currentK = +ELEMENTS.numClustersInput.property("value"); setTimeout(() => {  try { appState.fullData.forEach(d => d.clusterId = null); appState.clusters = runKMeans(appState.filteredData, appState.currentK);  ELEMENTS.resetClusteringBtn.style("display", "inline-block"); showLoading(false); updateVisualization();  } catch (error) { console.error("Clustering error:", error); displayError(`Clustering failed: ${error.message}`); showLoading(false); appState.clusters = null;  updateVisualization(); } }, 50);  }
         function handleResetClustering() { appState.clusters = null; appState.fullData.forEach(d => d.clusterId = null);  ELEMENTS.resetClusteringBtn.style("display", "none"); updateVisualization(); }
+        
+        // MODIFIED FUNCTION [1 of 2]
+        function handleDateInputChange() {
+            const startDateString = ELEMENTS.timelineStartDateInput.property("value");
+            const endDateString = ELEMENTS.timelineEndDateInput.property("value");
+            if (!startDateString || !endDateString) return; // Do nothing if one is empty
+
+            // Set time to ensure start of day and end of day for an inclusive range
+            const startDate = new Date(startDateString + 'T00:00:00');
+            const endDate = new Date(endDateString + 'T23:59:59');
+            
+            if (isNaN(startDate.getTime()) || isNaN(endDate.getTime()) || startDate > endDate) {
+                console.warn("Invalid date range entered.");
+                return;
+            }
+
+            // 1. Manually set the application's date range filter in the state
+            appState.currentFilters.dateRange = [startDate, endDate];
+             if(appState.clusters) {
+                 console.warn("Date range changed while clusters are active. Cluster visuals might be stale. Re-run clustering for current data.");
+             }
+
+            // 2. Trigger a full visualization update. This is the crucial step that
+            // re-filters the data and redraws the timeline histogram correctly.
+            updateVisualization();
+
+            // 3. Programmatically move the brush to visually match the new date range.
+            // We use the `isBrushing` flag to prevent the brush's own event handler
+            // from firing and causing a redundant, second update cycle.
+            const newPixelRange = [appState.scales.time(startDate), appState.scales.time(endDate)];
+            appState.isBrushing = true;
+            ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush.move, newPixelRange);
+            appState.isBrushing = false;
+        }
+
 
         // --- Tooltip Functions ---
-        function showTooltip(event, data) { const pageX = event.pageX; const pageY = event.pageY; let authorsDisplay = Array.isArray(data.authors) ? data.authors.join(', ') : (data.authors || 'N/A'); let content = `<strong>${data.title || 'N/A'}</strong><br>Author(s): ${authorsDisplay}<br>Date: ${data.date.toLocaleDateString()}<br>Tags: ${data.tags?.length > 0 ? data.tags.join(', ') : 'None'}`; if (appState.clusters && data.clusterId !== null && appState.clusters[data.clusterId]) {  const cluster = appState.clusters[data.clusterId]; content += `<br>Cluster: ${cluster.label}`; } ELEMENTS.tooltip.style("display", "inline-block") .style("right", `${0 + CONFIG.tooltipOffsetX + 15}px`)  .style("top", `${0 + CONFIG.tooltipOffsetY + 15}px`) .html(content); }
+        // MODIFIED FUNCTION [2 of 2]
+        function showTooltip(event, data) {
+            const pageX = event.pageX;
+            const pageY = event.pageY;
+            let authorsDisplay = Array.isArray(data.authors) ? data.authors.join(', ') : (data.authors || 'N/A');
+            
+            let content = `<strong>${data.title || 'N/A'}</strong><br>Author(s): ${authorsDisplay}<br>Date: ${data.date.toLocaleDateString()}<br>Tags: ${data.tags?.length > 0 ? data.tags.join(', ') : 'None'}`;
+            
+            if (appState.clusters && data.clusterId !== null && appState.clusters[data.clusterId]) {
+                const cluster = appState.clusters[data.clusterId];
+                // Added the cluster point count `(${cluster.points.length} articles)` here
+                content += `<br>Cluster: ${cluster.label} (${cluster.points.length} articles)`;
+
+                // Add cluster stats if they exist
+                if (cluster.topTags || cluster.topAuthors) {
+                    let statsHtml = '<div class="cluster-stats">';
+                    if (cluster.topTags && cluster.topTags.length > 0) {
+                        statsHtml += '<h4>Top Tags in Cluster</h4><ol>';
+                        cluster.topTags.forEach(t => {
+                            statsHtml += `<li>${t.name} <span class="count">(${t.count})</span></li>`;
+                        });
+                        statsHtml += '</ol>';
+                    }
+                    if (cluster.topAuthors && cluster.topAuthors.length > 0) {
+                        statsHtml += '<h4 style="margin-top:5px;">Top Authors in Cluster</h4><ol>';
+                        cluster.topAuthors.forEach(a => {
+                            statsHtml += `<li>${a.name} <span class="count">(${a.count})</span></li>`;
+                        });
+                        statsHtml += '</ol>';
+                    }
+                    statsHtml += '</div>';
+                    content += statsHtml;
+                }
+            }
+            
+            ELEMENTS.tooltip.style("display", "inline-block")
+                .style("right", `${0 + CONFIG.tooltipOffsetX + 15}px`)
+                .style("top", `${0 + CONFIG.tooltipOffsetY + 15}px`)
+                .html(content);
+        }
+
         function hideTooltip() { ELEMENTS.tooltip.style("display", "none"); }
 
         // --- UI Feedback Functions ---
         function showLoading(message) { if (message) { ELEMENTS.loadingIndicator.text(message).style("display", "block"); } else { ELEMENTS.loadingIndicator.style("display", "none"); } }
         function displayError(message) { ELEMENTS.errorDisplay.html(`Error: ${message}`).style("display", "block"); } 
         function updateFilterSummary() { const count = appState.filteredData.length; let base = `Showing ${count} of ${appState.fullData.length} articles`; const filtersActive = []; const f = appState.currentFilters; if (f.rawQuery.trim()) { filtersActive.push(`matching query "${f.rawQuery}"`); } if (f.dateRange) { const fmt = d3.timeFormat("%b %d, %Y"); const start = fmt(f.dateRange[0]); const end = fmt(f.dateRange[1]); if (d3.timeDay.count(f.dateRange[0], f.dateRange[1]) < 1) { filtersActive.push(`from ${start}`); } else { filtersActive.push(`from ${start} to ${end}`); } } if (filtersActive.length > 0) { base += ", filtered by: " + filtersActive.join(" and ") + "."; } else { base += " (no filters applied)."; } if (f.queryError) { base += ` (Query error: ${f.queryError})`; } ELEMENTS.filterSummary.text(base); }
+
+        function updateTimelineDateInputs(dateRange) {
+            const formatDate = d3.timeFormat("%Y-%m-%d");
+            if (dateRange && dateRange.length === 2) {
+                ELEMENTS.timelineStartDateInput.property("value", formatDate(dateRange[0]));
+                ELEMENTS.timelineEndDateInput.property("value", formatDate(dateRange[1]));
+            } else {
+                ELEMENTS.timelineStartDateInput.property("value", '');
+                ELEMENTS.timelineEndDateInput.property("value", '');
+            }
+        }
 
         // --- Utility Function ---
         function debounce(func, wait) { let timeout; return function executedFunction(...args) { const later = () => { clearTimeout(timeout); func.apply(this, args); }; clearTimeout(timeout); timeout = setTimeout(later, wait); }; }
