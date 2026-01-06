@@ -1,0 +1,1979 @@
+// --- Configuration Constants ---
+const CONFIG = {
+  dataUrl: "articles.json",
+  scatterplotMargin: { top: 20, right: 20, bottom: 40, left: 50 },
+  timelineMargin: { top: 10, right: 20, bottom: 30, left: 45 },
+  pointRadius: 3,
+  highlightRadius: 5,
+  hoverHighlightColor: "#00ffff",
+  stickyHighlightColor: "#ffcc00",
+  zoomMin: 0.5,
+  zoomMax: 20,
+  debounceTime: 350,
+  tooltipOffsetX: 0,
+  tooltipOffsetY: 0,
+  autocompleteLimit: 25,
+  searchRadiusFactor: 1.2,
+  clickRadiusFactor: 1.3,
+  transitionDuration: 750,
+  clustering: {
+    defaultK: 25,
+    maxIterations: 20,
+    labelTopNKeywords: 3,
+    clusterColors: d3.schemeCategory10,
+    hullOpacity: 0.1,
+    hullStrokeWidth: 1.5,
+  },
+  cssVarActiveColor: "--highlight-color",
+  cssVarInactiveColor: "--deemphasis-color",
+  cssVarTimelineHoverColor: "--timeline-hover-color",
+  topNStats: 10,
+  gradientHueRotation: 90,
+};
+
+// --- Application State ---
+const appState = {
+  fullData: [],
+  filteredData: [],
+  uniqueTags: new Set(),
+  uniqueAuthors: new Set(),
+  sortedUniqueTags: [],
+  sortedUniqueAuthors: [],
+  availableNNValues: [],
+  currentNN: 15,
+  currentFilters: {
+    dateRange: null,
+    rawQuery: "",
+    queryFunction: () => true,
+    queryError: null,
+  },
+  autocomplete: {
+    active: false,
+    prefix: null,
+    term: "",
+    suggestions: [],
+    selectedIndex: -1,
+  },
+  currentTransform: d3.zoomIdentity,
+  dimensions: {
+    scatterplot: { width: 0, height: 0 },
+    timeline: { width: 0, height: 0 },
+  },
+  scales: { x: null, y: null, time: null, count: null },
+  axes: {
+    x: null,
+    y: null,
+    time: null,
+    count: null,
+    xGrid: null,
+    yGrid: null,
+  },
+  behaviors: { zoom: null, brush: null },
+  quadtree: null,
+  hoveredPoint: null,
+  stickyPoint: null,
+  timelineHoveredBin: null,
+  isBrushing: false,
+  isTransitioning: false,
+  animationTimer: null,
+  canvasContext: null,
+  pxPyNeedsUpdate: true,
+  clusters: null,
+  currentK: CONFIG.clustering.defaultK,
+  imposeGradientActive: false,
+  gradientDateScale: null,
+};
+
+// --- DOM Element Selectors ---
+const ELEMENTS = {
+  loadingIndicator: d3.select("#loading-indicator"),
+  errorDisplay: d3.select("#error-display"),
+  queryErrorDisplay: d3.select("#query-error-display"),
+  controls: d3.select("#controls"),
+  queryInput: d3.select("#query-input"),
+  autocompleteSuggestions: d3.select("#autocomplete-suggestions"),
+  nnSelect: d3.select("#nn-select"),
+  activeColorPicker: d3.select("#active-color-picker"),
+  inactiveColorPicker: d3.select("#inactive-color-picker"),
+  imposeGradientCheckbox: d3.select("#impose-gradient-checkbox"),
+  gradientKeyDisplay: d3.select("#gradient-key-display"),
+  binningSelect: d3.select("#binning-select"),
+  resetQueryBtn: d3.select("#reset-query-btn"),
+  resetTimelineBtn: d3.select("#reset-timeline"),
+  filterSummary: d3.select("#filter-summary"),
+  scatterplotContainer: d3.select("#scatterplot-container"),
+  scatterplotCanvas: d3.select("#scatterplot-canvas"),
+  scatterplotSvg: d3.select("#scatterplot-svg"),
+  scatterplotContent: d3.select("#scatterplot-svg g.scatterplot-content"),
+  xAxisGroup: d3.select("#scatterplot-svg g.x-axis"),
+  yAxisGroup: d3.select("#scatterplot-svg g.y-axis"),
+  xGridGroup: d3.select("#scatterplot-svg g.x-grid"),
+  yGridGroup: d3.select("#scatterplot-svg g.y-grid"),
+  hoverHighlight: d3.select("#scatterplot-svg .hover-highlight"),
+  stickyHighlight: d3.select("#scatterplot-svg .sticky-highlight"),
+  timelineContainer: d3.select("#timeline-container"),
+  timelineSvg: d3.select("#timeline-svg"),
+  timelineContent: d3.select("#timeline-svg g.timeline-content"),
+  timelineCountAxisGroup: d3.select("#timeline-svg g.count-axis"),
+  timelineBarsGroup: d3.select("#timeline-svg g.timeline-bars"),
+  timeAxisGroup: d3.select("#timeline-svg g.time-axis"),
+  timelineBrushGroup: d3.select("#timeline-svg g.brush"),
+  timelineStartDateInput: d3.select("#timeline-start-date"),
+  timelineEndDateInput: d3.select("#timeline-end-date"),
+  tooltip: d3.select("#tooltip"),
+  numClustersInput: d3.select("#num-clusters"),
+  runClusteringBtn: d3.select("#run-clustering-btn"),
+  resetClusteringBtn: d3.select("#reset-clustering-btn"),
+  clusterLabelsLayer: d3.select("#scatterplot-svg g.cluster-labels-layer"),
+  topTagsDisplay: d3.select("#top-tags-display"),
+  topAuthorsDisplay: d3.select("#top-authors-display"),
+};
+
+// --- Helper function to get CSS variable value ---
+function getCssVariable(variableName) {
+  return getComputedStyle(document.documentElement)
+    .getPropertyValue(variableName)
+    .trim();
+}
+// --- Helper function to set CSS variable value ---
+function setCssVariable(variableName, value) {
+  document.documentElement.style.setProperty(variableName, value);
+}
+
+// --- Initialization ---
+async function initialize() {
+  showLoading("Initializing application...");
+  ELEMENTS.errorDisplay.style("display", "none");
+  ELEMENTS.queryErrorDisplay.style("display", "none");
+  try {
+    await loadAndProcessData();
+    if (appState.fullData.length === 0) {
+      throw new Error("No valid data points found after processing.");
+    }
+    setupVisualComponents();
+    setupInteractionsAndControls();
+    updateVisualization(true);
+    setInitialTimelineBrush();
+    console.log("Initialization complete.");
+    showLoading(false);
+  } catch (error) {
+    console.error("Initialization failed:", error);
+    showLoading(false);
+    displayError(
+      `Initialization failed: ${error.message}. Check console for details.`,
+    );
+  }
+}
+
+async function loadAndProcessData() {
+  showLoading("Loading data...");
+  const rawData = await d3.json(CONFIG.dataUrl);
+  if (!rawData || !Array.isArray(rawData)) {
+    throw new Error(
+      `Invalid data format from ${CONFIG.dataUrl}. Expected an array.`,
+    );
+  }
+  processData(rawData);
+  showLoading(false);
+}
+
+function setupVisualComponents() {
+  showLoading("Setting up visual components...");
+  setupDimensions();
+  setupScales();
+  setupAxes();
+  setupSVGStructure();
+  setupCanvas();
+  showLoading(false);
+}
+
+function setupInteractionsAndControls() {
+  showLoading("Setting up interactions...");
+  setupColorPickers();
+  setupNNSelector();
+  setupFeatureControls();
+  setupCoreInteractions();
+  ELEMENTS.imposeGradientCheckbox.on("change", handleImposeGradientChange);
+  ELEMENTS.timelineStartDateInput.on("change", handleDateInputChange);
+  ELEMENTS.timelineEndDateInput.on("change", handleDateInputChange);
+  showLoading(false);
+}
+
+// --- Data Handling ---
+function processData(rawData) {
+  const tempUniqueTags = new Set();
+  const tempUniqueAuthors = new Set();
+  let skippedCount = 0;
+
+  const firstValidItem = rawData.find(
+    (d) => typeof d === "object" && d !== null,
+  );
+  if (!firstValidItem) {
+    throw new Error("No valid data objects found in the input file.");
+  }
+
+  const nnRegex = /^x_(\d+)$/;
+  appState.availableNNValues = Object.keys(firstValidItem)
+    .map((key) => key.match(nnRegex))
+    .filter(Boolean)
+    .map((match) => parseInt(match[1], 10))
+    .sort((a, b) => a - b);
+
+  if (appState.availableNNValues.length === 0) {
+    throw new Error(
+      "No UMAP coordinate sets (e.g., 'x_15', 'y_15') found in the data.",
+    );
+  }
+
+  if (!appState.availableNNValues.includes(15)) {
+    throw new Error(
+      "Default coordinate set 'x_15' and 'y_15' not found in the data. This is required.",
+    );
+  }
+
+  appState.fullData = rawData
+    .map((d, i) => {
+      if (typeof d !== "object" || d === null) {
+        skippedCount++;
+        return null;
+      }
+      const date = new Date(d.date);
+      if (isNaN(date.getTime())) {
+        skippedCount++;
+        return null;
+      }
+
+      const coords = {};
+      for (const nn of appState.availableNNValues) {
+        const xVal = +d[`x_${nn}`];
+        const yVal = +d[`y_${nn}`];
+        if (
+          d[`x_${nn}`] == null ||
+          d[`y_${nn}`] == null ||
+          isNaN(xVal) ||
+          isNaN(yVal)
+        ) {
+          console.warn(
+            `Skipping data item due to invalid coordinates for NN=${nn}: ID ${d.id || i}`,
+          );
+          skippedCount++;
+          return null;
+        }
+        coords[nn] = { x: xVal, y: yVal };
+      }
+
+      const title = d.title || "";
+      let processedArticleAuthors = ["Unknown"];
+      if (d.hasOwnProperty("authors") && Array.isArray(d.authors)) {
+        const extractedNames = d.authors
+          .filter(
+            (author) => typeof author === "string" && author.trim().length > 0,
+          )
+          .map((author) => author.trim());
+        if (extractedNames.length > 0) processedArticleAuthors = extractedNames;
+      }
+      const tags =
+        d.hasOwnProperty("tags") && Array.isArray(d.tags)
+          ? d.tags.map(String).filter(Boolean)
+          : [];
+      tags.forEach((tag) => tempUniqueTags.add(tag));
+      processedArticleAuthors.forEach((authorName) => {
+        if (authorName !== "Unknown") tempUniqueAuthors.add(authorName);
+      });
+
+      return {
+        id: d.id || `article-${i}`,
+        title,
+        authors: processedArticleAuthors,
+        url: d.url,
+        date: date,
+        tags,
+        coords: coords,
+        px: 0,
+        py: 0,
+        _titleLower: title.toLowerCase(),
+        _authorsLower: processedArticleAuthors.map((a) => a.toLowerCase()),
+        _tagsLower: tags.map((t) => t.toLowerCase()),
+        clusterId: null,
+      };
+    })
+    .filter(Boolean);
+
+  appState.uniqueTags = tempUniqueTags;
+  appState.uniqueAuthors = tempUniqueAuthors;
+  appState.sortedUniqueTags = Array.from(appState.uniqueTags).sort((a, b) =>
+    a.localeCompare(b),
+  );
+  appState.sortedUniqueAuthors = Array.from(appState.uniqueAuthors).sort(
+    (a, b) => a.localeCompare(b),
+  );
+
+  appState.pxPyNeedsUpdate = true;
+  if (skippedCount > 0) {
+    console.log(
+      `Processed ${appState.fullData.length} articles. Skipped ${skippedCount} invalid items.`,
+    );
+  }
+}
+
+// --- Autocomplete Functions ---
+function hideAutocomplete() {
+  appState.autocomplete.active = false;
+  appState.autocomplete.selectedIndex = -1;
+  ELEMENTS.autocompleteSuggestions.style("display", "none");
+}
+
+function updateAutocompleteSuggestions() {
+  const { active, suggestions, selectedIndex } = appState.autocomplete;
+  const container = ELEMENTS.autocompleteSuggestions;
+  if (!active || suggestions.length === 0) {
+    container.style("display", "none");
+    return;
+  }
+  container
+    .style("display", "block")
+    .selectAll(".suggestion-item")
+    .data(suggestions, (d) => d)
+    .join("div")
+    .attr(
+      "class",
+      (d, i) => `suggestion-item${i === selectedIndex ? " active" : ""}`,
+    )
+    .text((d) => d)
+    .attr("title", (d) => d);
+}
+
+function applyAutocompleteSuggestion(suggestion) {
+  const input = ELEMENTS.queryInput.node();
+  const currentQuery = input.value;
+  const prefix = appState.autocomplete.prefix + ":";
+  const prefixIndex = currentQuery
+    .toLowerCase()
+    .lastIndexOf(prefix.toLowerCase());
+  if (prefixIndex === -1) {
+    hideAutocomplete();
+    return;
+  }
+  const textBefore = currentQuery.substring(0, prefixIndex);
+  const formattedSuggestion = suggestion.includes(" ")
+    ? `"${suggestion}"`
+    : suggestion;
+  const newQuery = textBefore + prefix + formattedSuggestion + " ";
+  ELEMENTS.queryInput.property("value", newQuery);
+  input.focus();
+  hideAutocomplete();
+  handleQueryInput({ target: input });
+}
+
+// --- Query Parsing and Evaluation ---
+const TOKEN_TYPES = {
+  TERM: "TERM",
+  PREFIX_TAG: "PREFIX_TAG",
+  PREFIX_AUTHOR: "PREFIX_AUTHOR",
+  PREFIX_INTITLE: "PREFIX_INTITLE",
+  AND: "AND",
+  OR: "OR",
+  NOT: "NOT",
+  LPAREN: "LPAREN",
+  RPAREN: "RPAREN",
+  EOF: "EOF",
+};
+function tokenizeQuery(query) {
+  const tokens = [];
+  let pos = 0;
+  query = query.trim();
+  const patterns = [
+    { type: TOKEN_TYPES.LPAREN, regex: /^\(/ },
+    { type: TOKEN_TYPES.RPAREN, regex: /^\)/ },
+    { type: TOKEN_TYPES.AND, regex: /^\bAND\b/i },
+    { type: TOKEN_TYPES.OR, regex: /^\bOR\b/i },
+    { type: TOKEN_TYPES.NOT, regex: /^\bNOT\b/i },
+    { type: TOKEN_TYPES.PREFIX_TAG, regex: /^\bTAG:/i },
+    { type: TOKEN_TYPES.PREFIX_AUTHOR, regex: /^\bAUTHOR:/i },
+    { type: TOKEN_TYPES.PREFIX_INTITLE, regex: /^\bINTITLE:/i },
+    { type: TOKEN_TYPES.TERM, regex: /^"([^"]*)"/ },
+    { type: TOKEN_TYPES.TERM, regex: /^([^\s()]+)/ },
+  ];
+  while (pos < query.length) {
+    let matched = false;
+    const whitespaceMatch = query.substring(pos).match(/^\s+/);
+    if (whitespaceMatch) {
+      pos += whitespaceMatch[0].length;
+      continue;
+    }
+    for (const pattern of patterns) {
+      const match = query.substring(pos).match(pattern.regex);
+      if (match) {
+        let value = match[0];
+        if (pattern.type === TOKEN_TYPES.TERM && match[1] !== undefined) {
+          value = match[1];
+        }
+        tokens.push({ type: pattern.type, value: value.toLowerCase() });
+        pos += match[0].length;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      throw new Error(
+        `Invalid char at pos ${pos}: "${query.substring(pos, pos + 10)}..."`,
+      );
+    }
+  }
+  tokens.push({ type: TOKEN_TYPES.EOF, value: null });
+  return tokens;
+}
+let currentTokens = [];
+let currentTokenIndex = 0;
+function currentToken() {
+  return currentTokens[currentTokenIndex];
+}
+function nextToken() {
+  if (currentTokenIndex < currentTokens.length - 1) currentTokenIndex++;
+}
+function matchToken(type) {
+  if (currentToken().type === type) {
+    const token = currentToken();
+    nextToken();
+    return token;
+  }
+  throw new Error(
+    `Syntax Error: Expected ${type} found ${currentToken().type}`,
+  );
+}
+function parseExpression() {
+  let leftFilter = parseTerm();
+  while (currentToken().type === TOKEN_TYPES.OR) {
+    nextToken();
+    const rightFilter = parseTerm();
+    const capturedLeft = leftFilter;
+    leftFilter = (d) => capturedLeft(d) || rightFilter(d);
+  }
+  return leftFilter;
+}
+function parseTerm() {
+  let leftFilter = parseFactor();
+  while (currentToken().type === TOKEN_TYPES.AND) {
+    nextToken();
+    const rightFilter = parseFactor();
+    const capturedLeft = leftFilter;
+    leftFilter = (d) => capturedLeft(d) && rightFilter(d);
+  }
+  return leftFilter;
+}
+function parseFactor() {
+  if (currentToken().type === TOKEN_TYPES.NOT) {
+    nextToken();
+    const filterToNegate = parseFactor();
+    return (d) => !filterToNegate(d);
+  } else if (currentToken().type === TOKEN_TYPES.LPAREN) {
+    nextToken();
+    const expressionFilter = parseExpression();
+    matchToken(TOKEN_TYPES.RPAREN);
+    return expressionFilter;
+  } else {
+    return parseAtom();
+  }
+}
+function parseAtom() {
+  const token = currentToken();
+  let filterFunc = () => false;
+  switch (token.type) {
+    case TOKEN_TYPES.PREFIX_TAG:
+      nextToken();
+      const tagTerm = matchToken(TOKEN_TYPES.TERM).value;
+      filterFunc = (d) => d._tagsLower.includes(tagTerm);
+      break;
+    case TOKEN_TYPES.PREFIX_AUTHOR:
+      nextToken();
+      const authorTerm = matchToken(TOKEN_TYPES.TERM).value;
+      filterFunc = (d) =>
+        d._authorsLower.some((author) => author.includes(authorTerm));
+      break;
+    case TOKEN_TYPES.PREFIX_INTITLE:
+      nextToken();
+      const titleTerm = matchToken(TOKEN_TYPES.TERM).value;
+      filterFunc = (d) => d._titleLower.includes(titleTerm);
+      break;
+    case TOKEN_TYPES.TERM:
+      nextToken();
+      const genericTerm = token.value;
+      filterFunc = (d) =>
+        d._titleLower.includes(genericTerm) ||
+        d._authorsLower.some((author) => author.includes(genericTerm)) ||
+        d._tagsLower.includes(genericTerm);
+      break;
+    default:
+      throw new Error(`Syntax Error: Unexpected token ${token.type}`);
+  }
+  return filterFunc;
+}
+function parseQuery(query) {
+  if (!query || query.trim() === "") {
+    return { queryFunction: () => true, error: null };
+  }
+  try {
+    currentTokens = tokenizeQuery(query);
+    currentTokenIndex = 0;
+    const queryFunction = parseExpression();
+    if (currentToken().type !== TOKEN_TYPES.EOF) {
+      throw new Error(
+        `Syntax Error: Unexpected token '${currentToken().value}'`,
+      );
+    }
+    return { queryFunction, error: null };
+  } catch (error) {
+    console.error("Query parsing error:", error);
+    return { queryFunction: () => false, error: error.message };
+  }
+}
+
+// --- Filter Logic ---
+function isPointFiltered(d) {
+  const { dateRange, queryFunction } = appState.currentFilters;
+  const meetsDate =
+    !dateRange || (d.date >= dateRange[0] && d.date <= dateRange[1]);
+  if (!meetsDate) return false;
+  const meetsQuery = queryFunction(d);
+  if (!meetsQuery) return false;
+  return true;
+}
+function applyFiltersAndUpdateQuadtree() {
+  appState.filteredData = appState.fullData.filter(isPointFiltered);
+  if (appState.clusters) {
+    syncPointClusterIdsWithActiveClusters(appState.filteredData);
+  }
+  updateQuadtree();
+}
+function syncPointClusterIdsWithActiveClusters(dataToSync) {
+  if (!appState.clusters) return;
+  const clusteredPointMap = new Map();
+  appState.clusters.forEach((cluster) => {
+    cluster.points.forEach((pointInCluster) => {
+      clusteredPointMap.set(pointInCluster.id, cluster.id);
+    });
+  });
+  dataToSync.forEach((d) => {
+    d.clusterId = clusteredPointMap.get(d.id) ?? null;
+  });
+}
+
+function updateAllPxPy() {
+  if (!appState.scales.x || !appState.scales.y) return;
+  const currentNN = appState.currentNN;
+  appState.fullData.forEach((d) => {
+    const currentCoords = d.coords[currentNN];
+    d.px = appState.scales.x(currentCoords.x);
+    d.py = appState.scales.y(currentCoords.y);
+  });
+  appState.pxPyNeedsUpdate = false;
+}
+
+function updateQuadtree() {
+  if (appState.pxPyNeedsUpdate) {
+    updateAllPxPy();
+  }
+  appState.quadtree = d3
+    .quadtree()
+    .x((d) => d.px)
+    .y((d) => d.py)
+    .addAll(appState.filteredData);
+}
+
+// --- UI Setup ---
+function setupDimensions() {
+  const scRect = ELEMENTS.scatterplotContainer.node().getBoundingClientRect();
+  const tlRect = ELEMENTS.timelineContainer.node().getBoundingClientRect();
+  appState.dimensions.scatterplot.width = Math.max(
+    10,
+    scRect.width -
+      CONFIG.scatterplotMargin.left -
+      CONFIG.scatterplotMargin.right,
+  );
+  appState.dimensions.scatterplot.height = Math.max(
+    10,
+    scRect.height -
+      CONFIG.scatterplotMargin.top -
+      CONFIG.scatterplotMargin.bottom,
+  );
+  appState.dimensions.timeline.width = Math.max(
+    10,
+    tlRect.width - CONFIG.timelineMargin.left - CONFIG.timelineMargin.right,
+  );
+  appState.dimensions.timeline.height = Math.max(
+    10,
+    tlRect.height - CONFIG.timelineMargin.top - CONFIG.timelineMargin.bottom,
+  );
+}
+
+function setupScales() {
+  const scDims = appState.dimensions.scatterplot;
+  const tlDims = appState.dimensions.timeline;
+
+  const allX = appState.fullData.flatMap((d) =>
+    Object.values(d.coords).map((c) => c.x),
+  );
+  const allY = appState.fullData.flatMap((d) =>
+    Object.values(d.coords).map((c) => c.y),
+  );
+
+  const xExt = d3.extent(allX);
+  const yExt = d3.extent(allY);
+  const dateExt = d3.extent(appState.fullData, (d) => d.date);
+
+  if (xExt[0] === undefined || yExt[0] === undefined || !dateExt[0]) {
+    throw new Error("Invalid data extents for scales.");
+  }
+  appState.scales.x = d3
+    .scaleLinear()
+    .domain(xExt)
+    .nice()
+    .range([0, scDims.width]);
+  appState.scales.y = d3
+    .scaleLinear()
+    .domain(yExt)
+    .nice()
+    .range([scDims.height, 0]);
+  appState.scales.time = d3
+    .scaleTime()
+    .domain(dateExt)
+    .nice()
+    .range([0, tlDims.width]);
+  appState.scales.count = d3.scaleLinear().range([tlDims.height, 0]);
+  appState.pxPyNeedsUpdate = true;
+}
+
+function setupAxes() {
+  if (
+    !appState.scales.x ||
+    !appState.scales.y ||
+    !appState.scales.time ||
+    !appState.scales.count
+  ) {
+    throw new Error("Scales not initialized for axes.");
+  }
+  appState.axes.x = d3.axisBottom(appState.scales.x).ticks(10).tickSizeOuter(0);
+  appState.axes.y = d3.axisLeft(appState.scales.y).ticks(10).tickSizeOuter(0);
+  appState.axes.time = d3
+    .axisBottom(appState.scales.time)
+    .ticks(d3.timeYear.every(1))
+    .tickFormat(d3.timeFormat("%Y"));
+  appState.axes.count = d3
+    .axisLeft(appState.scales.count)
+    .ticks(3)
+    .tickSizeOuter(0);
+  appState.axes.xGrid = d3
+    .axisBottom(appState.scales.x)
+    .tickSize(-appState.dimensions.scatterplot.height)
+    .tickFormat("");
+  appState.axes.yGrid = d3
+    .axisLeft(appState.scales.y)
+    .tickSize(-appState.dimensions.scatterplot.width)
+    .tickFormat("");
+}
+function setupSVGStructure() {
+  const scM = CONFIG.scatterplotMargin;
+  const tlM = CONFIG.timelineMargin;
+  const scD = appState.dimensions.scatterplot;
+  const tlD = appState.dimensions.timeline;
+  ELEMENTS.scatterplotSvg
+    .attr("width", scD.width + scM.left + scM.right)
+    .attr("height", scD.height + scM.top + scM.bottom);
+  ELEMENTS.timelineSvg
+    .attr("width", tlD.width + tlM.left + tlM.right)
+    .attr("height", tlD.height + tlM.top + tlM.bottom);
+  ELEMENTS.scatterplotContent.attr(
+    "transform",
+    `translate(${scM.left},${scM.top})`,
+  );
+  ELEMENTS.timelineContent.attr(
+    "transform",
+    `translate(${tlM.left},${tlM.top})`,
+  );
+  ELEMENTS.xAxisGroup.attr("transform", `translate(0,${scD.height})`);
+  ELEMENTS.xGridGroup.attr("transform", `translate(0,${scD.height})`);
+  ELEMENTS.timeAxisGroup.attr("transform", `translate(0,${tlD.height})`);
+}
+
+function setupCanvas() {
+  const scD = appState.dimensions.scatterplot;
+  const scM = CONFIG.scatterplotMargin;
+  ELEMENTS.scatterplotCanvas
+    .attr("width", scD.width)
+    .attr("height", scD.height)
+    .style("transform", `translate(${scM.left}px, ${scM.top}px)`);
+  appState.canvasContext = ELEMENTS.scatterplotCanvas.node().getContext("2d");
+  if (!appState.canvasContext) {
+    throw new Error("Failed to get 2D canvas context.");
+  }
+}
+
+function setupColorPickers() {
+  const initialActiveColor =
+    getCssVariable(CONFIG.cssVarActiveColor) || "#ffcc00";
+  const initialInactiveColor =
+    getCssVariable(CONFIG.cssVarInactiveColor) || "#c2c3c4";
+  ELEMENTS.activeColorPicker
+    .property("value", initialActiveColor)
+    .on("input", handleActiveColorChange);
+  ELEMENTS.inactiveColorPicker
+    .property("value", initialInactiveColor)
+    .on("input", handleInactiveColorChange);
+  setCssVariable(CONFIG.cssVarActiveColor, initialActiveColor);
+  setCssVariable(CONFIG.cssVarInactiveColor, initialInactiveColor);
+}
+
+function setupNNSelector() {
+  ELEMENTS.nnSelect
+    .selectAll("option")
+    .data(appState.availableNNValues)
+    .join("option")
+    .attr("value", (d) => d)
+    .text((d) => d);
+  ELEMENTS.nnSelect
+    .property("value", appState.currentNN)
+    .on("change", handleNNChange);
+}
+
+function setupFeatureControls() {
+  ELEMENTS.numClustersInput
+    .property("value", appState.currentK)
+    .on("input", () => {
+      appState.currentK = +ELEMENTS.numClustersInput.property("value");
+    });
+  ELEMENTS.runClusteringBtn.on("click", handleRunClustering);
+  ELEMENTS.resetClusteringBtn.on("click", handleResetClustering);
+}
+function setupCoreInteractions() {
+  const scD = appState.dimensions.scatterplot;
+  const tlD = appState.dimensions.timeline;
+  appState.behaviors.zoom = d3
+    .zoom()
+    .scaleExtent([CONFIG.zoomMin, CONFIG.zoomMax])
+    .translateExtent([
+      [0, 0],
+      [scD.width, scD.height],
+    ])
+    .extent([
+      [0, 0],
+      [scD.width, scD.height],
+    ])
+    .on("zoom", handleZoom);
+  ELEMENTS.scatterplotCanvas.call(appState.behaviors.zoom);
+  appState.behaviors.brush = d3
+    .brushX()
+    .extent([
+      [0, 0],
+      [tlD.width, tlD.height],
+    ])
+    .on("start brush end", handleBrush);
+  ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush);
+  ELEMENTS.queryInput
+    .on("input", debounce(handleQueryInput, CONFIG.debounceTime))
+    .on("keydown", handleQueryKeyDown)
+    .on("blur", handleQueryBlur);
+  ELEMENTS.autocompleteSuggestions.on("mousedown", handleSuggestionClick);
+  ELEMENTS.binningSelect.on("change", handleBinningChange);
+  ELEMENTS.resetQueryBtn.on("click", resetQuery);
+  ELEMENTS.resetTimelineBtn.on("click", resetTimelineBrush);
+  ELEMENTS.scatterplotCanvas
+    .on("mousemove", handleCanvasMouseMove)
+    .on("click", handleCanvasClick)
+    .on("mouseout", handleCanvasMouseOut)
+    .on("dblclick.zoom", null)
+    .on("dblclick", handleCanvasDoubleClick);
+  d3.select(window).on("resize", debounce(handleResize, CONFIG.debounceTime));
+}
+
+// --- Drawing Functions ---
+function drawScatterplot() {
+  const ctx = appState.canvasContext;
+  if (!ctx) return;
+
+  const { width, height } = appState.dimensions.scatterplot;
+  const transform = appState.currentTransform;
+
+  ctx.save();
+  ctx.clearRect(0, 0, width, height);
+  ctx.translate(transform.x, transform.y);
+  ctx.scale(transform.k, transform.k);
+
+  drawCanvasClusterHulls(ctx, transform);
+
+  // Draw inactive points
+  const inactiveRadius = CONFIG.pointRadius / transform.k;
+  ctx.fillStyle = getCssVariable(CONFIG.cssVarInactiveColor);
+  appState.fullData.forEach((d) => {
+    if (!isPointFiltered(d)) {
+      ctx.beginPath();
+      ctx.arc(d.px, d.py, inactiveRadius, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  });
+
+  // Draw active points
+  drawActivePoints(ctx, transform);
+
+  ctx.restore();
+
+  updateSVGHoverHighlight();
+  updateSVGStickyHighlight();
+  drawClusterLabels();
+}
+
+function drawCanvasClusterHulls(ctx, transform) {
+  if (!appState.clusters || appState.clusters.length === 0) return;
+
+  appState.clusters.forEach((cluster) => {
+    if (!cluster.points || cluster.points.length < 3) return;
+    const hullPoints = d3.polygonHull(cluster.points.map((p) => [p.px, p.py]));
+    if (!hullPoints) return;
+    const color = d3.color(
+      CONFIG.clustering.clusterColors[
+        cluster.id % CONFIG.clustering.clusterColors.length
+      ],
+    );
+    if (!color) return;
+
+    ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${CONFIG.clustering.hullOpacity})`;
+    ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.6)`;
+    ctx.lineWidth = CONFIG.clustering.hullStrokeWidth / transform.k;
+
+    ctx.beginPath();
+    ctx.moveTo(hullPoints[0][0], hullPoints[0][1]);
+    for (let i = 1; i < hullPoints.length; i++) {
+      ctx.lineTo(hullPoints[i][0], hullPoints[i][1]);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  });
+}
+
+function drawActivePoints(ctx, transform) {
+  const activeRadius = CONFIG.highlightRadius / transform.k;
+  const defaultActiveColor = getCssVariable(CONFIG.cssVarActiveColor);
+  const timelineHoverColor = getCssVariable(CONFIG.cssVarTimelineHoverColor);
+
+  let dataToDraw = appState.filteredData;
+  if (
+    appState.imposeGradientActive &&
+    appState.gradientDateScale &&
+    appState.filteredData.length > 0
+  ) {
+    // Create a sorted copy to preserve draw order
+    dataToDraw = [...appState.filteredData].sort(
+      (a, b) => a.date.getTime() - b.date.getTime(),
+    );
+  }
+
+  dataToDraw.forEach((d) => {
+    let pointColor = defaultActiveColor;
+    if (appState.imposeGradientActive && appState.gradientDateScale) {
+      pointColor = appState.gradientDateScale(d.date);
+    } else if (
+      appState.timelineHoveredBin &&
+      d.date >= appState.timelineHoveredBin.x0 &&
+      d.date < appState.timelineHoveredBin.x1
+    ) {
+      pointColor = timelineHoverColor;
+    }
+    ctx.fillStyle = pointColor;
+    ctx.beginPath();
+    ctx.arc(d.px, d.py, activeRadius, 0, 2 * Math.PI);
+    ctx.fill();
+  });
+}
+
+function drawTimeline() {
+  const { time: timeScale, count: countScale } = appState.scales;
+  if (!appState.dimensions.timeline) return;
+  const { width, height } = appState.dimensions.timeline;
+  const selectedBinKey = ELEMENTS.binningSelect.property("value");
+  const binMap = {
+    week: d3.timeWeek,
+    fortnight: d3.timeWeek.every(2),
+    month: d3.timeMonth,
+    year: d3.timeYear,
+  };
+  const binningInterval = binMap[selectedBinKey] || d3.timeWeek.every(2);
+  const timeDomain = timeScale.domain();
+  const defaultBarColor = getCssVariable(CONFIG.cssVarActiveColor);
+
+  if (
+    !timeScale ||
+    !countScale ||
+    !binningInterval ||
+    width <= 0 ||
+    height <= 0 ||
+    !timeDomain ||
+    timeDomain.length !== 2
+  )
+    return;
+
+  const histogram = d3
+    .histogram()
+    .value((d) => d.date)
+    .domain(timeDomain)
+    .thresholds(binningInterval.range(timeDomain[0], timeDomain[1]));
+  const bins = histogram(appState.filteredData);
+  countScale
+    .domain([0, Math.max(1, d3.max(bins, (d) => d.length) || 0)])
+    .nice();
+
+  ELEMENTS.timelineBarsGroup
+    .selectAll(".timeline-bar")
+    .data(bins, (d) => `${d.x0}-${d.x1}`)
+    .join("rect")
+    .attr("class", "timeline-bar")
+    .attr("x", (d) => timeScale(d.x0) + 1)
+    .attr("width", (d) => Math.max(0, timeScale(d.x1) - timeScale(d.x0) - 1))
+    .attr("y", (d) => countScale(d.length))
+    .attr("height", (d) => Math.max(0, height - countScale(d.length)))
+    .style("fill", (d) =>
+      appState.imposeGradientActive && appState.gradientDateScale
+        ? appState.gradientDateScale(d.x0)
+        : defaultBarColor,
+    )
+    .on("mouseover", handleTimelineBarMouseOver)
+    .on("mouseout", handleTimelineBarMouseOut);
+
+  if (appState.axes.time) {
+    ELEMENTS.timeAxisGroup.call(appState.axes.time);
+  }
+  if (appState.axes.count) {
+    ELEMENTS.timelineCountAxisGroup.call(appState.axes.count);
+  }
+}
+
+function drawAxes() {
+  const { x: scaleX, y: scaleY } = appState.scales;
+  const transform = appState.currentTransform;
+  if (
+    !appState.axes.x ||
+    !appState.axes.y ||
+    !appState.axes.time ||
+    !scaleX ||
+    !scaleY
+  )
+    return;
+  const currentXScale = transform.rescaleX(scaleX);
+  const currentYScale = transform.rescaleY(scaleY);
+  ELEMENTS.xAxisGroup.call(appState.axes.x.scale(currentXScale));
+  ELEMENTS.yAxisGroup.call(appState.axes.y.scale(currentYScale));
+  ELEMENTS.xGridGroup.call(appState.axes.xGrid.scale(currentXScale));
+  ELEMENTS.yGridGroup.call(appState.axes.yGrid.scale(currentYScale));
+}
+
+// --- K-Means Clustering Implementation ---
+function initializeCentroids(data, k) {
+  const centroids = [];
+  const uniquePoints = Array.from(
+    new Set(data.map((d) => `${d.px},${d.py}`)),
+  ).map((s) => {
+    const parts = s.split(",");
+    return { px: +parts[0], py: +parts[1] };
+  });
+  if (uniquePoints.length === 0) {
+    console.warn(
+      "K-Means: No unique points available to initialize centroids.",
+    );
+    return [];
+  }
+  const numAvailableCentroids = Math.min(k, uniquePoints.length);
+  if (k > uniquePoints.length) {
+    console.warn(
+      `K-Means: Requested ${k} clusters, but only ${uniquePoints.length} unique points available. Using ${numAvailableCentroids} clusters.`,
+    );
+  }
+  const shuffled = uniquePoints.sort(() => 0.5 - Math.random());
+  for (let i = 0; i < numAvailableCentroids; i++) {
+    centroids.push(shuffled[i]);
+  }
+  return centroids.map((c) => [c.px, c.py]);
+}
+function assignPointsToCentroids(data, centroids) {
+  if (centroids.length === 0) {
+    data.forEach((point) => (point.clusterId = null));
+    return;
+  }
+  data.forEach((point) => {
+    let minDist = Infinity;
+    let clusterId = 0;
+    centroids.forEach((centroid, i) => {
+      const dist = Math.sqrt(
+        Math.pow(point.px - centroid[0], 2) +
+          Math.pow(point.py - centroid[1], 2),
+      );
+      if (dist < minDist) {
+        minDist = dist;
+        clusterId = i;
+      }
+    });
+    point.clusterId = clusterId;
+  });
+}
+function calculateNewCentroids(data, k) {
+  if (k === 0) return [];
+  const newCentroids = Array(k)
+    .fill(null)
+    .map(() => ({ sumX: 0, sumY: 0, count: 0 }));
+  data.forEach((point) => {
+    if (
+      point.clusterId !== null &&
+      point.clusterId < k &&
+      newCentroids[point.clusterId]
+    ) {
+      newCentroids[point.clusterId].sumX += point.px;
+      newCentroids[point.clusterId].sumY += point.py;
+      newCentroids[point.clusterId].count++;
+    }
+  });
+  return newCentroids
+    .map((c) => (c.count > 0 ? [c.sumX / c.count, c.sumY / c.count] : null))
+    .filter(Boolean);
+}
+
+function runKMeans(dataToCluster, k_requested) {
+  let k = k_requested;
+  if (dataToCluster.length === 0) {
+    console.warn("K-Means: Cannot run on empty dataset.");
+    return [];
+  }
+  if (dataToCluster.length < k) {
+    console.warn(
+      `K-Means: Not enough data points (${dataToCluster.length}) for ${k} clusters. Assigning all to one cluster or fewer if possible.`,
+    );
+    k = Math.min(k, dataToCluster.length);
+    if (k === 0 && dataToCluster.length > 0) k = 1;
+    else if (k === 0 && dataToCluster.length === 0) return [];
+  }
+  let centroids = initializeCentroids(dataToCluster, k);
+  if (centroids.length === 0 && dataToCluster.length > 0) {
+    console.warn(
+      "K-Means: Centroid initialization failed, attempting to create a single cluster.",
+    );
+    if (dataToCluster.length > 0) {
+      assignPointsToCentroids(dataToCluster, [
+        [dataToCluster[0].px, dataToCluster[0].py],
+      ]);
+      centroids = calculateNewCentroids(dataToCluster, 1);
+      k = centroids.length;
+    } else {
+      return [];
+    }
+  } else if (centroids.length < k) {
+    console.warn(
+      `K-Means: Initialized with ${centroids.length} centroids, less than requested ${k}. Proceeding with ${centroids.length}.`,
+    );
+    k = centroids.length;
+  }
+  if (k === 0) {
+    dataToCluster.forEach((d) => (d.clusterId = null));
+    return [];
+  }
+  let oldAssignments = null;
+  let iterations = 0;
+  while (iterations < CONFIG.clustering.maxIterations) {
+    assignPointsToCentroids(dataToCluster, centroids);
+    const currentAssignments = dataToCluster.map((d) => d.clusterId).join(",");
+    if (currentAssignments === oldAssignments) {
+      console.log(`K-Means: Converged in ${iterations} iterations.`);
+      break;
+    }
+    oldAssignments = currentAssignments;
+    const newCentroidsList = calculateNewCentroids(dataToCluster, k);
+    if (newCentroidsList.length < k && newCentroidsList.length > 0) {
+      console.warn(
+        `K-Means: Some clusters became empty. Reducing k from ${k} to ${newCentroidsList.length}.`,
+      );
+      centroids = newCentroidsList;
+      k = newCentroidsList.length;
+    } else if (newCentroidsList.length === 0) {
+      console.warn("K-Means: All clusters became empty. Stopping.");
+      break;
+    } else {
+      centroids = newCentroidsList;
+    }
+    iterations++;
+    if (iterations === CONFIG.clustering.maxIterations) {
+      console.log(
+        `K-Means: Reached max iterations (${CONFIG.clustering.maxIterations}).`,
+      );
+    }
+  }
+  if (k === 0 || centroids.length === 0) {
+    dataToCluster.forEach((d) => (d.clusterId = null));
+    return [];
+  }
+  const clusters = Array(k)
+    .fill(null)
+    .map((_, i) => ({
+      id: i,
+      points: [],
+      centroid: centroids[i],
+      label: "",
+    }));
+  dataToCluster.forEach((p) => {
+    if (p.clusterId !== null && p.clusterId < k && clusters[p.clusterId]) {
+      clusters[p.clusterId].points.push(p);
+    }
+  });
+  const finalClusters = clusters.filter(
+    (c) => c.points.length > 0 && c.centroid,
+  );
+  finalClusters.forEach((cluster, i) => {
+    cluster.id = i;
+    cluster.points.forEach((p) => (p.clusterId = i));
+    cluster.label = generateClusterLabel(cluster);
+    const clusterStats = calculateTopStatsForCluster(cluster.points);
+    cluster.topTags = clusterStats.topTags;
+    cluster.topAuthors = clusterStats.topAuthors;
+  });
+  return finalClusters;
+}
+
+function generateClusterLabel(cluster) {
+  if (!cluster.points || cluster.points.length === 0)
+    return `Cluster ${cluster.id} (Empty)`;
+  const tagCounts = {};
+  cluster.points.forEach((point) => {
+    point.tags.forEach((tag) => {
+      tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+    });
+  });
+  const sortedTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]);
+  const topTags = sortedTags
+    .slice(0, CONFIG.clustering.labelTopNKeywords)
+    .map((entry) => entry[0]);
+  return topTags.length > 0 ? topTags.join(", ") : `Cluster ${cluster.id}`;
+}
+function drawClusterLabels() {
+  ELEMENTS.clusterLabelsLayer.selectAll(".cluster-label").remove();
+  if (!appState.clusters || appState.clusters.length === 0) {
+    return;
+  }
+  const transform = appState.currentTransform;
+  const labelsData = appState.clusters
+    .map((cluster) => {
+      if (!cluster.centroid || !cluster.points || cluster.points.length === 0)
+        return null;
+      const [cx, cy] = cluster.centroid;
+      return {
+        id: cluster.id,
+        x: transform.applyX(cx),
+        y: transform.applyY(cy),
+        label: cluster.label,
+      };
+    })
+    .filter(Boolean);
+  ELEMENTS.clusterLabelsLayer
+    .selectAll(".cluster-label")
+    .data(labelsData, (d) => d.id)
+    .join("text")
+    .attr("class", "cluster-label")
+    .attr("x", (d) => d.x)
+    .attr("y", (d) => d.y)
+    .text((d) => d.label)
+    .attr("dy", "0.35em");
+}
+
+// --- Update Functions ---
+function updateVisualization(isInitialLoad = false) {
+  applyFiltersAndUpdateQuadtree();
+  if (appState.imposeGradientActive) {
+    setupGradientScale();
+  } else {
+    appState.gradientDateScale = null;
+  }
+  drawAxes();
+  drawTimeline();
+  drawScatterplot();
+  updateSelectionHighlights();
+  updateGradientKeyDisplay();
+  updateFilterSummary();
+  updateTimelineDateInputs(appState.currentFilters.dateRange);
+}
+function setupGradientScale() {
+  if (!appState.imposeGradientActive || appState.filteredData.length === 0) {
+    appState.gradientDateScale = null;
+    return;
+  }
+  const dateExtent = d3.extent(appState.filteredData, (d) => d.date);
+  if (
+    !dateExtent[0] ||
+    !dateExtent[1] ||
+    dateExtent[0].getTime() === dateExtent[1].getTime()
+  ) {
+    appState.gradientDateScale = null;
+    return;
+  }
+  const minDate = dateExtent[0];
+  const maxDate = dateExtent[1];
+  const baseColorString = getCssVariable(CONFIG.cssVarActiveColor);
+  const baseColor = d3.hsl(baseColorString);
+  if (isNaN(baseColor.h)) {
+    console.warn(
+      "Base highlight color has undefined hue. Gradient may not appear as expected.",
+    );
+    const startColor = d3.color(baseColorString).brighter(0.5).toString();
+    const endColor = d3.color(baseColorString).darker(0.5).toString();
+    appState.gradientDateScale = d3
+      .scaleTime()
+      .domain([minDate, maxDate])
+      .range([startColor, endColor])
+      .interpolate(d3.interpolateRgb);
+  } else {
+    const startHueColor = d3.hsl(
+      baseColor.h - CONFIG.gradientHueRotation,
+      baseColor.s,
+      baseColor.l,
+    );
+    const endHueColor = d3.hsl(
+      baseColor.h + CONFIG.gradientHueRotation,
+      baseColor.s,
+      baseColor.l,
+    );
+    appState.gradientDateScale = d3
+      .scaleTime()
+      .domain([minDate, maxDate])
+      .range([startHueColor.toString(), endHueColor.toString()])
+      .interpolate(d3.interpolateHsl);
+  }
+}
+function updateGradientKeyDisplay() {
+  const keyDisplay = ELEMENTS.gradientKeyDisplay;
+  if (
+    appState.imposeGradientActive &&
+    appState.gradientDateScale &&
+    appState.filteredData.length > 0
+  ) {
+    const domain = appState.gradientDateScale.domain();
+    const range = appState.gradientDateScale.range
+      ? appState.gradientDateScale.range()
+      : [
+          appState.gradientDateScale(domain[0]),
+          appState.gradientDateScale(domain[1]),
+        ];
+    const minDate = domain[0];
+    const maxDate = domain[1];
+    const startColor = range[0];
+    const endColor = range[1];
+    const dateFormat = d3.timeFormat("%b %d, %Y");
+    keyDisplay
+      .html(
+        ` <div class="gradient-key-item"> <span class="gradient-key-swatch" style="background-color: ${startColor};"></span> <span>${dateFormat(minDate)} (Earliest)</span> </div> <div class="gradient-key-item"> <span class="gradient-key-swatch" style="background-color: ${endColor};"></span> <span>${dateFormat(maxDate)} (Latest)</span> </div> `,
+      )
+      .style("display", "block");
+  } else {
+    keyDisplay.style("display", "none").html("");
+  }
+}
+function updateSVGHoverHighlight() {
+  const point = appState.hoveredPoint;
+  const transform = appState.currentTransform;
+  if (
+    point &&
+    isPointFiltered(point) &&
+    point.id !== appState.stickyPoint?.id
+  ) {
+    const cx = transform.applyX(point.px);
+    const cy = transform.applyY(point.py);
+    ELEMENTS.hoverHighlight
+      .attr("cx", cx)
+      .attr("cy", cy)
+      .style("display", "block");
+  } else {
+    ELEMENTS.hoverHighlight.style("display", "none");
+  }
+}
+function updateSVGStickyHighlight() {
+  const point = appState.stickyPoint;
+  const transform = appState.currentTransform;
+  if (point && isPointFiltered(point)) {
+    const cx = transform.applyX(point.px);
+    const cy = transform.applyY(point.py);
+    ELEMENTS.stickyHighlight
+      .attr("cx", cx)
+      .attr("cy", cy)
+      .style("display", "block");
+  } else {
+    ELEMENTS.stickyHighlight.style("display", "none");
+  }
+}
+function updateSelectionHighlights() {
+  const topN = CONFIG.topNStats;
+  const tagCounts = new Map();
+  appState.filteredData.forEach((article) => {
+    article.tags.forEach((tag) => {
+      tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+    });
+  });
+  const sortedTags = Array.from(tagCounts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, topN);
+  ELEMENTS.topTagsDisplay.html(
+    sortedTags.length > 0 ? "" : '<ol class="stats-list"><li>N/A</li></ol>',
+  );
+  if (sortedTags.length > 0) {
+    const ol = ELEMENTS.topTagsDisplay.append("ol").attr("class", "stats-list");
+    sortedTags.forEach(([tag, count]) => {
+      ol.append("li").html(`${tag} <span class="count">(${count})</span>`);
+    });
+  }
+  const authorCounts = new Map();
+  appState.filteredData.forEach((article) => {
+    article.authors.forEach((author) => {
+      authorCounts.set(author, (authorCounts.get(author) || 0) + 1);
+    });
+  });
+  const sortedAuthors = Array.from(authorCounts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, topN);
+  ELEMENTS.topAuthorsDisplay.html(
+    sortedAuthors.length > 0 ? "" : '<ol class="stats-list"><li>N/A</li></ol>',
+  );
+  if (sortedAuthors.length > 0) {
+    const ol = ELEMENTS.topAuthorsDisplay
+      .append("ol")
+      .attr("class", "stats-list");
+    sortedAuthors.forEach(([author, count]) => {
+      ol.append("li").html(`${author} <span class="count">(${count})</span>`);
+    });
+  }
+}
+
+function calculateTopStatsForCluster(points) {
+  const topN = CONFIG.topNStats;
+  const tagCounts = new Map();
+  const authorCounts = new Map();
+  points.forEach((article) => {
+    article.tags.forEach((tag) =>
+      tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1),
+    );
+    article.authors.forEach((author) =>
+      authorCounts.set(author, (authorCounts.get(author) || 0) + 1),
+    );
+  });
+  const topTags = Array.from(tagCounts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, topN)
+    .map(([name, count]) => ({ name, count }));
+  const topAuthors = Array.from(authorCounts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, topN)
+    .map(([name, count]) => ({ name, count }));
+  return { topTags, topAuthors };
+}
+
+// --- Event Handlers & Animation ---
+function handleNNChange(event) {
+  const newNN = +event.target.value;
+  if (newNN === appState.currentNN || appState.isTransitioning) return;
+
+  if (appState.clusters) handleResetClustering();
+
+  appState.isTransitioning = true;
+  appState.currentNN = newNN;
+  hideTooltip();
+  setFilterControlsDisabled(true);
+  showLoading(`Transitioning to n_neighbors = ${newNN}...`);
+
+  appState.fullData.forEach((d) => {
+    d.px_start = d.px;
+    d.py_start = d.py;
+    d.px_end = appState.scales.x(d.coords[newNN].x);
+    d.py_end = appState.scales.y(d.coords[newNN].y);
+  });
+
+  const ease = d3.easeCubic;
+  appState.animationTimer = d3.timer((elapsed) => {
+    const t = Math.min(1, elapsed / CONFIG.transitionDuration);
+    const easedT = ease(t);
+
+    // Interpolate all points' positions first
+    appState.fullData.forEach((d) => {
+      d.px = d.px_start * (1 - easedT) + d.px_end * easedT;
+      d.py = d.py_start * (1 - easedT) + d.py_end * easedT;
+    });
+
+    // Now, draw the frame with the full, correct logic
+    const ctx = appState.canvasContext;
+    const { width, height } = appState.dimensions.scatterplot;
+    const transform = appState.currentTransform;
+
+    ctx.save();
+    ctx.clearRect(0, 0, width, height);
+    ctx.translate(transform.x, transform.y);
+    ctx.scale(transform.k, transform.k);
+
+    // Draw inactive points
+    const inactiveRadius = CONFIG.pointRadius / transform.k;
+    ctx.fillStyle = getCssVariable(CONFIG.cssVarInactiveColor);
+    appState.fullData.forEach((d) => {
+      if (!isPointFiltered(d)) {
+        ctx.beginPath();
+        ctx.arc(d.px, d.py, inactiveRadius, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    });
+
+    // Draw active points with correct sorting and color
+    drawActivePoints(ctx, transform);
+
+    ctx.restore();
+    updateSVGHoverHighlight();
+    updateSVGStickyHighlight();
+
+    if (t >= 1) finalizeTransition();
+  });
+}
+
+function finalizeTransition() {
+  if (appState.animationTimer) appState.animationTimer.stop();
+
+  appState.fullData.forEach((d) => {
+    delete d.px_start;
+    delete d.py_start;
+    delete d.px_end;
+    delete d.py_end;
+  });
+
+  setFilterControlsDisabled(false);
+
+  appState.isTransitioning = false;
+  appState.pxPyNeedsUpdate = true;
+
+  updateVisualization();
+  showLoading(false);
+}
+
+function setFilterControlsDisabled(disabled) {
+  const allControls = [
+    ELEMENTS.queryInput,
+    ELEMENTS.timelineStartDateInput,
+    ELEMENTS.timelineEndDateInput,
+    ELEMENTS.resetQueryBtn,
+    ELEMENTS.resetTimelineBtn,
+    ELEMENTS.binningSelect,
+    ELEMENTS.runClusteringBtn,
+    ELEMENTS.resetClusteringBtn,
+  ];
+  allControls.forEach((el) => el.property("disabled", disabled));
+
+  if (disabled) {
+    ELEMENTS.timelineBrushGroup.on(".brush", null);
+  } else {
+    ELEMENTS.timelineBrushGroup
+      .call(appState.behaviors.brush)
+      .on("start brush end", handleBrush);
+  }
+}
+
+function handleZoom(event) {
+  if (!event.sourceEvent) return;
+  appState.currentTransform = event.transform;
+  drawAxes();
+  drawScatterplot();
+  hideTooltip();
+}
+function handleBrush(event) {
+  if (appState.isBrushing) return;
+  if (!event.sourceEvent) return;
+  const selection = event.selection;
+  const newDateRange = selection
+    ? selection.map(appState.scales.time.invert)
+    : null;
+  const oldStart = appState.currentFilters.dateRange?.[0]?.getTime();
+  const oldEnd = appState.currentFilters.dateRange?.[1]?.getTime();
+  const newStart = newDateRange?.[0]?.getTime();
+  const newEnd = newDateRange?.[1]?.getTime();
+  if (oldStart !== newStart || oldEnd !== newEnd) {
+    appState.currentFilters.dateRange = newDateRange;
+    if (appState.clusters) {
+      console.warn(
+        "Date range changed while clusters are active. Cluster visuals might be stale.",
+      );
+    }
+    updateVisualization();
+  }
+}
+function handleQueryInput(event) {
+  const query = event.target.value;
+  appState.currentFilters.rawQuery = query;
+  const cursorPos = event.target.selectionStart || query.length;
+  const textBeforeCursor = query.substring(0, cursorPos);
+  const tagMatch = textBeforeCursor.match(/\btag:([^\s()]*)$/i);
+  const authorMatch = textBeforeCursor.match(/\bauthor:([^\s()]*)$/i);
+  let showAutocomplete = false;
+  if (tagMatch) {
+    appState.autocomplete.prefix = "tag";
+    appState.autocomplete.term = tagMatch[1].toLowerCase();
+    const source = appState.sortedUniqueTags;
+    appState.autocomplete.suggestions = source
+      .filter((t) => t.toLowerCase().includes(appState.autocomplete.term))
+      .slice(0, CONFIG.autocompleteLimit);
+    showAutocomplete = true;
+  } else if (authorMatch) {
+    appState.autocomplete.prefix = "author";
+    appState.autocomplete.term = authorMatch[1].toLowerCase();
+    const source = appState.sortedUniqueAuthors;
+    appState.autocomplete.suggestions = source
+      .filter((a) => a.toLowerCase().includes(appState.autocomplete.term))
+      .slice(0, CONFIG.autocompleteLimit);
+    showAutocomplete = true;
+  }
+  if (showAutocomplete && appState.autocomplete.suggestions.length > 0) {
+    appState.autocomplete.active = true;
+    appState.autocomplete.selectedIndex = -1;
+    updateAutocompleteSuggestions();
+  } else {
+    hideAutocomplete();
+  }
+  const { queryFunction, error } = parseQuery(query);
+  appState.currentFilters.queryFunction = queryFunction;
+  appState.currentFilters.queryError = error;
+  if (error) {
+    ELEMENTS.queryErrorDisplay
+      .text(`Syntax Error: ${error}`)
+      .style("display", "block");
+  } else {
+    ELEMENTS.queryErrorDisplay.style("display", "none");
+  }
+  if (appState.clusters) {
+    console.warn(
+      "Query changed while clusters are active. Cluster visuals might be stale.",
+    );
+  }
+  updateVisualization();
+}
+function handleQueryKeyDown(event) {
+  const { active, suggestions, selectedIndex } = appState.autocomplete;
+  if (!active || suggestions.length === 0) return;
+  switch (event.key) {
+    case "ArrowDown":
+      event.preventDefault();
+      appState.autocomplete.selectedIndex =
+        (selectedIndex + 1) % suggestions.length;
+      updateAutocompleteSuggestions();
+      break;
+    case "ArrowUp":
+      event.preventDefault();
+      appState.autocomplete.selectedIndex =
+        (selectedIndex - 1 + suggestions.length) % suggestions.length;
+      updateAutocompleteSuggestions();
+      break;
+    case "Enter":
+    case "Tab":
+      if (selectedIndex !== -1) {
+        event.preventDefault();
+        applyAutocompleteSuggestion(suggestions[selectedIndex]);
+      } else {
+        hideAutocomplete();
+      }
+      break;
+    case "Escape":
+      event.preventDefault();
+      hideAutocomplete();
+      break;
+  }
+}
+function handleQueryBlur() {
+  setTimeout(hideAutocomplete, 150);
+}
+function handleSuggestionClick(event) {
+  if (event.target && event.target.classList.contains("suggestion-item")) {
+    const suggestionText = event.target.textContent;
+    applyAutocompleteSuggestion(suggestionText);
+  }
+}
+function handleBinningChange() {
+  drawTimeline();
+}
+function resetQuery() {
+  ELEMENTS.queryInput.property("value", "");
+  if (
+    appState.currentFilters.rawQuery !== "" ||
+    appState.currentFilters.queryError
+  ) {
+    appState.currentFilters.rawQuery = "";
+    appState.currentFilters.queryFunction = () => true;
+    appState.currentFilters.queryError = null;
+    ELEMENTS.queryErrorDisplay.style("display", "none");
+    hideAutocomplete();
+    updateVisualization();
+  }
+}
+function resetTimelineBrush() {
+  if (appState.currentFilters.dateRange !== null) {
+    appState.isBrushing = true;
+    ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush.move, null);
+    appState.isBrushing = false;
+  }
+}
+function setInitialTimelineBrush() {
+  const fullRangePixels = appState.scales.time.range();
+  appState.isBrushing = true;
+  ELEMENTS.timelineBrushGroup.call(
+    appState.behaviors.brush.move,
+    fullRangePixels,
+  );
+  appState.isBrushing = false;
+  appState.currentFilters.dateRange = null;
+  updateFilterSummary();
+}
+function handleImposeGradientChange(event) {
+  appState.imposeGradientActive = event.target.checked;
+  updateVisualization();
+}
+function handleActiveColorChange(event) {
+  setCssVariable(CONFIG.cssVarActiveColor, event.target.value);
+  updateVisualization();
+}
+function handleInactiveColorChange(event) {
+  setCssVariable(CONFIG.cssVarInactiveColor, event.target.value);
+  updateVisualization();
+}
+function handleCanvasMouseMove(event) {
+  if (appState.isTransitioning) return;
+  const [mouseX, mouseY] = d3.pointer(event);
+  const transform = appState.currentTransform;
+  const invertedX = transform.invertX(mouseX);
+  const invertedY = transform.invertY(mouseY);
+  const searchRadius =
+    (CONFIG.highlightRadius * CONFIG.searchRadiusFactor) / transform.k;
+  const closest = appState.quadtree?.find(invertedX, invertedY, searchRadius);
+  if (appState.hoveredPoint?.id !== closest?.id) {
+    appState.hoveredPoint = closest;
+    updateSVGHoverHighlight();
+  }
+  if (!appState.stickyPoint) {
+    if (closest) {
+      showTooltip(event, closest);
+    } else {
+      hideTooltip();
+    }
+  }
+}
+function handleCanvasClick(event) {
+  if (appState.isTransitioning) return;
+  const [mouseX, mouseY] = d3.pointer(event);
+  const transform = appState.currentTransform;
+  const invertedX = transform.invertX(mouseX);
+  const invertedY = transform.invertY(mouseY);
+  const clickRadius =
+    (CONFIG.highlightRadius * CONFIG.clickRadiusFactor) / transform.k;
+  const clickedPoint = appState.quadtree?.find(
+    invertedX,
+    invertedY,
+    clickRadius,
+  );
+  if (clickedPoint) {
+    if (appState.stickyPoint?.id === clickedPoint.id) {
+      appState.stickyPoint = null;
+      hideTooltip();
+    } else {
+      appState.stickyPoint = clickedPoint;
+      showTooltip(event, clickedPoint);
+      if (clickedPoint.url) {
+        try {
+          window.open(clickedPoint.url, "_blank");
+        } catch (e) {
+          console.warn("URL open failed:", e);
+        }
+      }
+    }
+    appState.hoveredPoint = null;
+    updateSVGHoverHighlight();
+    updateSVGStickyHighlight();
+  } else {
+    if (appState.stickyPoint) {
+      appState.stickyPoint = null;
+      hideTooltip();
+      updateSVGStickyHighlight();
+    }
+  }
+}
+function handleCanvasDoubleClick(event) {
+  if (appState.isTransitioning) return;
+  const [mouseX, mouseY] = d3.pointer(event);
+  const transform = appState.currentTransform;
+  const invertedX = transform.invertX(mouseX);
+  const invertedY = transform.invertY(mouseY);
+  const clickRadius =
+    (CONFIG.highlightRadius * CONFIG.clickRadiusFactor) / transform.k;
+  const targetPoint = appState.quadtree?.find(
+    invertedX,
+    invertedY,
+    clickRadius,
+  );
+  if (targetPoint) {
+    const { width, height } = appState.dimensions.scatterplot;
+    const targetScale = Math.min(
+      CONFIG.zoomMax,
+      Math.max(CONFIG.zoomMin, transform.k * 2),
+    );
+    const newTransform = d3.zoomIdentity
+      .translate(width / 2, height / 2)
+      .scale(targetScale)
+      .translate(-targetPoint.px, -targetPoint.py);
+    ELEMENTS.scatterplotCanvas
+      .transition()
+      .duration(750)
+      .call(appState.behaviors.zoom.transform, newTransform);
+    hideTooltip();
+    appState.hoveredPoint = null;
+    appState.stickyPoint = null;
+    updateSVGHoverHighlight();
+    updateSVGStickyHighlight();
+  }
+}
+function handleCanvasMouseOut() {
+  if (appState.hoveredPoint) {
+    appState.hoveredPoint = null;
+    updateSVGHoverHighlight();
+  }
+  if (!appState.stickyPoint) {
+    hideTooltip();
+  }
+}
+function handleTimelineBarMouseOver(event, d) {
+  if (appState.isTransitioning) return;
+  appState.timelineHoveredBin = { x0: d.x0, x1: d.x1 };
+  updateVisualization();
+}
+function handleTimelineBarMouseOut(event, d) {
+  if (appState.isTransitioning) return;
+  appState.timelineHoveredBin = null;
+  updateVisualization();
+}
+function handleResize() {
+  if (appState.isTransitioning) return;
+  showLoading("Adjusting layout...");
+  setupDimensions();
+  setupScales();
+  setupAxes();
+  setupSVGStructure();
+  setupCanvas();
+  appState.behaviors.zoom
+    .translateExtent([
+      [0, 0],
+      [
+        appState.dimensions.scatterplot.width,
+        appState.dimensions.scatterplot.height,
+      ],
+    ])
+    .extent([
+      [0, 0],
+      [
+        appState.dimensions.scatterplot.width,
+        appState.dimensions.scatterplot.height,
+      ],
+    ]);
+  appState.behaviors.brush.extent([
+    [0, 0],
+    [appState.dimensions.timeline.width, appState.dimensions.timeline.height],
+  ]);
+  ELEMENTS.timelineBrushGroup.call(appState.behaviors.brush);
+  const currentSelectionPixels = appState.currentFilters.dateRange
+    ? appState.currentFilters.dateRange.map(appState.scales.time)
+    : appState.scales.time.range();
+  setTimeout(() => {
+    appState.isBrushing = true;
+    ELEMENTS.timelineBrushGroup.call(
+      appState.behaviors.brush.move,
+      currentSelectionPixels,
+    );
+    appState.isBrushing = false;
+  }, 0);
+  ELEMENTS.scatterplotCanvas.call(
+    appState.behaviors.zoom.transform,
+    appState.currentTransform,
+  );
+  updateVisualization();
+  showLoading(false);
+}
+function handleRunClustering() {
+  if (appState.isTransitioning) return;
+  if (appState.filteredData.length === 0) {
+    displayError("Cannot run clustering on empty dataset. Adjust filters.");
+    return;
+  }
+  showLoading("Running K-Means clustering...");
+  appState.currentK = +ELEMENTS.numClustersInput.property("value");
+  setTimeout(() => {
+    try {
+      appState.fullData.forEach((d) => (d.clusterId = null));
+      appState.clusters = runKMeans(appState.filteredData, appState.currentK);
+      ELEMENTS.resetClusteringBtn.style("display", "inline-block");
+      showLoading(false);
+      updateVisualization();
+    } catch (error) {
+      console.error("Clustering error:", error);
+      displayError(`Clustering failed: ${error.message}`);
+      showLoading(false);
+      appState.clusters = null;
+      updateVisualization();
+    }
+  }, 50);
+}
+function handleResetClustering() {
+  appState.clusters = null;
+  appState.fullData.forEach((d) => (d.clusterId = null));
+  ELEMENTS.resetClusteringBtn.style("display", "none");
+  updateVisualization();
+}
+
+function handleDateInputChange() {
+  const startDateString = ELEMENTS.timelineStartDateInput.property("value");
+  const endDateString = ELEMENTS.timelineEndDateInput.property("value");
+  if (!startDateString || !endDateString) return;
+
+  const startDate = new Date(startDateString + "T00:00:00");
+  const endDate = new Date(endDateString + "T23:59:59");
+
+  if (
+    isNaN(startDate.getTime()) ||
+    isNaN(endDate.getTime()) ||
+    startDate > endDate
+  ) {
+    console.warn("Invalid date range entered.");
+    return;
+  }
+
+  appState.currentFilters.dateRange = [startDate, endDate];
+  if (appState.clusters) {
+    console.warn(
+      "Date range changed while clusters are active. Cluster visuals might be stale.",
+    );
+  }
+  updateVisualization();
+  const newPixelRange = [
+    appState.scales.time(startDate),
+    appState.scales.time(endDate),
+  ];
+  appState.isBrushing = true;
+  ELEMENTS.timelineBrushGroup.call(
+    appState.behaviors.brush.move,
+    newPixelRange,
+  );
+  appState.isBrushing = false;
+}
+
+// --- Tooltip Functions ---
+function showTooltip(event, data) {
+  const pageX = event.pageX;
+  const pageY = event.pageY;
+  let authorsDisplay = Array.isArray(data.authors)
+    ? data.authors.join(", ")
+    : data.authors || "N/A";
+
+  let content = `<strong>${data.title || "N/A"}</strong><br>Author(s): ${authorsDisplay}<br>Date: ${data.date.toLocaleDateString()}<br>Tags: ${data.tags?.length > 0 ? data.tags.join(", ") : "None"}`;
+
+  if (
+    appState.clusters &&
+    data.clusterId !== null &&
+    appState.clusters[data.clusterId]
+  ) {
+    const cluster = appState.clusters[data.clusterId];
+    content += `<br>Cluster: ${cluster.label} (${cluster.points.length} articles)`;
+
+    if (cluster.topTags || cluster.topAuthors) {
+      let statsHtml = '<div class="cluster-stats">';
+      if (cluster.topTags && cluster.topTags.length > 0) {
+        statsHtml += "<h4>Top Tags in Cluster</h4><ol>";
+        cluster.topTags.forEach((t) => {
+          statsHtml += `<li>${t.name} <span class="count">(${t.count})</span></li>`;
+        });
+        statsHtml += "</ol>";
+      }
+      if (cluster.topAuthors && cluster.topAuthors.length > 0) {
+        statsHtml +=
+          '<h4 style="margin-top:5px;">Top Authors in Cluster</h4><ol>';
+        cluster.topAuthors.forEach((a) => {
+          statsHtml += `<li>${a.name} <span class="count">(${a.count})</span></li>`;
+        });
+        statsHtml += "</ol>";
+      }
+      statsHtml += "</div>";
+      content += statsHtml;
+    }
+  }
+
+  ELEMENTS.tooltip
+    .style("display", "inline-block")
+    .style("right", `${0 + CONFIG.tooltipOffsetX + 15}px`)
+    .style("top", `${0 + CONFIG.tooltipOffsetY + 15}px`)
+    .html(content);
+}
+
+function hideTooltip() {
+  ELEMENTS.tooltip.style("display", "none");
+}
+
+// --- UI Feedback Functions ---
+function showLoading(message) {
+  if (message) {
+    ELEMENTS.loadingIndicator.text(message).style("display", "block");
+  } else {
+    ELEMENTS.loadingIndicator.style("display", "none");
+  }
+}
+function displayError(message) {
+  ELEMENTS.errorDisplay.html(`Error: ${message}`).style("display", "block");
+}
+function updateFilterSummary() {
+  const count = appState.filteredData.length;
+  let base = `Showing ${count} of ${appState.fullData.length} articles`;
+  const filtersActive = [];
+  const f = appState.currentFilters;
+  if (f.rawQuery.trim()) {
+    filtersActive.push(`matching query "${f.rawQuery}"`);
+  }
+  if (f.dateRange) {
+    const fmt = d3.timeFormat("%b %d, %Y");
+    const start = fmt(f.dateRange[0]);
+    const end = fmt(f.dateRange[1]);
+    if (d3.timeDay.count(f.dateRange[0], f.dateRange[1]) < 1) {
+      filtersActive.push(`from ${start}`);
+    } else {
+      filtersActive.push(`from ${start} to ${end}`);
+    }
+  }
+  if (filtersActive.length > 0) {
+    base += ", filtered by: " + filtersActive.join(" and ") + ".";
+  } else {
+    base += " (no filters applied).";
+  }
+  if (f.queryError) {
+    base += ` (Query error: ${f.queryError})`;
+  }
+  ELEMENTS.filterSummary.text(base);
+}
+
+function updateTimelineDateInputs(dateRange) {
+  const formatDate = d3.timeFormat("%Y-%m-%d");
+  if (dateRange && dateRange.length === 2) {
+    ELEMENTS.timelineStartDateInput.property("value", formatDate(dateRange[0]));
+    ELEMENTS.timelineEndDateInput.property("value", formatDate(dateRange[1]));
+  } else {
+    ELEMENTS.timelineStartDateInput.property("value", "");
+    ELEMENTS.timelineEndDateInput.property("value", "");
+  }
+}
+
+// --- Utility Function ---
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func.apply(this, args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+// --- Start the application ---
+initialize();
