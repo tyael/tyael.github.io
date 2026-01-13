@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ASPI Strategist Embedding Explorer</title>
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sift@17/sift.min.js"></script>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -17,55 +18,43 @@
           <p class="subtitle">Embedding Explorer</p>
         </header>
 
-        <section class="control-section">
-          <h2>Filter A</h2>
-          <div class="filter-row">
-            <select id="filter-a-type">
-              <option value="">-- Select Type --</option>
-              <option value="tag">Tag</option>
-              <option value="author">Author</option>
-            </select>
-            <select id="filter-a-value" disabled>
-              <option value="">-- Select Value --</option>
-            </select>
+        <section class="control-section filter-builder-section">
+          <h2>Filter</h2>
+          <div id="filter-builder">
+            <div id="filter-rules"></div>
+            <button id="add-filter-btn" class="add-filter-btn">+ Add Condition</button>
           </div>
-          <div class="filter-indicator">
-            <span class="color-swatch color-a"></span>
-            <span id="filter-a-count">0 articles</span>
+          <div class="filter-result">
+            <span class="color-swatch color-match"></span>
+            <span id="filter-match-count">0 articles match</span>
           </div>
         </section>
 
         <section class="control-section">
-          <h2>Filter B</h2>
+          <h2>Projection</h2>
           <div class="filter-row">
-            <select id="filter-b-type">
-              <option value="">-- Select Type --</option>
-              <option value="tag">Tag</option>
-              <option value="author">Author</option>
-            </select>
-            <select id="filter-b-value" disabled>
-              <option value="">-- Select Value --</option>
+            <label for="nn-select" class="control-label">N_Neighbors</label>
+            <select id="nn-select" disabled>
+              <option value="">Loading...</option>
             </select>
           </div>
-          <div class="filter-indicator">
-            <span class="color-swatch color-b"></span>
-            <span id="filter-b-count">0 articles</span>
+          <div class="nn-info">
+            <span class="info-text">Lower values show local structure, higher values show global patterns</span>
           </div>
         </section>
 
         <section class="control-section">
-          <h2>Intersection</h2>
-          <div class="intersection-legend">
-            <div class="legend-item">
-              <span class="color-swatch color-both"></span>
-              <span>A AND B</span>
-              <span id="filter-both-count" class="count">0</span>
-            </div>
-            <div class="legend-item">
-              <span class="color-swatch color-xor"></span>
-              <span>A XOR B</span>
-              <span id="filter-xor-count" class="count">0</span>
-            </div>
+          <h2>Internal Links</h2>
+          <div class="filter-row">
+            <label for="link-depth-select" class="control-label">Link Depth</label>
+            <select id="link-depth-select">
+              <option value="1">1 level (direct links)</option>
+              <option value="2">2 levels</option>
+              <option value="3">3 levels</option>
+            </select>
+          </div>
+          <div class="link-depth-info">
+            <span class="info-text">Show connections up to N links away</span>
           </div>
         </section>
 
@@ -79,6 +68,9 @@
       </aside>
 
       <main id="visualization-area">
+        <div id="timeline-container">
+          <svg id="timeline-svg"></svg>
+        </div>
         <div id="scatterplot-container">
           <canvas id="scatterplot-canvas"></canvas>
           <svg id="scatterplot-svg">
@@ -97,11 +89,25 @@
                   stroke-dasharray="4,4"
                 />
               </pattern>
+              <!-- Arrow marker for internal links -->
+              <marker
+                id="link-arrow"
+                viewBox="0 0 10 10"
+                refX="10"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+              </marker>
             </defs>
             <g class="scatterplot-content">
               <rect class="grid-background" fill="url(#grid-pattern)"></rect>
               <g class="axis x-axis"></g>
               <g class="axis y-axis"></g>
+              <!-- Group for internal link visualizations -->
+              <g class="internal-links" pointer-events="none"></g>
               <circle
                 class="hover-highlight"
                 r="8"
