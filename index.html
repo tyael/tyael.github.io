@@ -5,173 +5,157 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ASPI Strategist Embedding Explorer</title>
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sift@17/sift.min.js"></script>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <div id="loading-indicator">Loading Articles...</div>
 
     <div id="container">
-      <div id="controls">
-        <h2>ASPI <em>Strategist</em> Embedding Explorer</h2>
-        <p style="font-size: 0.9em; margin-bottom: 15px">
-          All <em>Strategist</em> articles up to 20 Dec 2025 are represented as
-          points in an embedding space, such that posts with
-          semantically-similar content appear closer together.
-        </p>
-        <div id="error-display"></div>
+      <aside id="controls">
+        <header>
+          <h1>ASPI <em>Strategist</em></h1>
+          <p class="subtitle">Embedding Explorer</p>
+        </header>
 
-        <div class="control-group">
-          <h3>Search & Filter</h3>
-          <label for="query-input">Search Query:</label>
-          <div style="position: relative">
-            <input
-              type="text"
-              id="query-input"
-              placeholder="e.g., AI AND policy"
-              autocomplete="off"
-            />
-            <div id="autocomplete-suggestions"></div>
+        <section class="control-section filter-builder-section">
+          <h2>Filter</h2>
+          <div id="filter-builder">
+            <div id="filter-rules"></div>
+            <button id="add-filter-btn" class="add-filter-btn">+ Add Condition</button>
           </div>
-          <div id="query-error-display"></div>
-          <button id="reset-query-btn">Reset Query</button>
-        </div>
-
-        <div class="control-group">
-          <h3>Current Selection Highlights</h3>
-          <label>Top Tags (in selection):</label>
-          <div id="top-tags-display">
-            <ol class="stats-list">
-              <li>N/A</li>
-            </ol>
+          <div class="filter-result">
+            <span class="color-swatch color-match"></span>
+            <span id="filter-match-count">0 articles match</span>
           </div>
-          <label style="margin-top: 10px">Top Authors (in selection):</label>
-          <div id="top-authors-display">
-            <ol class="stats-list">
-              <li>N/A</li>
-            </ol>
+        </section>
+
+        <section class="control-section">
+          <h2>Display</h2>
+          <div class="toggle-row">
+            <label class="toggle-label">
+              <input type="checkbox" id="date-gradient-toggle" />
+              <span>Date gradient</span>
+            </label>
+            <span class="info-text">Older articles fade, newer ones are opaque</span>
           </div>
-        </div>
-
-        <div class="control-group">
-          <h3>Display Options</h3>
-          <label>Color Settings:</label>
-          <div class="color-picker-container">
-            <label for="active-color-picker">Highlighted Points:</label>
-            <input type="color" id="active-color-picker" />
+          <div class="toggle-row" style="margin-top: 12px;">
+            <label class="toggle-label">
+              <input type="checkbox" id="map-labels-toggle" />
+              <span>Map labels</span>
+            </label>
+            <span class="info-text">Show topic labels like a map legend (may take a few seconds to compute)</span>
           </div>
-          <div class="color-picker-container">
-            <label for="inactive-color-picker">Un-highlighted Points:</label>
-            <input type="color" id="inactive-color-picker" />
+        </section>
+
+        <section class="control-section">
+          <h2>Projection</h2>
+          <div class="filter-row">
+            <label for="nn-select" class="control-label">N_Neighbors</label>
+            <select id="nn-select" disabled>
+              <option value="">Loading...</option>
+            </select>
           </div>
-          <div style="margin-top: 15px">
-            <input type="checkbox" id="impose-gradient-checkbox" />
-            <label for="impose-gradient-checkbox" class="inline-label"
-              >Impose Gradient by Date</label
-            >
+          <div class="nn-info">
+            <span class="info-text">Lower values show local structure, higher values show global patterns</span>
           </div>
-          <div id="gradient-key-display" style="display: none"></div>
+        </section>
+
+        <section class="control-section">
+          <h2>Internal Links</h2>
+          <div class="filter-row">
+            <label for="link-depth-select" class="control-label">Link Depth</label>
+            <select id="link-depth-select">
+              <option value="1">1 level (direct links)</option>
+              <option value="2">2 levels</option>
+              <option value="3">3 levels</option>
+            </select>
+          </div>
+          <div class="link-depth-info">
+            <span class="info-text">Show connections up to N links away</span>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <button id="reset-filters-btn">Reset All Filters</button>
+        </section>
+
+        <footer>
+          <p id="article-count">0 articles total</p>
+        </footer>
+      </aside>
+
+      <main id="visualization-area">
+        <div id="timeline-container">
+          <svg id="timeline-svg"></svg>
         </div>
-
-        <div class="control-group">
-          <h3>UMAP Parameters</h3>
-          <label for="nn-select">Nearest Neighbours:</label>
-          <select id="nn-select"></select>
-          <p class="explanation-text">
-            An embedding space is a high-dimensional object. Select the UMAP
-            'n_neighbors' parameter to change how it's projected onto the 2D
-            plane. Lower values focus on local structure, while higher values
-            emphasize global structure.
-          </p>
-        </div>
-
-        <div class="control-group">
-          <h3>Clustering (<em>k</em>-Means)</h3>
-          <label for="num-clusters" class="inline-label"
-            >Number of Clusters (<em>k</em>):</label
-          >
-          <input
-            type="number"
-            id="num-clusters"
-            min="2"
-            max="25"
-            step="1"
-            value="25"
-          />
-          <button id="run-clustering-btn">Identify Clusters</button>
-          <button
-            id="reset-clustering-btn"
-            style="display: none; margin-top: 10px"
-          >
-            Reset Clusters
-          </button>
-        </div>
-
-        <div class="control-group">
-          <h3>Timeline</h3>
-          <label for="binning-select">Granularity:</label>
-          <select id="binning-select">
-            <option value="week">Week</option>
-            <option value="fortnight" selected>Fortnight</option>
-            <option value="month">Month</option>
-            <option value="year">Year</option>
-          </select>
-          <button id="reset-timeline">Reset Date Range</button>
-        </div>
-
-        <div id="filter-summary"></div>
-      </div>
-
-      <div id="visualization-area">
         <div id="scatterplot-container">
           <canvas id="scatterplot-canvas"></canvas>
           <svg id="scatterplot-svg">
+            <defs>
+              <pattern
+                id="grid-pattern"
+                width="50"
+                height="50"
+                patternUnits="userSpaceOnUse"
+              >
+                <path
+                  d="M 50 0 L 0 0 0 50"
+                  fill="none"
+                  stroke="#ccc"
+                  stroke-width="1"
+                  stroke-dasharray="4,4"
+                />
+              </pattern>
+              <!-- Arrow marker for outgoing links (cyan) -->
+              <marker
+                id="link-arrow-outgoing"
+                viewBox="0 0 10 10"
+                refX="10"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#06b6d4" />
+              </marker>
+              <!-- Arrow marker for backlinks (amber) -->
+              <marker
+                id="link-arrow-backlink"
+                viewBox="0 0 10 10"
+                refX="10"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b" />
+              </marker>
+            </defs>
             <g class="scatterplot-content">
-              <g class="grid x-grid"></g>
-              <g class="grid y-grid"></g>
+              <rect class="grid-background" fill="url(#grid-pattern)"></rect>
               <g class="axis x-axis"></g>
               <g class="axis y-axis"></g>
-              <g class="cluster-labels-layer"></g>
+              <!-- Group for map labels -->
+              <g class="map-labels" pointer-events="none"></g>
+              <!-- Group for internal link visualizations -->
+              <g class="internal-links" pointer-events="none"></g>
               <circle
                 class="hover-highlight"
-                r="6"
+                r="8"
                 fill="none"
-                stroke="#00ffff"
-                stroke-width="1.5"
-                pointer-events="none"
-                display="none"
-              ></circle>
-              <circle
-                class="sticky-highlight"
-                r="6"
-                fill="none"
-                stroke="#ffcc00"
-                stroke-width="1.5"
+                stroke="#000"
+                stroke-width="3"
+                stroke-dasharray="4,2"
                 pointer-events="none"
                 display="none"
               ></circle>
             </g>
           </svg>
         </div>
-        <div id="main-timeline-wrapper">
-          <div id="timeline-container">
-            <svg id="timeline-svg">
-              <g class="timeline-content">
-                <g class="axis count-axis"></g>
-                <g class="timeline-bars"></g>
-                <g class="axis time-axis"></g>
-                <g class="brush"></g>
-              </g>
-            </svg>
-          </div>
-          <div id="timeline-date-inputs">
-            <label for="timeline-start-date">Start Date:</label>
-            <input type="date" id="timeline-start-date" />
-            <label for="timeline-end-date">End Date:</label>
-            <input type="date" id="timeline-end-date" />
-          </div>
-        </div>
         <div id="tooltip"></div>
-      </div>
+        <div id="hover-tooltip"></div>
+      </main>
     </div>
 
     <script type="module" src="script.js"></script>
