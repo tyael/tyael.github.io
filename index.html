@@ -31,6 +31,24 @@
         </section>
 
         <section class="control-section">
+          <h2>Display</h2>
+          <div class="toggle-row">
+            <label class="toggle-label">
+              <input type="checkbox" id="date-gradient-toggle" />
+              <span>Date gradient</span>
+            </label>
+            <span class="info-text">Older articles fade, newer ones are opaque</span>
+          </div>
+          <div class="toggle-row" style="margin-top: 12px;">
+            <label class="toggle-label">
+              <input type="checkbox" id="map-labels-toggle" />
+              <span>Map labels</span>
+            </label>
+            <span class="info-text">Show topic labels like a map legend (may take a few seconds to compute)</span>
+          </div>
+        </section>
+
+        <section class="control-section">
           <h2>Projection</h2>
           <div class="filter-row">
             <label for="nn-select" class="control-label">N_Neighbors</label>
@@ -89,9 +107,9 @@
                   stroke-dasharray="4,4"
                 />
               </pattern>
-              <!-- Arrow marker for internal links -->
+              <!-- Arrow marker for outgoing links (cyan) -->
               <marker
-                id="link-arrow"
+                id="link-arrow-outgoing"
                 viewBox="0 0 10 10"
                 refX="10"
                 refY="5"
@@ -99,13 +117,27 @@
                 markerHeight="6"
                 orient="auto-start-reverse"
               >
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#06b6d4" />
+              </marker>
+              <!-- Arrow marker for backlinks (amber) -->
+              <marker
+                id="link-arrow-backlink"
+                viewBox="0 0 10 10"
+                refX="10"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b" />
               </marker>
             </defs>
             <g class="scatterplot-content">
               <rect class="grid-background" fill="url(#grid-pattern)"></rect>
               <g class="axis x-axis"></g>
               <g class="axis y-axis"></g>
+              <!-- Group for map labels -->
+              <g class="map-labels" pointer-events="none"></g>
               <!-- Group for internal link visualizations -->
               <g class="internal-links" pointer-events="none"></g>
               <circle
@@ -113,7 +145,7 @@
                 r="8"
                 fill="none"
                 stroke="#000"
-                stroke-width="2"
+                stroke-width="3"
                 stroke-dasharray="4,2"
                 pointer-events="none"
                 display="none"
@@ -122,6 +154,7 @@
           </svg>
         </div>
         <div id="tooltip"></div>
+        <div id="hover-tooltip"></div>
       </main>
     </div>
 

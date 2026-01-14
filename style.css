@@ -7,7 +7,7 @@
   --color-inactive: #e0e0e0;
 
   /* Filter match color */
-  --color-matched: #2563eb;
+  --color-matched: #355E3B;
 
   --border-style: 1px dashed var(--color-border);
   --font-mono:
@@ -505,6 +505,26 @@ button:active {
   line-height: 1.4;
 }
 
+/* --- Toggle Row --- */
+.toggle-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.toggle-label input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
 /* --- Visualization Area --- */
 #visualization-area {
   flex: 1;
@@ -541,6 +561,15 @@ button:active {
   fill: var(--color-text);
 }
 
+#timeline-svg .timeline-bar-filtered {
+  fill: var(--color-matched);
+  pointer-events: none;
+}
+
+#timeline-svg .timeline-bar-filtered.in-range {
+  fill: var(--color-matched);
+}
+
 #timeline-svg .timeline-axis text {
   font-family: var(--font-mono);
   font-size: 9px;
@@ -554,15 +583,21 @@ button:active {
 }
 
 #timeline-svg .brush .selection {
-  fill: var(--color-filter-a);
-  fill-opacity: 0.15;
-  stroke: var(--color-filter-a);
-  stroke-width: 1;
-  stroke-dasharray: 4, 2;
+  fill: var(--color-matched);
+  fill-opacity: 0.2;
+  stroke: var(--color-matched);
+  stroke-width: 2;
+  stroke-dasharray: none;
 }
 
 #timeline-svg .brush .handle {
-  fill: var(--color-filter-a);
+  fill: var(--color-matched);
+  stroke: var(--color-background);
+  stroke-width: 1;
+}
+
+#timeline-svg .brush .overlay {
+  cursor: crosshair;
 }
 
 #timeline-svg .date-range-label {
@@ -671,6 +706,14 @@ button:active {
   margin-top: 2px;
 }
 
+#tooltip .links.outgoing-links strong {
+  color: #06b6d4;
+}
+
+#tooltip .links.backlinks strong {
+  color: #f59e0b;
+}
+
 /* Tooltip links */
 #tooltip a {
   color: var(--color-text);
@@ -692,6 +735,83 @@ button:active {
 #tooltip.sticky {
   border-style: solid;
   border-width: 2px;
+}
+
+/* Hover tooltip (appears when sticky tooltip is active) */
+#hover-tooltip {
+  position: absolute;
+  background: var(--color-background);
+  border: var(--border-style);
+  color: var(--color-text);
+  padding: 12px;
+  pointer-events: none;
+  display: none;
+  max-width: 300px;
+  max-height: 350px;
+  overflow-y: auto;
+  z-index: 99;
+  font-size: 11px;
+  line-height: 1.6;
+  opacity: 0.95;
+}
+
+#hover-tooltip .meta {
+  color: var(--color-text-light);
+  margin-top: 4px;
+}
+
+#hover-tooltip .tags {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: var(--border-style);
+}
+
+#hover-tooltip .tooltip-title {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* --- Map Labels --- */
+.map-labels text {
+  font-family: var(--font-mono);
+  fill: var(--color-text);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  text-shadow:
+    -1px -1px 0 var(--color-background),
+    1px -1px 0 var(--color-background),
+    -1px 1px 0 var(--color-background),
+    1px 1px 0 var(--color-background),
+    0 -1px 0 var(--color-background),
+    0 1px 0 var(--color-background),
+    -1px 0 0 var(--color-background),
+    1px 0 0 var(--color-background);
+  transition: opacity 0.3s ease;
+}
+
+.map-labels text.level-0 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.map-labels text.level-1 {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.map-labels text.level-2 {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.map-labels text.level-3 {
+  font-size: 9px;
+  font-weight: 400;
 }
 
 /* --- Internal Link Levels --- */
