@@ -4,10 +4,14 @@
   --color-border: #cccccc;
   --color-text: #333333;
   --color-text-light: #666666;
-  --color-inactive: #e0e0e0;
 
-  /* Filter match color */
-  --color-matched: #355E3B;
+  /* Colors set dynamically from config.js */
+  --color-filtered: #22c55e;
+  --color-unfiltered: #b0b0b0;
+  --color-forward-link: #06b6d4;
+  --color-backlink: #f59e0b;
+  --color-source-aspi: #1e40af;
+  --color-source-lowy: #7c3aed;
 
   --border-style: 1px dashed var(--color-border);
   --font-mono:
@@ -72,6 +76,19 @@ body {
   color: var(--color-text-light);
   text-transform: uppercase;
   letter-spacing: 1px;
+}
+
+#controls header .about-link {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--color-text-light);
+  text-decoration: none;
+}
+
+#controls header .about-link:hover {
+  color: var(--color-text);
+  text-decoration: underline;
 }
 
 /* --- Control Sections --- */
@@ -282,6 +299,38 @@ body {
   right: 0;
 }
 
+.filter-rule-value-container select.filter-value-select {
+  width: 100%;
+}
+
+/* Date range inputs */
+.date-range-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.date-range-container .date-label {
+  font-size: 10px;
+  color: var(--color-text-light);
+}
+
+.date-range-container .date-input {
+  appearance: none;
+  background-color: var(--color-background);
+  color: var(--color-text);
+  border: var(--border-style);
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  width: 100%;
+}
+
+.date-range-container .date-input:focus {
+  outline: none;
+  border-color: var(--color-text);
+}
+
 .filter-rule-actions {
   display: flex;
   gap: 8px;
@@ -332,7 +381,7 @@ body {
 
 .rule-summary-text em {
   font-style: normal;
-  color: var(--color-matched);
+  color: var(--color-filtered);
 }
 
 .rule-edit-btn {
@@ -413,7 +462,7 @@ body {
 }
 
 .color-swatch.color-match {
-  background-color: var(--color-matched);
+  background-color: var(--color-filtered);
 }
 
 /* --- Select Styling --- */
@@ -530,16 +579,16 @@ button:active {
   flex: 1;
   position: relative;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   min-width: 0;
   background-color: var(--color-background);
 }
 
-/* --- Timeline Container --- */
+/* --- Timeline Container (vertical sidebar on right, same width as controls) --- */
 #timeline-container {
-  height: 80px;
-  width: 100%;
-  border-bottom: var(--border-style);
+  width: 280px;
+  height: 100%;
+  border-left: var(--border-style);
   flex-shrink: 0;
 }
 
@@ -548,13 +597,21 @@ button:active {
   height: 100%;
 }
 
+/* Timeline center line (butterfly histogram divider) */
+#timeline-svg .timeline-center-line {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+
 #timeline-svg .timeline-bar {
-  fill: var(--color-inactive);
-  transition: fill 0.15s ease;
+  fill: var(--color-unfiltered);
+  opacity: 0.4;
+  transition: fill 0.15s ease, opacity 0.15s ease;
 }
 
 #timeline-svg .timeline-bar.in-range {
-  fill: var(--color-text-light);
+  fill: var(--color-unfiltered);
+  opacity: 1;
 }
 
 #timeline-svg .timeline-bar:hover {
@@ -562,12 +619,27 @@ button:active {
 }
 
 #timeline-svg .timeline-bar-filtered {
-  fill: var(--color-matched);
+  fill: var(--color-filtered);
   pointer-events: none;
 }
 
 #timeline-svg .timeline-bar-filtered.in-range {
-  fill: var(--color-matched);
+  fill: var(--color-filtered);
+}
+
+/* Count axes for butterfly histogram */
+#timeline-svg .timeline-axis-total text,
+#timeline-svg .timeline-axis-filtered text {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  fill: var(--color-text-light);
+}
+
+#timeline-svg .timeline-axis-total line,
+#timeline-svg .timeline-axis-total path,
+#timeline-svg .timeline-axis-filtered line,
+#timeline-svg .timeline-axis-filtered path {
+  stroke: var(--color-border);
 }
 
 #timeline-svg .timeline-axis text {
@@ -582,35 +654,29 @@ button:active {
   stroke-dasharray: 4, 4;
 }
 
-#timeline-svg .brush .selection {
-  fill: var(--color-matched);
-  fill-opacity: 0.2;
-  stroke: var(--color-matched);
-  stroke-width: 2;
-  stroke-dasharray: none;
-}
-
-#timeline-svg .brush .handle {
-  fill: var(--color-matched);
-  stroke: var(--color-background);
-  stroke-width: 1;
-}
-
-#timeline-svg .brush .overlay {
-  cursor: crosshair;
-}
 
 #timeline-svg .date-range-label {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 9px;
   fill: var(--color-text);
+}
+
+#timeline-svg .timeline-axis text {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--color-text-light);
+}
+
+#timeline-svg .timeline-axis line,
+#timeline-svg .timeline-axis path {
+  stroke: var(--color-border);
 }
 
 /* --- Scatterplot Container --- */
 #scatterplot-container {
   position: relative;
   flex: 1;
-  width: 100%;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -724,11 +790,49 @@ button:active {
   text-decoration: underline;
 }
 
-#tooltip .tooltip-title {
-  display: block;
+.tooltip-title-row {
   margin-bottom: 6px;
+}
+
+#tooltip .tooltip-title {
+  display: inline;
   font-size: 12px;
   font-weight: 600;
+}
+
+/* Source badges */
+.source-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+.source-badge.source-aspi {
+  background-color: var(--color-source-aspi);
+  color: #fff;
+}
+
+.source-badge.source-lowy {
+  background-color: var(--color-source-lowy);
+  color: #fff;
+}
+
+.source-badge.source-unknown {
+  background-color: #6b7280;
+  color: #fff;
+}
+
+/* Smaller source badges in link lists */
+#tooltip .links .source-badge {
+  font-size: 8px;
+  padding: 1px 4px;
+  margin-left: 3px;
 }
 
 /* Sticky tooltip indicator */
@@ -767,8 +871,7 @@ button:active {
 }
 
 #hover-tooltip .tooltip-title {
-  display: block;
-  margin-bottom: 6px;
+  display: inline;
   font-size: 12px;
   font-weight: 600;
 }

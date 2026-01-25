@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ASPI Strategist Embedding Explorer</title>
+    <title>Strategic Policy Embedding Explorer</title>
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
     <script src="https://cdn.jsdelivr.net/npm/sift@17/sift.min.js"></script>
     <link rel="stylesheet" href="style.css" />
@@ -14,8 +14,9 @@
     <div id="container">
       <aside id="controls">
         <header>
-          <h1>ASPI <em>Strategist</em></h1>
+          <h1>Strategic Policy</h1>
           <p class="subtitle">Embedding Explorer</p>
+          <a href="about.html" class="about-link">About this project</a>
         </header>
 
         <section class="control-section filter-builder-section">
@@ -86,9 +87,6 @@
       </aside>
 
       <main id="visualization-area">
-        <div id="timeline-container">
-          <svg id="timeline-svg"></svg>
-        </div>
         <div id="scatterplot-container">
           <canvas id="scatterplot-canvas"></canvas>
           <svg id="scatterplot-svg">
@@ -153,11 +151,14 @@
             </g>
           </svg>
         </div>
+        <div id="timeline-container">
+          <svg id="timeline-svg"></svg>
+        </div>
         <div id="tooltip"></div>
         <div id="hover-tooltip"></div>
       </main>
     </div>
 
-    <script type="module" src="script.js"></script>
+    <script type="module" src="js/main.js"></script>
   </body>
 </html>

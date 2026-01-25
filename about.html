@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About - Strategic Policy Embedding Explorer</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "SF Mono", "Monaco", "Inconsolata", "Fira Mono", monospace;
+        font-size: 14px;
+        line-height: 1.6;
+        max-width: 700px;
+        margin: 0 auto;
+        padding: 40px 20px;
+        color: #333;
+        background: #fff;
+      }
+      h1 {
+        font-size: 1.5em;
+        margin-bottom: 0.5em;
+        border-bottom: 1px dashed #ccc;
+        padding-bottom: 0.5em;
+      }
+      h2 {
+        font-size: 1.1em;
+        margin-top: 2em;
+        color: #555;
+      }
+      a {
+        color: #1e40af;
+      }
+      .back-link {
+        display: inline-block;
+        margin-bottom: 2em;
+        font-size: 0.9em;
+      }
+      .sources {
+        display: flex;
+        gap: 20px;
+        margin: 1em 0;
+      }
+      .source {
+        padding: 8px 12px;
+        border-radius: 4px;
+        color: #fff;
+        font-size: 0.85em;
+      }
+      .source-aspi {
+        background: #1e40af;
+      }
+      .source-lowy {
+        background: #7c3aed;
+      }
+
+      details {
+        margin: 1em 0;
+        padding: 0.75em 1em;
+        background: #f8f9fa;
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+      }
+      details[open] {
+        padding-bottom: 1em;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+        color: #1e40af;
+        padding: 0.25em 0;
+      }
+      summary:hover {
+        color: #3b5dc9;
+      }
+      details p,
+      details ul,
+      details pre {
+        margin-top: 0.75em;
+        margin-bottom: 0.5em;
+      }
+      details pre {
+        background: #1e293b;
+        color: #e2e8f0;
+        padding: 1em;
+        border-radius: 4px;
+        overflow-x: auto;
+        font-size: 0.85em;
+        line-height: 1.4;
+      }
+      details code {
+        background: #e2e8f0;
+        padding: 0.15em 0.4em;
+        border-radius: 3px;
+        font-size: 0.9em;
+      }
+      details pre code {
+        background: none;
+        padding: 0;
+      }
+      .tech-section {
+        margin-top: 2.5em;
+        border-top: 1px dashed #ccc;
+        padding-top: 1.5em;
+      }
+      .tech-section h2 {
+        margin-top: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <a href="index.html" class="back-link">&larr; Back to Explorer</a>
+
+    <h1>Strategic Policy Embedding Explorer</h1>
+
+    <p>
+      This visualization displays thousands of articles from two Australian
+      strategic policy think tanks as points in a 2D space. Articles with
+      semantically similar content appear closer together.
+    </p>
+
+    <h2>Data Sources</h2>
+    <div class="sources">
+      <span class="source source-aspi">ASPI Strategist</span>
+      <span class="source source-lowy">Lowy Interpreter</span>
+    </div>
+    <p>
+      <a href="https://www.aspistrategist.org.au" target="_blank"
+        >The Strategist</a
+      >
+      is the blog of the Australian Strategic Policy Institute, covering
+      defence, cyber security, and Indo-Pacific policy.
+      <a href="https://www.lowyinstitute.org/the-interpreter" target="_blank"
+        >The Interpreter</a
+      >
+      is published by the Lowy Institute, focusing on international affairs and
+      Australian foreign policy.
+    </p>
+
+    <h2>How It Works</h2>
+    <p>
+      Each article's full text is converted to an <em>embedding vector</em>—a
+      list of hundreds of numbers that represent the article's meaning. These
+      vectors are produced by a neural network trained to place semantically
+      similar text closer together in this high-dimensional space. Two articles
+      about submarine procurement will have similar vectors; an article about
+      cyber security will be far away.
+    </p>
+    <p>
+      Since we can't visualize hundreds of dimensions directly, we use
+      <a href="https://umap-learn.readthedocs.io/" target="_blank">UMAP</a>
+      (Uniform Manifold Approximation and Projection) to project the vectors
+      down to 2D while preserving their relative distances as much as possible.
+    </p>
+    <p>
+      The <strong>n_neighbors</strong> parameter controls the balance between
+      local and global structure: lower values emphasize tight local clusters,
+      while higher values reveal broader thematic regions. Multiple projections
+      are precomputed so you can switch between them.
+    </p>
+    <p>
+      The result: articles about similar topics cluster together. You can
+      explore thematic regions, discover connections between articles via
+      internal links, and filter by author, tag, source, or date.
+    </p>
+
+    <h2>Controls</h2>
+    <ul>
+      <li><strong>Pan/Zoom:</strong> Click and drag to pan, scroll to zoom</li>
+      <li>
+        <strong>Filter:</strong> Build boolean queries with multiple
+        conditions—combine Author, Tag, Title, Source, or Date filters using
+        AND/OR logic, with optional NOT to exclude matches
+      </li>
+      <li>
+        <strong>Timeline:</strong> Shows article distribution over time; add a
+        Date filter to restrict the range
+      </li>
+      <li>
+        <strong>Click:</strong> Lock tooltip to inspect article details and
+        internal links
+      </li>
+      <li>
+        <strong>N_Neighbors:</strong> Adjust UMAP
+        <em>nearest neighbours</em> parameter (lower = local detail, higher =
+        global structure)
+      </li>
+    </ul>
+  </body>
+</html>
