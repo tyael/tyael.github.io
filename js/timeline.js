@@ -1,235 +1,211 @@
-import { CONFIG } from './config.js';
-import { appState, ELEMENTS } from './state.js';
-import { getDateFilterRule } from './filter-builder.js';
+import { dayToDate, dateToDay } from "./config.js";
+import { appState, ELEMENTS } from "./state.js";
 
-// --- Timeline Setup (Vertical orientation: up = later, down = earlier) ---
-// Butterfly histogram: total bars extend right, filtered bars extend left
+// Monthly stacked bar chart, oriented vertically: time runs up the page (oldest
+// at the bottom), post count runs across (left -> right). Each month's bar is
+// stacked ASPI then Lowy and shows only the current filtered set. The value
+// (count) axis rescales dynamically to the largest monthly bar in that set.
+// A vertical brush sets the date-range facet.
+// top margin holds the (always-visible) count axis; the chart can fill/overflow
+// the rail vertically, so a bottom axis would scroll out of view.
+const M = { top: 22, right: 10, bottom: 10, left: 34 };
+const MIN_HEIGHT = 158; // floor when the rail is very short
+
+let dims = null; // { w, h }
+let svgHeight = MIN_HEIGHT;
+let tScale = null; // time -> y (up)
+let xScale = null; // count -> x (across)
+let bins = null; // [{ date, next, y, h }] per month, precomputed geometry
+let binOf = null; // point index -> bin index
+let totA = null; // per-bin ASPI totals
+let totL = null; // per-bin Lowy totals
+let brush = null;
+
+function monthIndex(d, sy, sm) {
+  return (d.getFullYear() - sy) * 12 + (d.getMonth() - sm);
+}
+
+// epoch-day <-> <input type="date"> "YYYY-MM-DD" (UTC, matches dayToDate)
+const dayToInput = (day) => dayToDate(day).toISOString().slice(0, 10);
+const inputToDay = (str) => dateToDay(new Date(str));
+
 export function setupTimeline() {
-  const container = ELEMENTS.timelineContainer.node();
-  const rect = container.getBoundingClientRect();
-  const margin = CONFIG.timeline.margin;
-  const width = rect.width - margin.left - margin.right;
-  const height = rect.height - margin.top - margin.bottom;
-  const centerX = width / 2;
+  const node = ELEMENTS.timeline.node();
+  const w = node.clientWidth - M.left - M.right;
+  svgHeight = Math.max(MIN_HEIGHT, node.clientHeight);
+  const h = svgHeight - M.top - M.bottom;
+  dims = { w, h };
 
-  // Get date extent from data
-  const dateExtent = d3.extent(appState.fullData, (d) => d.date);
+  const start = dayToDate(appState.manifest.dateMinDay);
+  const end = dayToDate(appState.manifest.dateMaxDay);
+  const sy = start.getFullYear();
+  const sm = start.getMonth();
+  const nBins = monthIndex(end, sy, sm) + 1;
 
-  // Create time scale (vertical: earlier dates at bottom, later at top)
-  appState.timeline.scale = d3
-    .scaleTime()
-    .domain(dateExtent)
-    .range([height, 0]); // Inverted: 0 at top (later), height at bottom (earlier)
+  const binStart = d3.range(nBins).map((i) => new Date(sy, sm + i, 1));
+  const domainEnd = new Date(sy, sm + nBins, 1);
 
-  // Set up SVG structure
+  binOf = new Int32Array(appState.count);
+  totA = new Int32Array(nBins);
+  totL = new Int32Array(nBins);
+  for (let i = 0; i < appState.count; i++) {
+    const b = monthIndex(dayToDate(appState.date[i]), sy, sm);
+    binOf[i] = b;
+    appState.source[i] === 0 ? totA[b]++ : totL[b]++;
+  }
+
+  // time up: earliest at the bottom (y=h), latest at the top (y=0)
+  tScale = d3.scaleTime().domain([binStart[0], domainEnd]).range([h, 0]);
+  // count axis: domain is set per-render to fit the current filtered max
+  xScale = d3.scaleLinear().domain([0, 1]).range([0, w]);
+
+  // Precompute each month's vertical slot. A 1px gap when rows are tall enough.
+  bins = binStart.map((date, i) => {
+    const next = i + 1 < nBins ? binStart[i + 1] : domainEnd;
+    const yTop = tScale(next);
+    const yBot = tScale(date);
+    const rowH = yBot - yTop;
+    const gap = rowH > 3 ? 1 : 0;
+    return { date, next, y: yTop, h: Math.max(0.5, rowH - gap) };
+  });
+
   ELEMENTS.timelineSvg.selectAll("*").remove();
-
   const g = ELEMENTS.timelineSvg
+    .attr("width", w + M.left + M.right)
+    .attr("height", svgHeight)
     .append("g")
-    .attr("class", "timeline-content")
-    .attr("transform", `translate(${margin.left}, ${margin.top})`);
+    .attr("class", "timeline-g")
+    .attr("transform", `translate(${M.left},${M.top})`);
 
-  // Add center line
-  g.append("line")
-    .attr("class", "timeline-center-line")
-    .attr("x1", centerX)
-    .attr("x2", centerX)
-    .attr("y1", 0)
-    .attr("y2", height);
+  // filtered bars, stacked ASPI then Lowy (updated in drawTimeline)
+  g.append("g").attr("class", "tl-fore aspi");
+  g.append("g").attr("class", "tl-fore lowy");
 
-  // Add bars group (total bars on right)
-  g.append("g").attr("class", "timeline-bars");
-
-  // Add filtered bars group (on left)
-  g.append("g").attr("class", "timeline-bars-filtered");
-
-  // Add date axis on the right side with year ticks
+  // value axis (across, top — always in view) — domain/ticks refreshed in
+  // drawTimeline — and the time axis (up, left)
   g.append("g")
-    .attr("class", "timeline-axis timeline-axis-date")
-    .attr("transform", `translate(${width}, 0)`);
-
-  // Add count axis for total (right side, at bottom)
+    .attr("class", "stream-axis x-axis");
   g.append("g")
-    .attr("class", "timeline-axis timeline-axis-total")
-    .attr("transform", `translate(0, ${height})`);
+    .attr("class", "stream-axis y-axis")
+    .call(d3.axisLeft(tScale).ticks(d3.timeYear.every(2)).tickFormat(d3.timeFormat("%Y")));
 
-  // Add count axis for filtered (left side, at bottom)
-  g.append("g")
-    .attr("class", "timeline-axis timeline-axis-filtered")
-    .attr("transform", `translate(0, ${height})`);
+  brush = d3.brushY().extent([[0, 0], [w, h]]).on("end", brushed);
+  g.append("g").attr("class", "tl-brush").call(brush);
 
-  // Add date range label at top
-  g.append("text")
-    .attr("class", "date-range-label")
-    .attr("x", centerX)
-    .attr("y", -8)
-    .attr("text-anchor", "middle");
+  drawTimeline();
+  setBrushRange(); // restore any active range after a rebuild/resize
+}
 
-  appState.timeline.dimensions = { width, height, margin, centerX };
+function brushed(event) {
+  if (!event.sourceEvent) return; // ignore programmatic moves
+  const sel = event.selection;
+  if (!sel) {
+    appState.filter.dateRange = null;
+  } else {
+    // sel[0] is higher on screen (later time), sel[1] lower (earlier time)
+    const later = dateToDay(tScale.invert(sel[0]));
+    const earlier = dateToDay(tScale.invert(sel[1]));
+    appState.filter.dateRange = [earlier, later];
+  }
+  syncDateInputs(); // reflect the drag in the top-bar inputs
+  import("./filter.js").then((m) => m.applyFilter());
+}
+
+// --- date inputs (top bar) <-> brush, sharing appState.filter.dateRange ------
+
+// Move the brush to match the current date-range facet (programmatic, so it does
+// not re-fire `brushed`). Null range clears the brush.
+function setBrushRange() {
+  if (!brush || !tScale) return;
+  const g = ELEMENTS.timelineSvg.select(".tl-brush");
+  const r = appState.filter.dateRange;
+  if (!r) {
+    g.call(brush.move, null);
+    return;
+  }
+  // r = [earlierDay, laterDay]; later sits higher (smaller y) on the up axis
+  g.call(brush.move, [tScale(dayToDate(r[1])), tScale(dayToDate(r[0]))]);
+}
+
+// Write the current range into the two date inputs (empty when no range).
+export function syncDateInputs() {
+  if (!ELEMENTS.dateFrom) return;
+  const r = appState.filter.dateRange;
+  ELEMENTS.dateFrom.property("value", r ? dayToInput(r[0]) : "");
+  ELEMENTS.dateTo.property("value", r ? dayToInput(r[1]) : "");
+}
+
+function onDateInput() {
+  const fv = ELEMENTS.dateFrom.property("value");
+  const tv = ELEMENTS.dateTo.property("value");
+  let range = null;
+  if (fv || tv) {
+    const lo = fv ? inputToDay(fv) : appState.manifest.dateMinDay;
+    const hi = tv ? inputToDay(tv) : appState.manifest.dateMaxDay;
+    range = lo <= hi ? [lo, hi] : [hi, lo];
+  }
+  appState.filter.dateRange = range;
+  setBrushRange();
+  import("./filter.js").then((m) => m.applyFilter());
+}
+
+export function setupDateInputs() {
+  if (!ELEMENTS.dateFrom) return;
+  const lo = dayToInput(appState.manifest.dateMinDay);
+  const hi = dayToInput(appState.manifest.dateMaxDay);
+  ELEMENTS.dateFrom.attr("min", lo).attr("max", hi);
+  ELEMENTS.dateTo.attr("min", lo).attr("max", hi);
+  ELEMENTS.dateFrom.on("change", onDateInput);
+  ELEMENTS.dateTo.on("change", onDateInput);
+  syncDateInputs();
 }
 
 export function drawTimeline() {
-  const { width, height, centerX } = appState.timeline.dimensions;
-  const scale = appState.timeline.scale;
+  if (!dims) return;
+  const g = ELEMENTS.timelineSvg.select(".timeline-g");
 
-  // Bin data by month
-  const monthInterval = d3.timeMonth.every(1);
-  const thresholds = monthInterval.range(scale.domain()[0], scale.domain()[1]);
+  const { matched, count, matchedCount } = appState;
+  const n = bins.length;
+  const filtA = new Int32Array(n);
+  const filtL = new Int32Array(n);
+  if (matchedCount < count) {
+    for (let i = 0; i < count; i++) {
+      if (!matched[i]) continue;
+      appState.source[i] === 0 ? filtA[binOf[i]]++ : filtL[binOf[i]]++;
+    }
+  } else {
+    filtA.set(totA);
+    filtL.set(totL);
+  }
 
-  // Bin all data for total histogram (right side)
-  const totalBins = d3
-    .bin()
-    .value((d) => d.date)
-    .domain(scale.domain())
-    .thresholds(thresholds)(appState.fullData);
-
-  const totalMax = d3.max(totalBins, (b) => b.length);
-
-  // X scale for total bars (extends right from center)
-  const xScaleTotal = d3
-    .scaleLinear()
-    .domain([0, totalMax])
-    .range([centerX, width]);
-
-  // Calculate bar height with 1px gap between bars
-  const barGap = 1;
-  const getBarHeight = (d) => Math.max(1, Math.abs(scale(d.x0) - scale(d.x1)) - barGap);
-  const getBarY = (d) => Math.min(scale(d.x0), scale(d.x1));
-
-  // Update total bars (right side) - start at center, extend right
-  const barsGroup = ELEMENTS.timelineSvg.select(".timeline-bars");
-  const bars = barsGroup.selectAll(".timeline-bar").data(totalBins);
-
-  bars.join(
-    (enter) =>
-      enter
-        .append("rect")
-        .attr("class", "timeline-bar")
-        .attr("x", centerX)
-        .attr("y", getBarY)
-        .attr("width", (d) => xScaleTotal(d.length) - centerX)
-        .attr("height", getBarHeight),
-    (update) =>
-      update
-        .attr("x", centerX)
-        .attr("y", getBarY)
-        .attr("width", (d) => xScaleTotal(d.length) - centerX)
-        .attr("height", getBarHeight),
-    (exit) => exit.remove(),
+  // rescale the count axis to the largest monthly bar in the filtered set
+  let maxBar = 0;
+  for (let i = 0; i < n; i++) maxBar = Math.max(maxBar, filtA[i] + filtL[i]);
+  xScale.domain([0, Math.max(1, maxBar)]).nice();
+  g.select(".x-axis").call(
+    d3.axisTop(xScale)
+      .ticks(Math.min(4, xScale.domain()[1]))
+      .tickFormat(d3.format("d")),
   );
 
-  // Update bar colors based on selection
-  updateTimelineBarColors();
+  g.select(".tl-fore.aspi").selectAll("rect")
+    .data(bins).join("rect")
+    .attr("class", "stream filtered aspi")
+    .attr("x", 0).attr("y", (d) => d.y).attr("height", (d) => d.h)
+    .attr("width", (d, i) => xScale(filtA[i]));
 
-  // Check if there's an active filter (filter rules with values)
-  const hasActiveFilter = appState.matchedIds.size < appState.fullData.length;
-
-  // Draw filtered bars (left side) if filter is active
-  const filteredBarsGroup = ELEMENTS.timelineSvg.select(".timeline-bars-filtered");
-
-  if (hasActiveFilter && appState.matchedIds.size > 0) {
-    // Get articles matching the filter
-    const matchedArticles = appState.fullData.filter((d) => appState.matchedIds.has(d.id));
-
-    // Bin matched articles
-    const filteredBins = d3
-      .bin()
-      .value((d) => d.date)
-      .domain(scale.domain())
-      .thresholds(thresholds)(matchedArticles);
-
-    const filteredMax = d3.max(filteredBins, (b) => b.length) || 1;
-
-    // X scale for filtered bars (extends left from center - independent scale)
-    const xScaleFiltered = d3
-      .scaleLinear()
-      .domain([0, filteredMax])
-      .range([centerX, 0]); // Reversed: 0 count at center, max at left edge
-
-    // Draw filtered bars (left side) - start at center, extend left
-    const filteredBars = filteredBarsGroup.selectAll(".timeline-bar-filtered").data(filteredBins);
-
-    filteredBars.join(
-      (enter) =>
-        enter
-          .append("rect")
-          .attr("class", "timeline-bar-filtered")
-          .attr("x", (d) => xScaleFiltered(d.length))
-          .attr("y", getBarY)
-          .attr("width", (d) => centerX - xScaleFiltered(d.length))
-          .attr("height", getBarHeight),
-      (update) =>
-        update
-          .attr("x", (d) => xScaleFiltered(d.length))
-          .attr("y", getBarY)
-          .attr("width", (d) => centerX - xScaleFiltered(d.length))
-          .attr("height", getBarHeight),
-      (exit) => exit.remove(),
-    );
-
-    // Update filtered count axis (left side)
-    const xAxisFiltered = d3
-      .axisBottom(xScaleFiltered)
-      .ticks(3)
-      .tickSize(3)
-      .tickFormat(d3.format("d"));
-    ELEMENTS.timelineSvg.select(".timeline-axis-filtered")
-      .call(xAxisFiltered)
-      .selectAll("text")
-      .style("fill", "var(--color-filtered)");
-  } else {
-    // Remove filtered bars and axis if no active filter
-    filteredBarsGroup.selectAll(".timeline-bar-filtered").remove();
-    ELEMENTS.timelineSvg.select(".timeline-axis-filtered").selectAll("*").remove();
-  }
-
-  // Update date axis with year ticks
-  const yAxis = d3
-    .axisRight(scale)
-    .ticks(d3.timeYear.every(1))
-    .tickFormat(d3.timeFormat("%Y"))
-    .tickSizeOuter(0);
-  ELEMENTS.timelineSvg.select(".timeline-axis-date").call(yAxis);
-
-  // Update total count axis (right side)
-  const xAxisTotal = d3
-    .axisBottom(xScaleTotal)
-    .ticks(3)
-    .tickSize(3)
-    .tickFormat(d3.format("d"));
-  ELEMENTS.timelineSvg.select(".timeline-axis-total").call(xAxisTotal);
-
-  // Update date range label
-  updateDateRangeLabel();
+  g.select(".tl-fore.lowy").selectAll("rect")
+    .data(bins).join("rect")
+    .attr("class", "stream filtered lowy")
+    .attr("x", (d, i) => xScale(filtA[i])).attr("y", (d) => d.y).attr("height", (d) => d.h)
+    .attr("width", (d, i) => xScale(filtA[i] + filtL[i]) - xScale(filtA[i]));
 }
 
-export function updateTimelineBarColors() {
-  const dateRule = getDateFilterRule();
-
-  ELEMENTS.timelineSvg.selectAll(".timeline-bar").classed("in-range", (d) => {
-    if (!dateRule || !dateRule.startDate || !dateRule.endDate) return true;
-    const barStart = d.x0;
-    const barEnd = d.x1;
-    return barStart >= dateRule.startDate && barEnd <= dateRule.endDate;
-  });
+export function clearTimelineBrush() {
+  if (!brush) return;
+  ELEMENTS.timelineSvg.select(".tl-brush").call(brush.move, null);
 }
 
-export function updateDateRangeLabel() {
-  const label = ELEMENTS.timelineSvg.select(".date-range-label");
-  const dateRule = getDateFilterRule();
-
-  if (dateRule && dateRule.startDate && dateRule.endDate) {
-    const formatDate = d3.timeFormat("%b %Y");
-    label.text(`${formatDate(dateRule.startDate)} – ${formatDate(dateRule.endDate)}`);
-  } else {
-    const dateExtent = d3.extent(appState.fullData, (d) => d.date);
-    const formatDate = d3.timeFormat("%b %Y");
-    label.text(`${formatDate(dateExtent[0])} – ${formatDate(dateExtent[1])}`);
-  }
-}
-
-// Update timeline visuals when date filter changes (called from filter-builder)
-export function syncTimelineBrush() {
-  updateTimelineBarColors();
-  updateDateRangeLabel();
+export function resizeTimeline() {
+  if (appState.manifest) setupTimeline();
 }

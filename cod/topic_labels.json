@@ -1,0 +1,74 @@
+{
+  "clusters": {
+    "0": {
+      "name": "Defence Workforce",
+      "description": "ADF and civilian staffing levels, recruitment shortfalls, remuneration pressures, and workforce growth plans."
+    },
+    "1": {
+      "name": "Defence Funding",
+      "description": "White Paper funding promises, savings programs, inflation adjustments, underspends, and decade-long investment trajectories."
+    },
+    "2": {
+      "name": "Naval Shipbuilding Enterprise",
+      "description": "Future submarines, frigates, ASC, Collins sustainment, shipbuilding timelines, costs, and industrial execution risks."
+    },
+    "3": {
+      "name": "Economic Context and Policy",
+      "description": "Defence affordability, GDP growth, recessions, fiscal balances, debt, inflation, and foreign aid."
+    },
+    "4": {
+      "name": "Air Capability Projects",
+      "description": "RAAF aircraft, radar, command systems, upgrades, contracts, testing milestones, and project risks."
+    },
+    "5": {
+      "name": "Naval Capability Projects",
+      "description": "Ships, submarines, amphibious systems, ANZAC upgrades, torpedoes, undersea warfare, and fleet integration challenges."
+    },
+    "6": {
+      "name": "Defence Management, Reform and Performance Reporting",
+      "description": "Governance, reform, accountability, service delivery, data, preparedness reporting, and support arrangements."
+    },
+    "7": {
+      "name": "Capital Investment, Approvals and Project Performance",
+      "description": "Capability approvals, capital equipment plans, facilities investment, project delays, underspends, and portfolio risk."
+    },
+    "8": {
+      "name": "Army Force Generation",
+      "description": "Army brigades, battalions, readiness, training activity, operational support, deployments, and preparedness measures outputs."
+    },
+    "9": {
+      "name": "Regional Power Shifts",
+      "description": "China, United States, Asian militaries, populations, defence spending, alliances, and geopolitical influence trends."
+    },
+    "10": {
+      "name": "Operational Deployments",
+      "description": "Afghanistan, Iraq, Timor, domestic security, logistics, and deployment support."
+    },
+    "11": {
+      "name": "Defence Industry and Sovereign Production",
+      "description": "Contractors, manufacturing capacity, supply chains, exports, sovereign capability, and production resilience."
+    },
+    "12": {
+      "name": "Defence Financial Statements",
+      "description": "Appropriations, expenses, revenues, cash flow, assets, depreciation, equity, and departmental accounting treatments rules."
+    },
+    "13": {
+      "name": "Strategy, Force Structure, and Emerging Domains",
+      "description": "National strategy, space, cyber, resilience, long-range strike, deterrence, and future force design."
+    }
+  },
+  "supertopics": {
+    "0": {
+      "name": "Defence Resourcing"
+    },
+    "1": {
+      "name": "Force Modernisation"
+    },
+    "2": {
+      "name": "Regional Balance"
+    },
+    "3": {
+      "name": "Strategic Policy"
+    }
+  }
+}

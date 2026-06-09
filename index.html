@@ -3,161 +3,114 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Strategic Policy Embedding Explorer</title>
+    <title>Strategic Policy Atlas — ASPI &amp; Lowy</title>
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sift@17/sift.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <div id="loading-indicator">Loading Articles...</div>
+    <div id="loading">Loading the atlas…</div>
 
-    <div id="container">
-      <aside id="controls">
-        <header>
-          <h1>Strategic Policy</h1>
-          <p class="subtitle">Embedding Explorer</p>
-          <a href="about.html" class="about-link">About this project</a>
-        </header>
+    <header id="topbar">
+      <div class="brand">
+        <span class="brand-mark">◴</span>
+        <span class="brand-name">Strategic Policy Atlas</span>
+        <span class="brand-sub" id="brand-sub">ASPI · Lowy — 26,726 articles in embedding space</span>
+      </div>
+      <div class="topbar-controls">
+        <div class="proj-switch" role="group" aria-label="Map projection">
+          <span class="proj-label">Detail</span>
+          <button class="proj-btn" data-proj="5" title="n_neighbors 5 — local structure, many small clusters">Local</button>
+          <button class="proj-btn active" data-proj="25" title="n_neighbors 25 — balanced (default)">Balanced</button>
+          <button class="proj-btn" data-proj="125" title="n_neighbors 125 — global structure, broad regions">Global</button>
+        </div>
+        <div class="date-range" title="Filter by date — linked to the timeline">
+          <input type="date" id="date-from" aria-label="From date" />
+          <span class="date-arrow">→</span>
+          <input type="date" id="date-to" aria-label="To date" />
+        </div>
+        <span id="result-count">—</span>
+        <button id="reset">Reset</button>
+      </div>
+    </header>
 
-        <section class="control-section filter-builder-section">
-          <h2>Filter</h2>
-          <div id="filter-builder">
-            <div id="filter-rules"></div>
-            <button id="add-filter-btn" class="add-filter-btn">+ Add Condition</button>
-          </div>
-          <div class="filter-result">
-            <span class="color-swatch color-match"></span>
-            <span id="filter-match-count">0 articles match</span>
+    <main id="layout">
+      <!-- LEFT: filtering -->
+      <aside id="filters" class="rail">
+        <section class="rail-section">
+          <h3>Filter</h3>
+          <label class="field">
+            <span class="field-label">Title contains</span>
+            <span class="field-input">
+              <input id="f-title" type="search" autocomplete="off" placeholder="e.g. submarine" />
+              <button class="field-clear" type="button" aria-label="Clear title filter">×</button>
+            </span>
+          </label>
+          <label class="field">
+            <span class="field-label">Author contains</span>
+            <span class="field-input">
+              <input id="f-author" type="search" autocomplete="off" placeholder="e.g. Davis" />
+              <button class="field-clear" type="button" aria-label="Clear author filter">×</button>
+            </span>
+          </label>
+          <label class="field">
+            <span class="field-label">Tag contains</span>
+            <span class="field-input">
+              <input id="f-tag" type="search" autocomplete="off" placeholder="e.g. cyber" />
+              <button class="field-clear" type="button" aria-label="Clear tag filter">×</button>
+            </span>
+          </label>
+        </section>
+
+        <section class="rail-section">
+          <h3>Source</h3>
+          <div class="legend">
+            <button class="src-toggle" data-src="0"><span class="dot aspi"></span>ASPI</button>
+            <button class="src-toggle" data-src="1"><span class="dot lowy"></span>Lowy</button>
           </div>
         </section>
 
-        <section class="control-section">
-          <h2>Display</h2>
-          <div class="toggle-row">
-            <label class="toggle-label">
-              <input type="checkbox" id="date-gradient-toggle" />
-              <span>Date gradient</span>
-            </label>
-            <span class="info-text">Older articles fade, newer ones are opaque</span>
-          </div>
-          <div class="toggle-row" style="margin-top: 12px;">
-            <label class="toggle-label">
-              <input type="checkbox" id="map-labels-toggle" />
-              <span>Map labels</span>
-            </label>
-            <span class="info-text">Show topic labels like a map legend (may take a few seconds to compute)</span>
-          </div>
+        <section class="rail-section timeline-section">
+          <h3>Timeline</h3>
+          <div id="timeline"><svg id="timeline-svg"></svg></div>
+          <p class="hint">Drag vertically, or set dates above, to filter by date</p>
         </section>
-
-        <section class="control-section">
-          <h2>Projection</h2>
-          <div class="filter-row">
-            <label for="nn-select" class="control-label">N_Neighbors</label>
-            <select id="nn-select" disabled>
-              <option value="">Loading...</option>
-            </select>
-          </div>
-          <div class="nn-info">
-            <span class="info-text">Lower values show local structure, higher values show global patterns</span>
-          </div>
-        </section>
-
-        <section class="control-section">
-          <h2>Internal Links</h2>
-          <div class="filter-row">
-            <label for="link-depth-select" class="control-label">Link Depth</label>
-            <select id="link-depth-select">
-              <option value="1">1 level (direct links)</option>
-              <option value="2">2 levels</option>
-              <option value="3">3 levels</option>
-            </select>
-          </div>
-          <div class="link-depth-info">
-            <span class="info-text">Show connections up to N links away</span>
-          </div>
-        </section>
-
-        <section class="control-section">
-          <button id="reset-filters-btn">Reset All Filters</button>
-        </section>
-
-        <footer>
-          <p id="article-count">0 articles total</p>
-        </footer>
       </aside>
 
-      <main id="visualization-area">
-        <div id="scatterplot-container">
-          <canvas id="scatterplot-canvas"></canvas>
-          <svg id="scatterplot-svg">
-            <defs>
-              <pattern
-                id="grid-pattern"
-                width="50"
-                height="50"
-                patternUnits="userSpaceOnUse"
-              >
-                <path
-                  d="M 50 0 L 0 0 0 50"
-                  fill="none"
-                  stroke="#ccc"
-                  stroke-width="1"
-                  stroke-dasharray="4,4"
-                />
-              </pattern>
-              <!-- Arrow marker for outgoing links (cyan) -->
-              <marker
-                id="link-arrow-outgoing"
-                viewBox="0 0 10 10"
-                refX="10"
-                refY="5"
-                markerWidth="6"
-                markerHeight="6"
-                orient="auto-start-reverse"
-              >
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#06b6d4" />
-              </marker>
-              <!-- Arrow marker for backlinks (amber) -->
-              <marker
-                id="link-arrow-backlink"
-                viewBox="0 0 10 10"
-                refX="10"
-                refY="5"
-                markerWidth="6"
-                markerHeight="6"
-                orient="auto-start-reverse"
-              >
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#f59e0b" />
-              </marker>
-            </defs>
-            <g class="scatterplot-content">
-              <rect class="grid-background" fill="url(#grid-pattern)"></rect>
-              <g class="axis x-axis"></g>
-              <g class="axis y-axis"></g>
-              <!-- Group for map labels -->
-              <g class="map-labels" pointer-events="none"></g>
-              <!-- Group for internal link visualizations -->
-              <g class="internal-links" pointer-events="none"></g>
-              <circle
-                class="hover-highlight"
-                r="8"
-                fill="none"
-                stroke="#000"
-                stroke-width="3"
-                stroke-dasharray="4,2"
-                pointer-events="none"
-                display="none"
-              ></circle>
-            </g>
-          </svg>
+      <!-- CENTRE: map -->
+      <section id="map-container">
+        <canvas id="map-canvas"></canvas>
+        <svg id="map-svg">
+          <g id="links-group"></g>
+          <g id="labels-group"></g>
+        </svg>
+        <div class="map-frame" aria-hidden="true">
+          <span class="reg tl"></span><span class="reg tr"></span>
+          <span class="reg bl"></span><span class="reg br"></span>
+          <span class="frame-tag">UMAP · n=25 · semantic distance</span>
         </div>
-        <div id="timeline-container">
-          <svg id="timeline-svg"></svg>
-        </div>
+        <div class="grain" aria-hidden="true"></div>
         <div id="tooltip"></div>
-        <div id="hover-tooltip"></div>
-      </main>
-    </div>
+        <aside id="detail-panel"></aside>
+      </section>
+
+      <!-- RIGHT: leaderboards (read-only) -->
+      <aside id="rail" class="rail">
+        <section class="rail-section">
+          <h3>Top tags</h3>
+          <div id="tag-list" class="board"></div>
+        </section>
+        <section class="rail-section">
+          <h3>Top authors</h3>
+          <div id="author-list" class="board"></div>
+        </section>
+      </aside>
+    </main>
 
     <script type="module" src="js/main.js"></script>
   </body>

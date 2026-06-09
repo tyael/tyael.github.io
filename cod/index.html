@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASPI Cost of Defence — Semantic Explorer</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230d1117'/%3E%3Ccircle cx='5' cy='6' r='2' fill='%234e79a7'/%3E%3Ccircle cx='11' cy='5' r='2' fill='%23f28e2b'/%3E%3Ccircle cx='8' cy='11' r='2' fill='%2359a14f'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="root">
+
+  <header id="header">
+    <h1>ASPI <em>Cost of Defence</em> — Semantic Explorer</h1>
+    <div class="spacer"></div>
+    <div id="controls">
+      <div id="search-wrap">
+        <input id="search" type="text" placeholder="Search text…" autocomplete="off" spellcheck="false">
+        <button id="search-clear" title="Clear search">&times;</button>
+      </div>
+      <span class="seg-label">Colour</span>
+      <div class="segmented" id="colormode">
+        <button data-mode="topic" class="active">Topic</button>
+        <button data-mode="time">Time</button>
+      </div>
+      <button id="btn-drift" title="Trace how the corpus centroid moves through semantic space, year by year">Corpus drift</button>
+      <button id="btn-traj" class="active" title="Show the reading path of selected reports">Trajectories</button>
+      <button id="btn-conf" title="Fade chunks by how confidently they belong to their topic">Confidence</button>
+      <button id="btn-clear" title="Clear all selections (Esc)">Reset</button>
+      <button id="btn-about" title="About this map — data provenance & quality">&#9432;</button>
+    </div>
+  </header>
+
+  <div id="about-panel" hidden>
+    <div id="about-card">
+      <button id="about-close" title="Close">&times;</button>
+      <h3>About this map</h3>
+      <div id="about-body"></div>
+    </div>
+  </div>
+
+  <div id="body">
+    <aside id="sidebar">
+      <div class="sidebar-tabs">
+        <button class="stab active" data-tab="topics">Topics</button>
+        <button class="stab" data-tab="keyness">Keyness</button>
+        <span class="sub" id="legend-sub"></span>
+      </div>
+      <div id="legend"></div>
+      <div id="keyness" hidden>
+        <p class="ky-intro">“Keyness” picks out the words and phrases used far more in the
+          <em>target</em> than in the <em>vs</em> group — the language that sets it apart.
+          Compare a topic, period or report against the rest of the corpus, or head-to-head
+          against any other one. Longer bars = more distinctive.</p>
+        <div class="ky-controls">
+          <div class="ky-field"><label>Target</label><select id="ky-target"></select></div>
+          <div class="ky-field"><label>vs</label><select id="ky-ref"></select></div>
+          <label class="ky-toggle"><input type="checkbox" id="ky-phrases"> phrases only</label>
+        </div>
+        <div class="ky-section">Key terms <span class="ky-hint">click a term to search it</span></div>
+        <div id="ky-results"></div>
+        <div class="ky-section">Frequent phrases</div>
+        <div id="ky-phrases-list"></div>
+      </div>
+      <div id="detail">
+        <div class="panel-title" id="detail-title" style="padding-left:0;padding-right:0;"><span>Guide</span></div>
+        <div id="detail-body"></div>
+      </div>
+    </aside>
+
+    <div id="map">
+      <canvas id="scatter"></canvas>
+      <div id="colorbar">
+        <div class="cb-title">Year</div>
+        <div id="cb-gradient"></div>
+        <div class="cb-axis"><span id="cb-min"></span><span id="cb-max"></span></div>
+      </div>
+      <div id="hint">scroll = zoom · drag = pan · hover = read · click = pin</div>
+      <div id="pin-panel" hidden></div>
+    </div>
+
+    <aside id="timeline-wrap">
+      <div id="timeline-head">
+        <span class="t">Composition over time</span>
+        <span class="s" id="timeline-sub">newest at top · click a bar to follow a report</span>
+      </div>
+      <div id="timeline-svg-wrap"><svg id="timeline"></svg></div>
+    </aside>
+  </div>
+</div>
+
+<div id="tooltip">
+  <div class="tt-header">
+    <div class="tt-dot" id="tt-dot"></div>
+    <div><div class="tt-report" id="tt-report"></div><div class="tt-sub" id="tt-sub"></div></div>
+  </div>
+  <div class="tt-cluster" id="tt-cluster"></div>
+  <div class="tt-text" id="tt-text"></div>
+  <div class="tt-foot">click to pin · text is a 320-char preview</div>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<!-- App split into modules (classic scripts sharing one global scope).
+     Order matters: core first (declares shared globals), boot last (entry point). -->
+<script src="core.js"></script>
+<script src="data.js"></script>
+<script src="legend.js"></script>
+<script src="timeline.js"></script>
+<script src="map.js"></script>
+<script src="interaction.js"></script>
+<script src="detail.js"></script>
+<script src="keyness.js"></script>
+<script src="controls.js"></script>
+<script src="boot.js"></script>
+</body>
+</html>

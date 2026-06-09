@@ -1,75 +1,119 @@
-// Main entry point - imports all modules and initializes the application
-import { CONFIG } from './config.js';
-import { appState, ELEMENTS, initializeElements } from './state.js';
-import { showLoading } from './utils.js';
-import { processData } from './data.js';
-import { setupDimensions, setupScales, setupCanvas, setupSVG } from './scales.js';
-import { setupZoom } from './zoom.js';
-import { setupTimeline, drawTimeline } from './timeline.js';
-import { setupNNSelector, setupLinkDepthSelector, setupDateGradientToggle, setupMapLabelsToggle } from './controls.js';
-import { updateQuadtree, drawScatterplot } from './drawing.js';
-import { applyFilterRules, updateFilterCount } from './filter-logic.js';
-import { setupFilterBuilder } from './filter-builder.js';
-import { setupEventHandlers } from './events.js';
+import { appState, ELEMENTS } from "./state.js";
+import { loadData } from "./data.js";
+import { setupMap, resizeMap, resetZoom, pickPoint, setProjection } from "./map.js";
+import { setupTimeline, resizeTimeline, setupDateInputs } from "./timeline.js";
+import { renderLeaderboards } from "./leaderboards.js";
+import { applyFilter, resetFilters } from "./filter.js";
+import { selectArticle, clearSelection, renderDetail } from "./detail.js";
+import { showTooltip, hideTooltip } from "./tooltip.js";
+import { setupAutocomplete } from "./autocomplete.js";
+import { debounce } from "./utils.js";
 
-// Apply colors from CONFIG to CSS custom properties and SVG markers
-function applyColorsToCss() {
-  const root = document.documentElement;
-  root.style.setProperty('--color-filtered', CONFIG.colors.filtered);
-  root.style.setProperty('--color-unfiltered', CONFIG.colors.unfiltered);
-  root.style.setProperty('--color-forward-link', CONFIG.colors.forwardLink);
-  root.style.setProperty('--color-backlink', CONFIG.colors.backlink);
-  root.style.setProperty('--color-source-aspi', CONFIG.colors.sourceAspi);
-  root.style.setProperty('--color-source-lowy', CONFIG.colors.sourceLowy);
-
-  // Update SVG marker colors (SVG doesn't support CSS variables in fill attributes)
-  const outgoingMarker = document.querySelector('#link-arrow-outgoing path');
-  const backlinkMarker = document.querySelector('#link-arrow-backlink path');
-  if (outgoingMarker) outgoingMarker.setAttribute('fill', CONFIG.colors.forwardLink);
-  if (backlinkMarker) backlinkMarker.setAttribute('fill', CONFIG.colors.backlink);
+function initElements() {
+  const $ = (id) => d3.select(id);
+  Object.assign(ELEMENTS, {
+    loading: $("#loading"),
+    mapContainer: $("#map-container"),
+    canvas: $("#map-canvas"),
+    svg: $("#map-svg"),
+    labelsGroup: $("#labels-group"),
+    linksGroup: $("#links-group"),
+    tooltip: $("#tooltip"),
+    detailPanel: $("#detail-panel"),
+    timeline: $("#timeline"),
+    timelineSvg: $("#timeline-svg"),
+    tagList: $("#tag-list"),
+    authorList: $("#author-list"),
+    titleInput: $("#f-title"),
+    authorInput: $("#f-author"),
+    tagInput: $("#f-tag"),
+    dateFrom: $("#date-from"),
+    dateTo: $("#date-to"),
+    brandSub: $("#brand-sub"),
+    resultCount: $("#result-count"),
+    resetBtn: $("#reset"),
+    srcButtons: d3.selectAll(".src-toggle"),
+    projButtons: d3.selectAll(".proj-btn"),
+  });
 }
 
-// --- Initialization ---
-async function initialize() {
-  // Apply colors to CSS before anything else
-  applyColorsToCss();
+function setupInteractions() {
+  ELEMENTS.svg
+    .on("mousemove", (event) => {
+      const [mx, my] = d3.pointer(event, ELEMENTS.svg.node());
+      const i = pickPoint(mx, my);
+      appState.hoveredId = i;
+      if (i == null) hideTooltip();
+      else showTooltip(i, event.clientX, event.clientY);
+    })
+    .on("mouseleave", hideTooltip)
+    .on("click", (event) => {
+      const [mx, my] = d3.pointer(event, ELEMENTS.svg.node());
+      const i = pickPoint(mx, my);
+      if (i == null) clearSelection();
+      else selectArticle(i);
+    });
 
-  // Initialize DOM element references
-  initializeElements();
+  ELEMENTS.srcButtons.on("click", function () {
+    const code = +this.dataset.src;
+    appState.filter.source = appState.filter.source === code ? null : code;
+    applyFilter();
+  });
 
-  showLoading("Loading articles...");
+  ELEMENTS.projButtons.on("click", async function () {
+    const p = this.dataset.proj;
+    if (p === appState.projection || appState.transitioning) return;
+    ELEMENTS.projButtons.classed("active", function () {
+      return this.dataset.proj === p;
+    });
+    await setProjection(p);
+  });
 
+  ELEMENTS.resetBtn.on("click", () => {
+    resetFilters();
+    clearSelection();
+  });
+
+  d3.select(document).on("keydown", (e) => {
+    if (e.key === "Escape") {
+      if (appState.selectedId != null) clearSelection();
+      else resetFilters();
+    }
+  });
+
+  ELEMENTS.svg.on("dblclick", () => resetZoom());
+
+  window.addEventListener(
+    "resize",
+    debounce(() => {
+      resizeMap();
+      resizeTimeline();
+      renderLeaderboards();
+    }, 200),
+  );
+}
+
+async function init() {
+  initElements();
   try {
-    const rawData = await d3.json(CONFIG.dataUrl);
-    appState.rawData = rawData; // Store for n_neighbors switching
-    processData(rawData);
-
-    setupDimensions();
-    setupScales();
-    setupCanvas();
-    setupSVG();
+    await loadData();
+    ELEMENTS.projButtons.classed("active", function () {
+      return this.dataset.proj === appState.projection;
+    });
+    setupMap();
     setupTimeline();
-    setupZoom();
-    setupEventHandlers();
-    setupFilterBuilder();
-    setupNNSelector();
-    setupLinkDepthSelector();
-    setupDateGradientToggle();
-    setupMapLabelsToggle();
-
-    applyFilterRules();
-    updateQuadtree();
-    drawTimeline();
-    drawScatterplot();
-    updateFilterCount();
-
-    showLoading(false);
-    console.log(`Loaded ${appState.fullData.length} articles`);
-  } catch (error) {
-    console.error("Initialization failed:", error);
-    showLoading(false);
+    setupDateInputs();
+    setupAutocomplete();
+    renderLeaderboards();
+    renderDetail();
+    applyFilter();
+    setupInteractions();
+    ELEMENTS.loading.classed("hidden", true);
+    console.log(`Loaded ${appState.count} articles`);
+  } catch (err) {
+    console.error("Init failed:", err);
+    ELEMENTS.loading.text("Failed to load data — see console.");
   }
 }
 
-// --- Start ---
-initialize();
+init();
