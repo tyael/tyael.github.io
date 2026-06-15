@@ -25,11 +25,11 @@
       "description": "Ships, submarines, amphibious systems, ANZAC upgrades, torpedoes, undersea warfare, and fleet integration challenges."
     },
     "6": {
-      "name": "Defence Management, Reform and Performance Reporting",
+      "name": "Defence Management and Reform",
       "description": "Governance, reform, accountability, service delivery, data, preparedness reporting, and support arrangements."
     },
     "7": {
-      "name": "Capital Investment, Approvals and Project Performance",
+      "name": "Capital Investment",
       "description": "Capability approvals, capital equipment plans, facilities investment, project delays, underspends, and portfolio risk."
     },
     "8": {
@@ -45,7 +45,7 @@
       "description": "Afghanistan, Iraq, Timor, domestic security, logistics, and deployment support."
     },
     "11": {
-      "name": "Defence Industry and Sovereign Production",
+      "name": "Defence Industry",
       "description": "Contractors, manufacturing capacity, supply chains, exports, sovereign capability, and production resilience."
     },
     "12": {
@@ -53,7 +53,7 @@
       "description": "Appropriations, expenses, revenues, cash flow, assets, depreciation, equity, and departmental accounting treatments rules."
     },
     "13": {
-      "name": "Strategy, Force Structure, and Emerging Domains",
+      "name": "National Strategy and Emerging Domains",
       "description": "National strategy, space, cyber, resilience, long-range strike, deterrence, and future force design."
     }
   },
