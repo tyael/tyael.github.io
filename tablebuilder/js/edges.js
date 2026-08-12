@@ -1,0 +1,477 @@
+/**
+ * edges.js
+ *
+ * The explicit border grid.
+ *
+ * Borders are the one thing that cannot be recovered from the rendered DOM:
+ * `getComputedStyle` reports the *specified* border, not the one
+ * `border-collapse: collapse` actually painted, so an SVG exporter reading the
+ * DOM would guess wrong on every shared edge. Instead the whole table is
+ * modelled as a grid of lines up front:
+ *
+ *   h[r][c]  the horizontal edge directly above grid row r, in column c
+ *   v[r][c]  the vertical edge directly left of column c, in grid row r
+ *
+ * Each edge is resolved once, from the options and the style rules, with a
+ * documented precedence. The HTML renderer then draws with
+ * `border-collapse: separate` and a strict ownership rule — every cell paints
+ * its own top and left, the last row and column paint the outer two — so no
+ * edge is ever painted twice. The SVG renderer draws the same h/v arrays as
+ * line segments. They cannot disagree, because they are the same numbers.
+ */
+
+const Edges = {
+
+  /** Higher wins when two sources claim the same edge. */
+  PRIORITY: { line: 1, structural: 2, rule: 3 },
+
+  /** Tie-break between equal-priority, equal-width edges. */
+  STYLE_RANK: { none: 0, hidden: 0, dotted: 1, dashed: 2, solid: 3, double: 4 },
+
+  /**
+   * Build the grid.
+   * @param {Object} model - a ResolvedModel from compute.js
+   * @returns {Object} {gridRows, nRows, nCols, h, v}
+   */
+  build(model) {
+    const opt = model.options;
+    const nCols = model.cols.length;
+    const gridRows = Edges.gridRows(model);
+    const nRows = gridRows.length;
+
+    // h has one more row than the grid; v has one more column.
+    const h = [];
+    for (let r = 0; r <= nRows; r += 1) h.push(new Array(nCols).fill(null));
+    const v = [];
+    for (let r = 0; r < nRows; r += 1) v.push(new Array(nCols + 1).fill(null));
+
+    const grid = { gridRows: gridRows, nRows: nRows, nCols: nCols, h: h, v: v };
+
+    Edges.applyStructural(grid, model, opt);
+    Edges.applyLines(grid, model, opt);
+    Edges.applyRules(grid, model);
+
+    return grid;
+  },
+
+  /**
+   * Flatten the model into the sequence of grid rows, in visual order.
+   * Every renderer walks this same list, so row indices always line up.
+   */
+  gridRows(model) {
+    const rows = [];
+    const opt = model.options;
+
+    if (model.title) rows.push({ kind: 'title', full: true });
+    if (model.subtitle) rows.push({ kind: 'subtitle', full: true });
+
+    if (model.header.show) {
+      model.header.levels.forEach((level, i) => {
+        rows.push({
+          kind: level.level === 0 ? 'column_labels' : 'spanner',
+          level: level.level,
+          levelIndex: i,
+          isFirstHeader: i === 0,
+          isLastHeader: i === model.header.levels.length - 1,
+          ref: level
+        });
+      });
+    }
+
+    model.rows.forEach((row, i) => {
+      rows.push({
+        kind: row.kind,          // 'group' | 'data' | 'summary' | 'grand'
+        bodyIndex: i,
+        ref: row,
+        full: row.kind === 'group'
+      });
+    });
+
+    const notes = model.footnotes || [];
+    if (notes.length) {
+      if (opt['footnotes.multiline']) {
+        notes.forEach((note, i) => rows.push({ kind: 'footnote', full: true, noteIndex: i, ref: note }));
+      } else {
+        rows.push({ kind: 'footnote', full: true, noteIndex: 0, all: true });
+      }
+    }
+
+    const sources = model.sourceNotes || [];
+    if (sources.length) {
+      if (opt['source_notes.multiline']) {
+        sources.forEach((note, i) => rows.push({ kind: 'source_note', full: true, noteIndex: i, ref: note }));
+      } else {
+        rows.push({ kind: 'source_note', full: true, noteIndex: 0, all: true });
+      }
+    }
+
+    return rows;
+  },
+
+  /* ================================================================
+     Sources
+     ================================================================ */
+
+  /**
+   * Structural boundaries: the rules that separate one part of the table from
+   * another. These are what carry a booktabs look.
+   */
+  applyStructural(grid, model, opt) {
+    const rows = grid.gridRows;
+    const nCols = grid.nCols;
+    const all = { from: 0, to: nCols };
+
+    const firstIndexOf = (pred) => rows.findIndex(pred);
+    const lastIndexOf = (pred) => {
+      for (let i = rows.length - 1; i >= 0; i -= 1) if (pred(rows[i])) return i;
+      return -1;
+    };
+
+    const isHeader = (r) => r.kind === 'spanner' || r.kind === 'column_labels';
+    const isBody = (r) => r.kind === 'data' || r.kind === 'group' ||
+      r.kind === 'summary' || r.kind === 'grand';
+    const isFooter = (r) => r.kind === 'footnote' || r.kind === 'source_note';
+
+    /* ---- Heading ---- */
+
+    const firstHeader = firstIndexOf(isHeader);
+    const firstBody = firstIndexOf(isBody);
+    const headingEnd = firstHeader >= 0 ? firstHeader : firstBody;
+
+    if ((model.title || model.subtitle) && headingEnd > 0) {
+      Edges.setH(grid, headingEnd, all, Edges.edge(opt, 'heading.border.bottom', 'structural'));
+    }
+
+    /* ---- Column labels ---- */
+
+    if (firstHeader >= 0) {
+      Edges.setH(grid, firstHeader, all, Edges.edge(opt, 'column_labels.border.top', 'structural'));
+
+      const lastHeader = lastIndexOf(isHeader);
+      Edges.setH(grid, lastHeader + 1, all, Edges.edge(opt, 'column_labels.border.bottom', 'structural'));
+
+      // Spanner underlines: the rule sits only under the columns a spanner
+      // actually covers, which is what makes nested headers readable.
+      if (opt['column_labels.spanner.underline']) {
+        const spannerEdge = Edges.edge(opt, 'column_labels.spanner.border.bottom', 'structural');
+        if (spannerEdge) {
+          for (let i = 0; i < rows.length; i += 1) {
+            if (rows[i].kind !== 'spanner') continue;
+            for (const cell of rows[i].ref.cells) {
+              if (cell.kind !== 'spanner') continue;
+              const range = Edges.rangeOfCell(model, cell);
+              if (range) Edges.setH(grid, i + 1, range, spannerEdge);
+            }
+          }
+        }
+      }
+    }
+
+    /* ---- Body ---- */
+
+    if (firstBody >= 0) {
+      Edges.setH(grid, firstBody, all, Edges.edge(opt, 'table_body.border.top', 'structural'));
+
+      const lastBody = lastIndexOf(isBody);
+      Edges.setH(grid, lastBody + 1, all, Edges.edge(opt, 'table_body.border.bottom', 'structural'));
+
+      for (let i = 0; i < rows.length; i += 1) {
+        const row = rows[i];
+        if (row.kind === 'group') {
+          Edges.setH(grid, i, all, Edges.edge(opt, 'row_group.border.top', 'structural'));
+          Edges.setH(grid, i + 1, all, Edges.edge(opt, 'row_group.border.bottom', 'structural'));
+        } else if (row.kind === 'summary') {
+          // gt draws the summary rule above the block, not between its rows.
+          const previous = rows[i - 1];
+          if (!previous || previous.kind !== 'summary') {
+            Edges.setH(grid, i, all, Edges.edge(opt, 'summary_row.border', 'structural'));
+          }
+        } else if (row.kind === 'grand') {
+          const previous = rows[i - 1];
+          if (!previous || previous.kind !== 'grand') {
+            Edges.setH(grid, i, all, Edges.edge(opt, 'grand_summary_row.border', 'structural'));
+          }
+        }
+      }
+    }
+
+    /* ---- Footer ---- */
+
+    const firstFooter = firstIndexOf(isFooter);
+    if (firstFooter >= 0) {
+      const lastNote = lastIndexOf((r) => r.kind === 'footnote');
+      if (lastNote >= 0) {
+        Edges.setH(grid, lastNote + 1, all, Edges.edge(opt, 'footnotes.border.bottom', 'structural'));
+      }
+      const lastSource = lastIndexOf((r) => r.kind === 'source_note');
+      if (lastSource >= 0) {
+        Edges.setH(grid, lastSource + 1, all, Edges.edge(opt, 'source_notes.border.bottom', 'structural'));
+      }
+    }
+
+    /* ---- The stub's right-hand rule ---- */
+
+    const stubIndex = model.cols.findIndex((c) => c.kind === 'stub');
+    if (stubIndex >= 0) {
+      const edge = Edges.edge(opt, 'stub.border', 'structural');
+      for (let r = 0; r < grid.nRows; r += 1) {
+        if (rows[r].full) continue;   // heading, group and footer rows span across it
+        Edges.setV(grid, r, stubIndex + 1, edge);
+      }
+    }
+
+    const groupIndex = model.cols.findIndex((c) => c.kind === 'group');
+    if (groupIndex >= 0) {
+      const edge = Edges.edge(opt, 'stub_row_group.border', 'structural');
+      for (let r = 0; r < grid.nRows; r += 1) {
+        if (rows[r].full) continue;
+        Edges.setV(grid, r, groupIndex + 1, edge);
+      }
+    }
+  },
+
+  /** The repeating interior rules: body hlines/vlines and header vlines. */
+  applyLines(grid, model, opt) {
+    const rows = grid.gridRows;
+    const nCols = grid.nCols;
+    const all = { from: 0, to: nCols };
+
+    const hline = Edges.edge(opt, 'table_body.hlines', 'line');
+    const vlineBody = Edges.edge(opt, 'table_body.vlines', 'line');
+    const vlineHead = Edges.edge(opt, 'column_labels.vlines', 'line');
+
+    for (let r = 0; r < grid.nRows; r += 1) {
+      const row = rows[r];
+      const previous = rows[r - 1];
+
+      if (hline && row.kind === 'data' && previous &&
+          (previous.kind === 'data' || previous.kind === 'group')) {
+        Edges.setH(grid, r, all, hline);
+      }
+
+      if (row.full) continue;
+
+      const vline = (row.kind === 'spanner' || row.kind === 'column_labels') ? vlineHead : vlineBody;
+      if (!vline) continue;
+      for (let c = 1; c < nCols; c += 1) Edges.setV(grid, r, c, vline);
+    }
+  },
+
+  /** Borders set by style rules — these outrank everything else. */
+  applyRules(grid, model) {
+    const rows = grid.gridRows;
+
+    for (let r = 0; r < grid.nRows; r += 1) {
+      const row = rows[r];
+      if (!row.ref) continue;
+
+      const isHeader = row.kind === 'spanner' || row.kind === 'column_labels';
+      const cells = row.ref.cells || [];
+
+      let c = 0;
+      for (const cell of cells) {
+        // Header cells know their own grid column (the label row is not
+        // contiguous); body cells sit one per column, in order.
+        if (isHeader) c = cell.gridCol;
+        const span = cell.span || 1;
+        const borders = StyleRules.toBorders(cell.style);
+        const range = { from: c, to: c + span };
+
+        if (borders) {
+          const rowspan = cell.rowspan === undefined ? 1 : Math.max(1, cell.rowspan);
+          if (borders.top) Edges.setH(grid, r, range, Edges.fromBorder(borders.top, 'rule'));
+          if (borders.bottom) Edges.setH(grid, r + rowspan, range, Edges.fromBorder(borders.bottom, 'rule'));
+          for (let rr = r; rr < Math.min(grid.nRows, r + rowspan); rr += 1) {
+            if (borders.left) Edges.setV(grid, rr, c, Edges.fromBorder(borders.left, 'rule'));
+            if (borders.right) Edges.setV(grid, rr, c + span, Edges.fromBorder(borders.right, 'rule'));
+          }
+        }
+
+        c += span;
+      }
+
+      // Style rules on the leading stub/group header cells, which live outside
+      // the per-level `cells` list.
+      if (isHeader && row.isFirstHeader) {
+        for (const cell of model.header.lead) {
+          const borders = StyleRules.toBorders(cell.style);
+          if (!borders) continue;
+          const i = cell.gridCol;
+          const range = { from: i, to: i + 1 };
+          if (borders.top) Edges.setH(grid, r, range, Edges.fromBorder(borders.top, 'rule'));
+          if (borders.left) Edges.setV(grid, r, i, Edges.fromBorder(borders.left, 'rule'));
+          if (borders.right) Edges.setV(grid, r, i + 1, Edges.fromBorder(borders.right, 'rule'));
+        }
+      }
+    }
+  },
+
+  /* ================================================================
+     Primitives
+     ================================================================ */
+
+  /** Read a `prefix.style/.width/.color` triplet out of the options. */
+  edge(opt, prefix, priority) {
+    const style = opt[prefix + '.style'];
+    if (!style || style === 'none' || style === 'hidden') return null;
+    const width = Util.cssNumber(opt[prefix + '.width']);
+    if (!width) return null;
+    return {
+      style: style,
+      width: width,
+      color: opt[prefix + '.color'] || '#000000',
+      priority: Edges.PRIORITY[priority] || 1
+    };
+  },
+
+  /** Convert a style rule's border object into an edge. */
+  fromBorder(border, priority) {
+    if (!border || !border.style || border.style === 'none' || border.style === 'hidden') return null;
+    const width = Util.cssNumber(border.width) || 1;
+    return {
+      style: border.style,
+      width: width,
+      color: border.color || '#000000',
+      priority: Edges.PRIORITY[priority] || 3
+    };
+  },
+
+  /** The grid column range a header cell covers. */
+  rangeOfCell(model, cell) {
+    if (!cell.colIds || !cell.colIds.length) return null;
+    const indexOf = (colId) => model.cols.findIndex((c) => c.kind === 'body' && c.colId === colId);
+    const indices = cell.colIds.map(indexOf).filter((i) => i >= 0);
+    if (!indices.length) return null;
+    return { from: Math.min.apply(null, indices), to: Math.max.apply(null, indices) + 1 };
+  },
+
+  /** Write a horizontal edge across a column range, keeping the stronger one. */
+  setH(grid, r, range, edge) {
+    if (!edge || r < 0 || r > grid.nRows) return;
+    for (let c = Math.max(0, range.from); c < Math.min(grid.nCols, range.to); c += 1) {
+      grid.h[r][c] = Edges.stronger(grid.h[r][c], edge);
+    }
+  },
+
+  /** Write a vertical edge, keeping the stronger one. */
+  setV(grid, r, c, edge) {
+    if (!edge || r < 0 || r >= grid.nRows || c < 0 || c > grid.nCols) return;
+    grid.v[r][c] = Edges.stronger(grid.v[r][c], edge);
+  },
+
+  /**
+   * Resolve a clash: higher priority wins, then the wider line, then the
+   * heavier style. This is the whole border precedence, in one place.
+   */
+  stronger(a, b) {
+    if (!a) return b;
+    if (!b) return a;
+    if (a.priority !== b.priority) return a.priority > b.priority ? a : b;
+    if (a.width !== b.width) return a.width > b.width ? a : b;
+    const ra = Edges.STYLE_RANK[a.style] || 0;
+    const rb = Edges.STYLE_RANK[b.style] || 0;
+    return rb > ra ? b : a;
+  },
+
+  /** An edge as a CSS `border-*` shorthand value. */
+  toCss(edge) {
+    if (!edge) return '0 none transparent';
+    return edge.width + 'px ' + edge.style + ' ' + edge.color;
+  },
+
+  /**
+   * The four border declarations for a cell, under the ownership rule: paint
+   * your own top and left; the last row and column also paint the outer edges.
+   *
+   * @param {Object} grid
+   * @param {number} r - grid row
+   * @param {number} c - grid column (leftmost, for spanning cells)
+   * @param {number} span
+   * @param {number} rowspan
+   */
+  cssForCell(grid, r, c, span, rowspan) {
+    const cols = Math.max(1, span || 1);
+    const rowsSpanned = Math.max(1, rowspan || 1);
+
+    // A spanning cell takes the strongest edge along the run it covers; the
+    // interior edges it swallowed are not drawn by anyone.
+    let top = null;
+    for (let i = c; i < Math.min(grid.nCols, c + cols); i += 1) {
+      top = Edges.stronger(top, grid.h[r] ? grid.h[r][i] : null);
+    }
+    let left = null;
+    for (let i = r; i < Math.min(grid.nRows, r + rowsSpanned); i += 1) {
+      left = Edges.stronger(left, grid.v[i] ? grid.v[i][c] : null);
+    }
+
+    const css = {
+      borderTop: Edges.toCss(top),
+      borderLeft: Edges.toCss(left),
+      borderBottom: '0 none transparent',
+      borderRight: '0 none transparent'
+    };
+
+    if (r + rowsSpanned >= grid.nRows) {
+      let bottom = null;
+      for (let i = c; i < Math.min(grid.nCols, c + cols); i += 1) {
+        bottom = Edges.stronger(bottom, grid.h[grid.nRows] ? grid.h[grid.nRows][i] : null);
+      }
+      css.borderBottom = Edges.toCss(bottom);
+    }
+
+    if (c + cols >= grid.nCols) {
+      let right = null;
+      for (let i = r; i < Math.min(grid.nRows, r + rowsSpanned); i += 1) {
+        right = Edges.stronger(right, grid.v[i] ? grid.v[i][grid.nCols] : null);
+      }
+      css.borderRight = Edges.toCss(right);
+    }
+
+    return css;
+  },
+
+  /**
+   * Collapse the grid into drawable line segments, merging runs that share a
+   * style. Used by the SVG exporter, which wants a handful of long lines rather
+   * than one stroke per cell edge.
+   *
+   * @returns {{horizontal: Array, vertical: Array}} segments as
+   *   {r, from, to, edge} / {c, from, to, edge} in grid coordinates
+   */
+  segments(grid) {
+    const horizontal = [];
+    const vertical = [];
+
+    for (let r = 0; r <= grid.nRows; r += 1) {
+      let start = -1;
+      let current = null;
+      for (let c = 0; c <= grid.nCols; c += 1) {
+        const edge = c < grid.nCols ? grid.h[r][c] : null;
+        const same = edge && current && edge.style === current.style &&
+          edge.width === current.width && edge.color === current.color;
+        if (!same) {
+          if (current) horizontal.push({ r: r, from: start, to: c, edge: current });
+          current = edge;
+          start = c;
+        }
+      }
+    }
+
+    for (let c = 0; c <= grid.nCols; c += 1) {
+      let start = -1;
+      let current = null;
+      for (let r = 0; r <= grid.nRows; r += 1) {
+        const edge = r < grid.nRows ? grid.v[r][c] : null;
+        const same = edge && current && edge.style === current.style &&
+          edge.width === current.width && edge.color === current.color;
+        if (!same) {
+          if (current) vertical.push({ c: c, from: start, to: r, edge: current });
+          current = edge;
+          start = r;
+        }
+      }
+    }
+
+    return { horizontal: horizontal, vertical: vertical };
+  }
+};

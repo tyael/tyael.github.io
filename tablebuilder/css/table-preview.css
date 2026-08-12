@@ -1,0 +1,114 @@
+/* ============================================
+   Table Builder — preview canvas and selection overlay
+
+   IMPORTANT: this file must never style the table itself.
+   All table styling is generated into a scoped <style> block by
+   render-html.js so that the preview and the exported HTML are
+   byte-for-byte the same table. Everything here styles the paper
+   the table sits on, plus editor-only selection affordances that
+   are stripped on export.
+   ============================================ */
+
+.paper {
+  background: #ffffff;
+  padding: 28px 32px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.28), 0 12px 40px rgba(0, 0, 0, 0.4);
+  display: inline-block;
+}
+
+.paper.is-dark {
+  background: #10151c;
+}
+
+.paper.is-transparent {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* ============================================
+   Selection affordances (editor only)
+   ============================================ */
+
+.gt-table.is-selectable .gt-cell {
+  cursor: cell;
+}
+
+/* Hover highlight — an inset ring so it never shifts layout */
+.gt-table.is-selectable .gt-cell:hover {
+  box-shadow: inset 0 0 0 1px rgba(76, 159, 255, 0.45);
+}
+
+/* Selected cells. Uses outline + inset shadow rather than border so that
+   the generated border model is left completely untouched. */
+.gt-cell.is-selected {
+  box-shadow:
+    inset 0 0 0 2px rgba(76, 159, 255, 0.9),
+    inset 0 0 0 3px rgba(255, 255, 255, 0.5) !important;
+}
+
+.gt-cell.is-selected-anchor {
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 176, 46, 0.95),
+    inset 0 0 0 3px rgba(255, 255, 255, 0.5) !important;
+}
+
+/* Footnote-attach affordance */
+.gt-table.is-footnote-mode .gt-cell:hover {
+  box-shadow: inset 0 0 0 2px rgba(224, 163, 62, 0.85);
+  cursor: crosshair;
+}
+
+/* Rule-preview: flashes the cells a hovered style rule targets */
+.gt-cell.is-rule-preview {
+  box-shadow: inset 0 0 0 2px rgba(63, 179, 127, 0.85) !important;
+}
+
+/* ============================================
+   Column resize handles (editor only)
+   ============================================ */
+
+.col-resizer {
+  position: absolute;
+  top: 0;
+  width: 7px;
+  margin-left: -3px;
+  cursor: col-resize;
+  z-index: 4;
+}
+
+.col-resizer:hover,
+.col-resizer.is-dragging {
+  background: var(--accent-line);
+}
+
+.resize-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.resize-layer .col-resizer {
+  pointer-events: auto;
+}
+
+/* ============================================
+   Truncation notice for very large tables
+   ============================================ */
+
+.preview-notice {
+  margin-top: 10px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: #8a6d1f;
+  background: #fff5d6;
+  border: 1px solid #e8cf85;
+  border-radius: 3px;
+  padding: 5px 9px;
+  display: inline-block;
+}
+
+.paper.is-dark .preview-notice {
+  color: #e0c37a;
+  background: rgba(224, 163, 62, 0.12);
+  border-color: rgba(224, 163, 62, 0.4);
+}

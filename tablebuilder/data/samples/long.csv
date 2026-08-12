@@ -1,0 +1,61 @@
+region,sector,year,metric,value
+New South Wales,Services,2022,employment,4182000
+New South Wales,Services,2022,output,412600
+New South Wales,Services,2023,employment,4261500
+New South Wales,Services,2023,output,428900
+New South Wales,Services,2024,employment,4330200
+New South Wales,Services,2024,output,447300
+New South Wales,Industry,2022,employment,1094300
+New South Wales,Industry,2022,output,198400
+New South Wales,Industry,2023,employment,1102800
+New South Wales,Industry,2023,output,203100
+New South Wales,Industry,2024,employment,1088600
+New South Wales,Industry,2024,output,209700
+Victoria,Services,2022,employment,3401200
+Victoria,Services,2022,output,331800
+Victoria,Services,2023,employment,3488700
+Victoria,Services,2023,output,346200
+Victoria,Services,2024,employment,3559400
+Victoria,Services,2024,output,362500
+Victoria,Industry,2022,employment,912700
+Victoria,Industry,2022,output,161900
+Victoria,Industry,2023,employment,921400
+Victoria,Industry,2023,output,167300
+Victoria,Industry,2024,employment,918200
+Victoria,Industry,2024,output,172800
+Queensland,Services,2022,employment,2216400
+Queensland,Services,2022,output,208700
+Queensland,Services,2023,employment,2288100
+Queensland,Services,2023,output,219400
+Queensland,Services,2024,employment,2351900
+Queensland,Services,2024,output,231600
+Queensland,Industry,2022,employment,742100
+Queensland,Industry,2022,output,148300
+Queensland,Industry,2023,employment,758600
+Queensland,Industry,2023,output,155900
+Queensland,Industry,2024,employment,769300
+Queensland,Industry,2024,output,163400
+Western Australia,Services,2022,employment,1142800
+Western Australia,Services,2022,output,118200
+Western Australia,Services,2023,employment,1178300
+Western Australia,Services,2023,output,124700
+Western Australia,Services,2024,employment,1206900
+Western Australia,Services,2024,output,131500
+Western Australia,Industry,2022,employment,528400
+Western Australia,Industry,2022,output,214600
+Western Australia,Industry,2023,employment,541900
+Western Australia,Industry,2023,output,226800
+Western Australia,Industry,2024,employment,553200
+Western Australia,Industry,2024,output,238100
+South Australia,Services,2022,employment,712300
+South Australia,Services,2022,output,64900
+South Australia,Services,2023,employment,728600
+South Australia,Services,2023,output,68100
+South Australia,Services,2024,employment,741200
+South Australia,Services,2024,output,71400
+South Australia,Industry,2022,employment,231800
+South Australia,Industry,2022,output,38200
+South Australia,Industry,2023,employment,236400
+South Australia,Industry,2023,output,39800
+South Australia,Industry,2024,employment,239100
+South Australia,Industry,2024,output,41500

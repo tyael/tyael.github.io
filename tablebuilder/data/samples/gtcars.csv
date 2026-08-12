@@ -1,0 +1,21 @@
+mfr,model,year,trim,bdy_style,hp,trq,mpg_c,mpg_h,drivetrain,trsmn,ctry_origin,msrp
+Ford,GT,2017,Base Coupe,coupe,647,550,11,18,rwd,7a,United States,447000
+Ferrari,458 Speciale,2015,Base Coupe,coupe,597,398,13,17,rwd,7a,Italy,291744
+Ferrari,458 Spider,2015,Base,convertible,562,398,13,17,rwd,7a,Italy,263553
+Ferrari,458 Italia,2014,Base Coupe,coupe,562,398,13,17,rwd,7a,Italy,233509
+Ferrari,488 GTB,2016,Base Coupe,coupe,661,561,15,22,rwd,7a,Italy,245400
+Lamborghini,Aventador,2015,Base Coupe,coupe,690,509,11,18,awd,7a,Italy,397500
+Lamborghini,Huracan,2015,Base Coupe,coupe,602,413,14,20,awd,7a,Italy,237250
+Lamborghini,Gallardo,2014,Base Coupe,coupe,550,398,11,20,awd,6m,Italy,191900
+Porsche,911,2016,Carrera Coupe,coupe,350,287,20,28,rwd,7a,Germany,84300
+Porsche,918 Spyder,2015,Base,convertible,887,944,67,-1,awd,7a,Germany,929428
+Porsche,Panamera,2016,Base Sedan,sedan,310,295,18,27,rwd,7a,Germany,78100
+Aston Martin,DB11,2017,Base Coupe,coupe,600,516,15,21,rwd,8a,United Kingdom,211995
+Aston Martin,Vanquish,2016,Base Coupe,coupe,568,465,13,21,rwd,8a,United Kingdom,287825
+Bentley,Continental GT,2016,Base Coupe,coupe,500,487,12,20,awd,8a,United Kingdom,198500
+Rolls-Royce,Wraith,2016,Base Coupe,coupe,624,590,12,19,rwd,8a,United Kingdom,304350
+BMW,i8,2016,Base Coupe,coupe,357,420,28,29,awd,6a,Germany,140700
+Mercedes-Benz,AMG GT,2016,Base Coupe,coupe,503,479,16,22,rwd,7a,Germany,129900
+Audi,R8,2017,Base Coupe,coupe,540,398,14,23,awd,7a,Germany,164150
+Chevrolet,Corvette,2017,Stingray Coupe,coupe,455,460,17,29,rwd,7m,United States,55450
+Dodge,Viper,2017,Base Coupe,coupe,645,600,12,19,rwd,6m,United States,87895
