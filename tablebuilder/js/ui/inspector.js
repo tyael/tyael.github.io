@@ -61,10 +61,13 @@ const Inspector = {
    * The defaults that actually govern whatever is selected: the column-label
    * options behind a column heading, the body options behind a body cell.
    *
-   * Showing the fixed table-wide block here was wrong — someone who clicks a
-   * column heading is not looking for the body's row padding. These apply to
-   * every cell of the part, not only the selection; the per-cell overrides are
-   * above. Falls back to the table-wide block for a mixed selection.
+   * Basic rows only. This is the quick-adjust surface and the Options panel is
+   * the reference one, so the link at the bottom is how you reach the rest.
+   * Rendering the whole group put 23 fields behind a column heading — twelve of
+   * them border sub-properties — in the narrower of the two rails.
+   *
+   * These apply to every cell of the part, not only the selection. Falls back
+   * to the table-wide block for a mixed selection.
    */
   partDefaults(spec, part) {
     const meta = part ? StyleRules.PARTS.find((p) => p.id === part) : null;
@@ -81,18 +84,21 @@ const Inspector = {
       return wrap;
     }
 
+    const changedKeys = new Set(Object.keys(OptionsSchema.diff(spec.options)));
+
     const fields = [Util.el('div.field-hint', {
       text: group.hint + ' These apply to every one, not just the selection.'
     })];
 
-    for (const option of OptionsSchema.byGroup(group.id)) {
-      fields.push(Controls.field(option.label,
-        Controls.forOption(option, spec.options[option.key], (value) => {
-          Store.update((draft) => { draft.options[option.key] = value; },
-            { coalesce: 'opt.' + option.key });
-        }),
-        { hint: option.hint, title: option.key }));
+    for (const row of OptionsSchema.rows(group.id)) {
+      if (row.tier === 'basic') fields.push(PanelOptions.rowField(spec, row, changedKeys));
     }
+
+    fields.push(Controls.actions([
+      Controls.button('Open ' + group.label + ' in Options →',
+        () => App.goToPanel('options', ['opt.' + group.id, 'opt.more.' + group.id]),
+        { kind: 'ghost' })
+    ]));
 
     const wrap = Util.el('div');
     wrap.appendChild(Util.el('div.mini-label', {

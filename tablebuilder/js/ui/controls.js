@@ -94,6 +94,9 @@ const Controls = {
   },
 
   setSectionState(key, collapsed) {
+    // Callers that write without having read first — App.goToPanel forcing a
+    // section open — would otherwise index into null.
+    if (!Controls._sectionState) Controls.sectionState(key);
     Controls._sectionState[key] = collapsed;
     try {
       localStorage.setItem('table_builder.sections', JSON.stringify(Controls._sectionState));
@@ -520,6 +523,45 @@ const Controls = {
       default:
         return Controls.text(key, value, onChange, { placeholder: String(option.default || '') });
     }
+  },
+
+  /**
+   * The three controls of one border — style, width, colour — on one row.
+   *
+   * A border is one decision ("is there a line here, how heavy, what colour")
+   * that gt spells as three arguments, and 81 of the 154 options are these
+   * triplets. Composing them is presentation only: each control writes its own
+   * key through `onSet`, so nothing downstream knows composites exist.
+   *
+   * Returns an array, which `Controls.field` already wraps in a flex
+   * `.field-control` row.
+   *
+   * @param {string} key - focus-key prefix; the three controls take .style,
+   *   .width and .color under it
+   * @param {{style: string, width: string, color: string}} values
+   * @param {Function} onSet - (role, value) => void, role is 'style'|'width'|'color'
+   * @param {{widthPlaceholder?: string}} [opts] - `widthPlaceholder` overrides
+   *   the width box's empty-value placeholder (default '1px'). Pass the
+   *   option's own default — `Grand border`'s is '6px', and an empty box
+   *   claiming '1px' would be wrong for it.
+   * @returns {Array<Node>}
+   */
+  borderRow(key, values, onSet, opts) {
+    opts = opts || {};
+    const style = Controls.select(key + '.style', OptionsSchema.BORDER_STYLES,
+      values.style, (value) => onSet('style', value));
+    style.classList.add('border-style');
+
+    const width = Controls.length(key + '.width', values.width,
+      (value) => onSet('width', value), { placeholder: opts.widthPlaceholder || '1px' });
+    width.classList.add('border-width');
+
+    // color() returns [swatch, text]; the text box is the one that must shrink.
+    const color = Controls.color(key + '.color', values.color,
+      (value) => onSet('color', value));
+    color[color.length - 1].classList.add('border-color');
+
+    return [style, width].concat(color);
   },
 
   /** Build the control for one formatter parameter. */

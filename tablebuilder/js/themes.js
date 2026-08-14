@@ -283,7 +283,15 @@ const Themes = {
     const patch = Themes.patch(id);
 
     Store.update((draft) => {
-      draft.options = Object.assign(OptionsSchema.defaults(), patch);
+      // Reset first, so switching themes cannot leave the previous one's
+      // values behind — but structural choices are not the theme's to reset.
+      // Whether row groups are a column is a decision about the data, and it
+      // used to come unstuck every time a theme was applied. A theme that names
+      // one explicitly still wins, since the patch goes on top.
+      const next = OptionsSchema.defaults();
+      for (const key of OptionsSchema.structural()) next[key] = draft.options[key];
+
+      draft.options = Object.assign(next, patch);
       draft.meta.theme = id;
 
       // A saved theme carries the fonts its options name, so applying it to a

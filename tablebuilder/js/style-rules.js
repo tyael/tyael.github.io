@@ -249,19 +249,29 @@ const StyleRules = {
         break;
       }
       if (!hit) continue;
-      merged = StyleRules.merge(merged, rule.style);
+      merged = StyleRules.merge(merged, rule.style, rule.id);
     }
 
     return merged;
   },
 
-  /** Merge `next` over `base`, one property at a time. Returns a new object. */
-  merge(base, next) {
+  /**
+   * Merge `next` over `base`, one property at a time. Returns a new object.
+   *
+   * `ruleId` is stamped onto each border side the rule sets, so a line can
+   * later name the rule that drew it. It is recorded here, at the moment the
+   * rule wins the side, rather than re-derived by matching again afterwards —
+   * a second producer of the same fact is exactly how this codebase's
+   * recurring bug class starts. Only sides a rule actually sets are stamped,
+   * so a text-only rule is never credited with an edge.
+   */
+  merge(base, next, ruleId) {
     const out = {
       text: Object.assign({}, base && base.text),
       fill: Object.assign({}, base && base.fill),
       borders: Object.assign({}, base && base.borders)
     };
+
 
     if (next.text) {
       for (const key in next.text) {
@@ -274,7 +284,13 @@ const StyleRules = {
     if (next.borders) {
       for (const side of StyleRules.SIDES) {
         const border = next.borders[side];
-        if (border && border.style) out.borders[side] = Object.assign({}, border);
+        if (border && border.style) {
+          // The id rides on the copy `merge` was already making, so recording
+          // which rule won a side costs no extra allocation. `resolve` runs
+          // about 8,000 times on a full-size preview; a second object per
+          // merge was measurably worse.
+          out.borders[side] = Object.assign({}, border, { ruleId: ruleId });
+        }
       }
     }
 

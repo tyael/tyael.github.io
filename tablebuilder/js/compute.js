@@ -201,6 +201,11 @@ const Compute = {
     model.subtitleStyle = StyleRules.resolve(compiledRules, { part: 'subtitle' });
     model.footnotesStyle = StyleRules.resolve(compiledRules, { part: 'footnotes' });
 
+    // Id and label only, so a line that a rule drew can be named without any
+    // consumer reaching back into the spec. A reference would expose the
+    // editable rules to renderers that have no business with them.
+    model.styleRules = spec.styleRules.map((rule) => ({ id: rule.id, label: rule.label }));
+
     // Marks that sit on the title, subtitle or the notes themselves.
     model.titleMarks = Compute.marksFor(footnoteIndex, { part: 'title' });
     model.subtitleMarks = Compute.marksFor(footnoteIndex, { part: 'subtitle' });
@@ -537,14 +542,35 @@ const Compute = {
     return set[n % set.length].repeat(repeats);
   },
 
-  /** Stable key for a footnote/selection location. */
+  /**
+   * Stable key for a footnote/selection location.
+   *
+   * Only the dimensions the part actually uses take part in the key, and
+   * `StyleRules.PARTS` already declares which those are — `columns`, `rows`,
+   * `groups`, `spanners`. Without that, the two sides that build these keys
+   * disagree: `Selection` tags a body cell with the `groupId` of the row group
+   * it happens to sit in, and `PanelContent.locationOf` copies it, while the
+   * cell's own location here carries none. The keys never matched, so on any
+   * grouped table a footnote reached the footer with no anchor in the cell.
+   *
+   * A body cell is identified by its column and row; the group is context, not
+   * identity, and `srcIndex` already pins the row. A summary row is the other
+   * way round — it has no row index and one per group, so `groups` is part of
+   * its identity and `rows` is not. Deriving that from `PARTS` rather than
+   * restating it is what stops the two sides drifting apart again.
+   */
   locationKey(loc) {
+    const part = StyleRules.PARTS.find((p) => p.id === loc.part);
+    // An unknown part keeps every field, which is the old behaviour.
+    const uses = (dimension) => !part || !!part[dimension];
     return [
       loc.part,
-      loc.colId || '',
-      loc.srcIndex === undefined || loc.srcIndex === null ? '' : loc.srcIndex,
-      loc.groupId || '',
-      loc.spannerId || ''
+      uses('columns') ? (loc.colId || '') : '',
+      uses('rows')
+        ? (loc.srcIndex === undefined || loc.srcIndex === null ? '' : loc.srcIndex)
+        : '',
+      uses('groups') ? (loc.groupId || '') : '',
+      uses('spanners') ? (loc.spannerId || '') : ''
     ].join('|');
   },
 
@@ -895,6 +921,16 @@ const Compute = {
       const label = (summary.labels && summary.labels[fnId]) || def.label;
       const cells = [];
 
+      // A summary row has no row index and there is one per group, so the
+      // group is part of what identifies it — `StyleRules.PARTS` says as much
+      // for `summary` (`groups: true`), and `locationKey` honours that. A
+      // grand summary spans every group and carries none.
+      const summaryLoc = (colId) => ({
+        part: part,
+        colId: colId,
+        groupId: group ? group.id : undefined
+      });
+
       for (const col of model.cols) {
         if (col.kind === 'group') {
           cells.push({ kind: 'group-col', colId: col.colId, text: null, rowspan: 0, style: null, marks: [] });
@@ -902,6 +938,10 @@ const Compute = {
         }
 
         if (col.kind === 'stub') {
+          // The label cell is where someone footnotes the summary itself
+          // ("Mean¹"), so it takes marks like any other cell — it used to
+          // hardcode an empty list, which meant a footnote attached here
+          // reached the footer and was anchored nowhere.
           cells.push({
             kind: part === 'grand_summary' ? 'grand-stub' : 'summary-stub',
             colId: col.colId,
@@ -909,7 +949,7 @@ const Compute = {
             isMarkup: true,
             align: 'left',
             style: StyleRules.resolve(ctx.rules, { part: part }),
-            marks: []
+            marks: Compute.marksFor(ctx.footnoteIndex, summaryLoc(col.colId))
           });
           continue;
         }
@@ -929,7 +969,7 @@ const Compute = {
           }
         }
 
-        const loc = { part: part, colId: col.colId };
+        const loc = summaryLoc(col.colId);
         cells.push({
           kind: part === 'grand_summary' ? 'grand' : 'summary',
           colId: col.colId,

@@ -507,6 +507,12 @@ const ExportRgt = {
 
       case 'summary':
         if (cols.length) args.push('columns = ' + ExportRgt.columnVector(cols));
+        // gt's cells_summary() also takes `groups =`, and the preview anchors
+        // a summary footnote to one group only (see `Compute.locationKey`,
+        // which treats `groups` as part of a summary row's identity). Without
+        // this the R export styled or footnoted every group's summary row,
+        // disagreeing with what the preview showed.
+        if ((loc.groups || []).length) args.push('groups = ' + ExportRgt.strVector(loc.groups));
         return 'cells_summary(' + args.join(', ') + ')';
 
       case 'grand_summary':

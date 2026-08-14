@@ -152,6 +152,10 @@ const App = {
 
     Selection.attach(rendered.node);
     Selection.attachResizers(host, rendered.node, model);
+    // `rendered.grid` is the same `Edges.build` result `RenderHtml.render`
+    // already resolved to draw the table — passing it in is what stops
+    // `LineInfo` resolving borders a second time on every render.
+    LineInfo.attach(host, rendered.node, model, rendered.grid);
 
     host.style.transform = 'scale(' + App.zoom + ')';
   },
@@ -195,6 +199,18 @@ const App = {
 
   renderRail() {
     const host = Util.qs('#rail-body');
+
+    // Drop any rule-hover preview before the nodes that own it are destroyed.
+    // `Selection._previewRule` is set on a rule's `mouseenter` and cleared only
+    // on its `mouseleave` — and a node removed from under the pointer never
+    // fires `mouseleave`. So every rail rebuild leaked it, and `Selection.paint`
+    // re-applied the green outline on every later repaint, for a rule the user
+    // had just deleted. This is the one function that destroys those nodes, so
+    // it is the one place the state can be retired. `previewRule(null)` also
+    // strips the class from the live table, which matters because `_render`
+    // repaints the preview *before* it rebuilds the rail.
+    Selection.previewRule(null);
+
     Controls.rememberFocus(host);
     Util.clear(host);
 
@@ -211,6 +227,37 @@ const App = {
     Util.clear(host);
     host.appendChild(Inspector.render(Store.get()));
     Controls.restoreFocus(host);
+  },
+
+  /**
+   * Switch the rail to a panel, optionally forcing one or more of its sections
+   * open.
+   *
+   * The one place rail navigation happens, so a view that wants to send someone
+   * elsewhere — the Inspector's link to the full option group — does not set
+   * `App.activePanel` itself. `Controls.field`'s `requires` fix button predates
+   * this and still does; converting it is a follow-up.
+   *
+   * @param {string} id - panel id
+   * @param {string|Array<string>} [sectionKey] - one or more `Controls.section`
+   *   keys to force open (the Inspector's link opens both a group and its
+   *   "More" disclosure, so this takes an array as well as a single key)
+   */
+  goToPanel(id, sectionKey) {
+    App.activePanel = id;
+
+    // A search query left over from a previous visit to Options can filter the
+    // very group being navigated to out of the list entirely (`render` skips a
+    // group with no visible rows), which would make the section-forcing below
+    // silently do nothing. Landing here means the query is not what the caller
+    // is trying to show.
+    if (id === 'options' && typeof PanelOptions !== 'undefined') PanelOptions._query = '';
+
+    if (sectionKey) {
+      const keys = Array.isArray(sectionKey) ? sectionKey : [sectionKey];
+      for (const key of keys) Controls.setSectionState('section.' + key, false);
+    }
+    App.renderRail();
   },
 
   /* ================================================================
@@ -433,6 +480,13 @@ const App = {
     // Resize handles are positioned in unscaled pixels, so they need rebuilding.
     const table = Util.qs('#preview-host .gt-table');
     if (table) Selection.attachResizers(Util.qs('#preview-host'), table, App.model);
+    // This does not go through renderPreview, so LineInfo.attach's own hide()
+    // never runs — without this, a card left open across a zoom keeps
+    // describing an edge that has since moved.
+    LineInfo.hide();
+    // The zoom carried by the geometry LineInfo cached is now stale, even
+    // though the underlying grid did not change.
+    LineInfo.invalidateCache();
   },
 
   zoomToFit() {

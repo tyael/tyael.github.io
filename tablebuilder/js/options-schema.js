@@ -40,12 +40,21 @@ const FONT_STACKS = [
   { id: 'jetbrains-mono', label: 'JetBrains Mono', stack: "'JetBrains Mono', ui-monospace, monospace", web: 'JetBrains Mono' }
 ];
 
-/** Helper: emit the style/width/colour triplet gt uses for every border. */
+/**
+ * Helper: emit the style/width/colour triplet gt uses for every border.
+ *
+ * The three entries stay separate options — one per gt argument, which is what
+ * keeps `export-rgt.js` a direct transcription — but each is stamped with the
+ * border it belongs to. This is the only place that knows the three go
+ * together, so `OptionsSchema.rows()` can fold them into one row for display
+ * without anything downstream learning that composites exist.
+ */
 function borderTriplet(prefix, group, label, style, width, color) {
+  const stamp = (role) => ({ border: prefix, borderRole: role, borderLabel: label });
   return [
-    { key: prefix + '.style', group: group, label: label + ' style', type: 'select', enum: BORDER_STYLES, default: style },
-    { key: prefix + '.width', group: group, label: label + ' width', type: 'len', default: width },
-    { key: prefix + '.color', group: group, label: label + ' colour', type: 'color', default: color }
+    Object.assign({ key: prefix + '.style', group: group, label: label + ' style', type: 'select', enum: BORDER_STYLES, default: style }, stamp('style')),
+    Object.assign({ key: prefix + '.width', group: group, label: label + ' width', type: 'len', default: width }, stamp('width')),
+    Object.assign({ key: prefix + '.color', group: group, label: label + ' colour', type: 'color', default: color }, stamp('color'))
   ];
 }
 
@@ -112,14 +121,12 @@ const OptionsSchema = {
     { key: 'column_labels.text_transform', group: 'column_labels', label: 'Text transform', type: 'select', enum: TEXT_TRANSFORMS, default: 'inherit' },
     { key: 'column_labels.padding', group: 'column_labels', label: 'Padding', type: 'len', default: '5px' },
     { key: 'column_labels.padding.horizontal', group: 'column_labels', label: 'Padding (h)', type: 'len', default: '5px' },
-    { key: 'column_labels.hidden', group: 'column_labels', label: 'Hide label row', type: 'bool', default: false },
+    { key: 'column_labels.hidden', group: 'column_labels', label: 'Hide label row', type: 'bool', default: false, structural: true },
     ...borderTriplet('column_labels.border.top', 'column_labels', 'Top border', 'solid', '2px', '#D3D3D3'),
     ...borderTriplet('column_labels.border.bottom', 'column_labels', 'Bottom border', 'solid', '2px', '#D3D3D3'),
     ...borderTriplet('column_labels.border.lr', 'column_labels', 'Side borders', 'none', '1px', '#D3D3D3'),
     ...borderTriplet('column_labels.vlines', 'column_labels', 'Vertical rules', 'none', '1px', '#D3D3D3'),
-    { key: 'column_labels.spanner.border.bottom.style', group: 'column_labels', label: 'Spanner rule style', type: 'select', enum: BORDER_STYLES, default: 'solid' },
-    { key: 'column_labels.spanner.border.bottom.width', group: 'column_labels', label: 'Spanner rule width', type: 'len', default: '1px' },
-    { key: 'column_labels.spanner.border.bottom.color', group: 'column_labels', label: 'Spanner rule colour', type: 'color', default: '#D3D3D3' },
+    ...borderTriplet('column_labels.spanner.border.bottom', 'column_labels', 'Spanner rule', 'solid', '1px', '#D3D3D3'),
     { key: 'column_labels.spanner.underline', group: 'column_labels', label: 'Underline spanners', type: 'bool', default: true,
       hint: 'Draw the rule only under the columns a spanner covers, as gt does.' },
 
@@ -132,8 +139,10 @@ const OptionsSchema = {
     { key: 'row_group.padding', group: 'row_group', label: 'Padding', type: 'len', default: '8px' },
     { key: 'row_group.padding.horizontal', group: 'row_group', label: 'Padding (h)', type: 'len', default: '5px' },
     { key: 'row_group.as_column', group: 'row_group', label: 'As a column', type: 'bool', default: false,
+      structural: true,
       hint: 'Show group labels in their own left-hand column instead of on a spanning row.' },
     { key: 'row_group.default_label', group: 'row_group', label: 'Default label', type: 'text', default: '',
+      structural: true,
       hint: 'Label used for rows whose group value is missing.' },
     ...borderTriplet('row_group.border.top', 'row_group', 'Top border', 'solid', '2px', '#D3D3D3'),
     ...borderTriplet('row_group.border.bottom', 'row_group', 'Bottom border', 'solid', '2px', '#D3D3D3'),
@@ -188,7 +197,8 @@ const OptionsSchema = {
       hint: 'Used between footnotes when they share a line.' },
     { key: 'footnotes.spec_ref', group: 'footnotes', label: 'Mark style (in table)', type: 'text', default: '^i',
       hint: "gt footnote spec: i italic, b bold, ^ superscript, ( ) parentheses." },
-    { key: 'footnotes.spec_ftr', group: 'footnotes', label: 'Mark style (in footer)', type: 'text', default: '^i' },
+    { key: 'footnotes.spec_ftr', group: 'footnotes', label: 'Mark style (in footer)', type: 'text', default: '^i',
+      hint: "gt footnote spec: i italic, b bold, ^ superscript, ( ) parentheses." },
     ...borderTriplet('footnotes.border.bottom', 'footnotes', 'Bottom border', 'none', '2px', '#D3D3D3'),
     ...borderTriplet('footnotes.border.lr', 'footnotes', 'Side borders', 'none', '2px', '#D3D3D3'),
 
@@ -202,6 +212,113 @@ const OptionsSchema = {
     ...borderTriplet('source_notes.border.bottom', 'source_notes', 'Bottom border', 'none', '2px', '#D3D3D3'),
     ...borderTriplet('source_notes.border.lr', 'source_notes', 'Side borders', 'none', '2px', '#D3D3D3')
   ],
+
+  /**
+   * The triage, as two lists of **row** ids — a composite border is one id, not
+   * three keys. Everything unlisted is advanced.
+   *
+   * The sorting rule is "can you see what it does?". Basic changes the look
+   * obviously and you would reach for it on any table; advanced is a real
+   * visual choice, just a rarer one; expert needs gt's model to know what it
+   * even means.
+   *
+   * The tier is declared here rather than on each option so the whole basic set
+   * reads as one list — that list is the thing that gets argued about and
+   * revised, and it is worth being able to see it at once. A pipeline check
+   * asserts every id below resolves to a real row, so the lists cannot rot.
+   */
+  BASIC_ROWS: [
+    'table.font.names', 'table.font.size', 'table.font.color',
+    'table.background.color', 'table.width', 'table.align',
+    'heading.title.font.size', 'heading.title.font.weight',
+    'heading.subtitle.font.size',
+    'column_labels.background.color', 'column_labels.font.size',
+    'column_labels.font.weight', 'column_labels.text_transform',
+    'row_group.background.color', 'row_group.font.weight', 'row_group.font.style',
+    'stub.font.weight',
+    'data_row.padding', 'table_body.hlines', 'table_body.vlines',
+    'table_body.border.bottom', 'row.striping.include_table_body',
+    'row.striping.background_color',
+    'summary_row.background.color',
+    'footnotes.marks', 'footnotes.font.size',
+    'source_notes.font.size'
+  ],
+
+  EXPERT_ROWS: [
+    'table.margin.left', 'table.margin.right', 'table.font.color.light',
+    'heading.padding.horizontal', 'heading.border.lr',
+    'column_labels.padding.horizontal', 'column_labels.border.lr',
+    'column_labels.spanner.border.bottom', 'column_labels.spanner.underline',
+    'row_group.padding.horizontal', 'row_group.border.left', 'row_group.border.right',
+    'stub.indent_length', 'stub_row_group.font.size', 'stub_row_group.font.weight',
+    'stub_row_group.text_transform', 'stub_row_group.border',
+    'row.striping.include_stub',
+    'summary_row.text_transform', 'summary_row.padding.horizontal',
+    'grand_summary_row.text_transform', 'grand_summary_row.padding',
+    'grand_summary_row.padding.horizontal',
+    'footnotes.padding.horizontal', 'footnotes.sep',
+    'footnotes.border.bottom', 'footnotes.border.lr',
+    'source_notes.padding.horizontal', 'source_notes.sep',
+    'source_notes.border.bottom', 'source_notes.border.lr'
+  ],
+
+  /** Lazily built row id -> tier. */
+  _tierByRow: null,
+
+  /** 'basic' | 'advanced' | 'expert' for a row id. */
+  tierOf(rowId) {
+    if (!OptionsSchema._tierByRow) {
+      const map = {};
+      for (const id of OptionsSchema.BASIC_ROWS) map[id] = 'basic';
+      for (const id of OptionsSchema.EXPERT_ROWS) map[id] = 'expert';
+      OptionsSchema._tierByRow = map;
+    }
+    return OptionsSchema._tierByRow[rowId] || 'advanced';
+  },
+
+  /**
+   * A group as display rows. Consecutive options sharing a `border` id fold
+   * into one composite row, so a border reads as the one decision it is rather
+   * than three — that alone takes the surface from 154 rows to 100.
+   *
+   * Presentation only: every option keeps its own key and is written
+   * independently by whoever renders the row.
+   *
+   * @param {string} groupId
+   * @returns {Array<{id, tier, composite, label, hint, option?, options?}>}
+   */
+  rows(groupId) {
+    const out = [];
+    let open = null;
+
+    for (const option of OptionsSchema.byGroup(groupId)) {
+      if (option.border) {
+        if (open && open.id === option.border) { open.options.push(option); continue; }
+        open = {
+          id: option.border,
+          tier: OptionsSchema.tierOf(option.border),
+          composite: true,
+          label: option.borderLabel,
+          hint: option.hint,
+          options: [option]
+        };
+        out.push(open);
+        continue;
+      }
+
+      open = null;
+      out.push({
+        id: option.key,
+        tier: OptionsSchema.tierOf(option.key),
+        composite: false,
+        label: option.label,
+        hint: option.hint,
+        option: option
+      });
+    }
+
+    return out;
+  },
 
   /** Lazily built key -> option index. */
   _byKey: null,
@@ -218,6 +335,20 @@ const OptionsSchema = {
   /** All options belonging to a group, in declared order. */
   byGroup(groupId) {
     return OptionsSchema.options.filter((o) => o.group === groupId);
+  },
+
+  /**
+   * Options that decide what the table *is*, not how it looks: whether row
+   * groups are a column, what an unlabelled group is called, whether the header
+   * row exists at all.
+   *
+   * They live in `options` for the same reason everything else does, but they
+   * are the user's structural choices, so a theme must not silently undo them —
+   * applying a look should never move your row groups. A theme that names one
+   * explicitly still wins; none of the built-ins do.
+   */
+  structural() {
+    return OptionsSchema.options.filter((o) => o.structural).map((o) => o.key);
   },
 
   /** A fresh options object holding every default. */

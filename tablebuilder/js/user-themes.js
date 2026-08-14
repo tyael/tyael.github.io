@@ -56,6 +56,11 @@ const UserThemes = {
    */
   fromSpec(label, spec) {
     const options = OptionsSchema.diff(spec.options);
+
+    // A look, not a layout: a theme that carried "row groups as a column" would
+    // impose it on every table it was later applied to.
+    for (const key of OptionsSchema.structural()) delete options[key];
+
     const named = new Set(Object.keys(options)
       .filter((key) => key.indexOf('.font.names') >= 0)
       .map((key) => options[key]));

@@ -45,7 +45,19 @@ const Edges = {
     const v = [];
     for (let r = 0; r < nRows; r += 1) v.push(new Array(nCols + 1).fill(null));
 
-    const grid = { gridRows: gridRows, nRows: nRows, nCols: nCols, h: h, v: v };
+    // Provenance runs alongside the drawing grid, written by the same setters,
+    // so there is exactly one precedence path. Recomputing it separately would
+    // recreate the two-producers-disagreeing bug class this codebase keeps
+    // paying for.
+    const hSrc = [];
+    for (let r = 0; r <= nRows; r += 1) hSrc.push(new Array(nCols).fill(null));
+    const vSrc = [];
+    for (let r = 0; r < nRows; r += 1) vSrc.push(new Array(nCols + 1).fill(null));
+
+    const grid = {
+      gridRows: gridRows, nRows: nRows, nCols: nCols,
+      h: h, v: v, hSrc: hSrc, vSrc: vSrc
+    };
 
     Edges.applyStructural(grid, model, opt);
     Edges.applyLines(grid, model, opt);
@@ -154,14 +166,12 @@ const Edges = {
       // actually covers, which is what makes nested headers readable.
       if (opt['column_labels.spanner.underline']) {
         const spannerEdge = Edges.edge(opt, 'column_labels.spanner.border.bottom', 'structural');
-        if (spannerEdge) {
-          for (let i = 0; i < rows.length; i += 1) {
-            if (rows[i].kind !== 'spanner') continue;
-            for (const cell of rows[i].ref.cells) {
-              if (cell.kind !== 'spanner') continue;
-              const range = Edges.rangeOfCell(model, cell);
-              if (range) Edges.setH(grid, i + 1, range, spannerEdge);
-            }
+        for (let i = 0; i < rows.length; i += 1) {
+          if (rows[i].kind !== 'spanner') continue;
+          for (const cell of rows[i].ref.cells) {
+            if (cell.kind !== 'spanner') continue;
+            const range = Edges.rangeOfCell(model, cell);
+            if (range) Edges.setH(grid, i + 1, range, spannerEdge);
           }
         }
       }
@@ -244,7 +254,7 @@ const Edges = {
       const row = rows[r];
       const previous = rows[r - 1];
 
-      if (hline && row.kind === 'data' && previous &&
+      if (row.kind === 'data' && previous &&
           (previous.kind === 'data' || previous.kind === 'group')) {
         Edges.setH(grid, r, all, hline);
       }
@@ -252,7 +262,6 @@ const Edges = {
       if (row.full) continue;
 
       const vline = (row.kind === 'spanner' || row.kind === 'column_labels') ? vlineHead : vlineBody;
-      if (!vline) continue;
       for (let c = 1; c < nCols; c += 1) Edges.setV(grid, r, c, vline);
     }
   },
@@ -279,11 +288,11 @@ const Edges = {
 
         if (borders) {
           const rowspan = cell.rowspan === undefined ? 1 : Math.max(1, cell.rowspan);
-          if (borders.top) Edges.setH(grid, r, range, Edges.fromBorder(borders.top, 'rule'));
-          if (borders.bottom) Edges.setH(grid, r + rowspan, range, Edges.fromBorder(borders.bottom, 'rule'));
+          if (borders.top) Edges.setH(grid, r, range, Edges.fromBorder(borders.top, 'rule', Edges.ruleForSide(cell.style, 'top')));
+          if (borders.bottom) Edges.setH(grid, r + rowspan, range, Edges.fromBorder(borders.bottom, 'rule', Edges.ruleForSide(cell.style, 'bottom')));
           for (let rr = r; rr < Math.min(grid.nRows, r + rowspan); rr += 1) {
-            if (borders.left) Edges.setV(grid, rr, c, Edges.fromBorder(borders.left, 'rule'));
-            if (borders.right) Edges.setV(grid, rr, c + span, Edges.fromBorder(borders.right, 'rule'));
+            if (borders.left) Edges.setV(grid, rr, c, Edges.fromBorder(borders.left, 'rule', Edges.ruleForSide(cell.style, 'left')));
+            if (borders.right) Edges.setV(grid, rr, c + span, Edges.fromBorder(borders.right, 'rule', Edges.ruleForSide(cell.style, 'right')));
           }
         }
 
@@ -298,9 +307,9 @@ const Edges = {
           if (!borders) continue;
           const i = cell.gridCol;
           const range = { from: i, to: i + 1 };
-          if (borders.top) Edges.setH(grid, r, range, Edges.fromBorder(borders.top, 'rule'));
-          if (borders.left) Edges.setV(grid, r, i, Edges.fromBorder(borders.left, 'rule'));
-          if (borders.right) Edges.setV(grid, r, i + 1, Edges.fromBorder(borders.right, 'rule'));
+          if (borders.top) Edges.setH(grid, r, range, Edges.fromBorder(borders.top, 'rule', Edges.ruleForSide(cell.style, 'top')));
+          if (borders.left) Edges.setV(grid, r, i, Edges.fromBorder(borders.left, 'rule', Edges.ruleForSide(cell.style, 'left')));
+          if (borders.right) Edges.setV(grid, r, i + 1, Edges.fromBorder(borders.right, 'rule', Edges.ruleForSide(cell.style, 'right')));
         }
       }
     }
@@ -310,30 +319,57 @@ const Edges = {
      Primitives
      ================================================================ */
 
-  /** Read a `prefix.style/.width/.color` triplet out of the options. */
+  /**
+   * One border option as an edge candidate.
+   *
+   * Always returns a record, even when the option draws nothing. That is what
+   * lets the editor answer "why is there no line here?" — the candidate is
+   * kept with `drawn: false` and the setters record it as provenance without
+   * ever writing it into the drawing grid.
+   */
   edge(opt, prefix, priority) {
     const style = opt[prefix + '.style'];
-    if (!style || style === 'none' || style === 'hidden') return null;
     const width = Util.cssNumber(opt[prefix + '.width']);
-    if (!width) return null;
+    const drawn = !!style && style !== 'none' && style !== 'hidden' && !!width;
     return {
-      style: style,
-      width: width,
+      style: style || 'none',
+      width: width || 0,
       color: opt[prefix + '.color'] || '#000000',
-      priority: Edges.PRIORITY[priority] || 1
+      priority: Edges.PRIORITY[priority] || 1,
+      source: { kind: 'option', key: prefix },
+      drawn: drawn
     };
   },
 
-  /** Convert a style rule's border object into an edge. */
-  fromBorder(border, priority) {
-    if (!border || !border.style || border.style === 'none' || border.style === 'hidden') return null;
-    const width = Util.cssNumber(border.width) || 1;
+  /**
+   * Convert a style rule's border object into an edge candidate.
+   *
+   * The rule cannot be named: `StyleRules.resolve` merges every matching rule
+   * into one style object and discards which one contributed which property.
+   * Naming it would need per-property provenance on `compute.js`'s hot path.
+   */
+  fromBorder(border, priority, ruleId) {
+    if (!border) return null;
+    const drawn = !!border.style && border.style !== 'none' && border.style !== 'hidden';
     return {
-      style: border.style,
-      width: width,
+      style: border.style || 'none',
+      width: drawn ? (Util.cssNumber(border.width) || 1) : 0,
       color: border.color || '#000000',
-      priority: Edges.PRIORITY[priority] || 3
+      priority: Edges.PRIORITY[priority] || 3,
+      source: { kind: 'rule', ruleId: ruleId || null },
+      drawn: drawn
     };
+  },
+
+  /**
+   * The rule that set one side of a cell's border, or null.
+   *
+   * `StyleRules.merge` stamps this as it resolves the cascade, so this is a
+   * lookup rather than a second round of matching.
+   */
+  ruleForSide(style, side) {
+    const border = style && style.borders && style.borders[side];
+    return (border && border.ruleId) || null;
   },
 
   /** The grid column range a header cell covers. */
@@ -345,18 +381,22 @@ const Edges = {
     return { from: Math.min.apply(null, indices), to: Math.max.apply(null, indices) + 1 };
   },
 
-  /** Write a horizontal edge across a column range, keeping the stronger one. */
+  /** Write a horizontal edge, keeping the stronger one. */
   setH(grid, r, range, edge) {
     if (!edge || r < 0 || r > grid.nRows) return;
     for (let c = Math.max(0, range.from); c < Math.min(grid.nCols, range.to); c += 1) {
-      grid.h[r][c] = Edges.stronger(grid.h[r][c], edge);
+      // Only drawn candidates reach the drawing grid, so `h` keeps its exact
+      // meaning: null is "no line here". Provenance takes every candidate.
+      if (edge.drawn) grid.h[r][c] = Edges.stronger(grid.h[r][c], edge);
+      grid.hSrc[r][c] = Edges.strongerSource(grid.hSrc[r][c], edge);
     }
   },
 
   /** Write a vertical edge, keeping the stronger one. */
   setV(grid, r, c, edge) {
     if (!edge || r < 0 || r >= grid.nRows || c < 0 || c > grid.nCols) return;
-    grid.v[r][c] = Edges.stronger(grid.v[r][c], edge);
+    if (edge.drawn) grid.v[r][c] = Edges.stronger(grid.v[r][c], edge);
+    grid.vSrc[r][c] = Edges.strongerSource(grid.vSrc[r][c], edge);
   },
 
   /**
@@ -371,6 +411,67 @@ const Edges = {
     const ra = Edges.STYLE_RANK[a.style] || 0;
     const rb = Edges.STYLE_RANK[b.style] || 0;
     return rb > ra ? b : a;
+  },
+
+  /**
+   * The same clash, for provenance: a drawn candidate always beats an undrawn
+   * one, two drawn ones resolve exactly as `stronger` does, and two undrawn
+   * ones by priority.
+   *
+   * Every source ever beaten at this edge is kept on the winner as
+   * `overrides` — an array, de-duplicated by source (an option's key, or
+   * `'rule'` for a style rule, which cannot be told apart from one another
+   * anyway), first-beaten first. An ordinary grouped table's header/body
+   * boundary is not a two-source clash: column labels' bottom border, the
+   * body's top border and the row group's top border all claim that row at
+   * the same 'structural' priority, so `setH`/`setV` call `strongerSource`
+   * three times over for the one cell. A single `overrides` slot kept only
+   * whichever of the three was beaten most recently — the middle one was
+   * beaten, then evicted from the record the moment a third arrived, so the
+   * card silently dropped a real contributor instead of naming it. Carrying
+   * both the winner's and the loser's own prior `overrides` forward (each
+   * candidate is only ever a fresh, override-free record from `edge()` or
+   * `fromBorder()`, or something this function already flattened) is what
+   * keeps that history intact regardless of how many sources contest the
+   * cell, while the de-dup keeps the list bounded by the number of distinct
+   * sources rather than the number of calls.
+   */
+  strongerSource(a, b) {
+    if (!a) return b;
+    if (!b) return a;
+
+    let winner;
+    let loser;
+    if (a.drawn !== b.drawn) {
+      winner = a.drawn ? a : b;
+      loser = a.drawn ? b : a;
+    } else if (a.drawn) {
+      winner = Edges.stronger(a, b);
+      loser = winner === a ? b : a;
+    } else {
+      winner = b.priority > a.priority ? b : a;
+      loser = winner === a ? b : a;
+    }
+
+    const keyOf = (src) => (src.source.kind === 'rule' ? 'rule' : 'option:' + src.source.key);
+    const winnerKey = keyOf(winner);
+
+    const seen = new Set();
+    const overrides = [];
+    const add = (src) => {
+      const key = keyOf(src);
+      if (key === winnerKey || seen.has(key)) return;
+      seen.add(key);
+      const clean = Object.assign({}, src);
+      delete clean.overrides;
+      overrides.push(clean);
+    };
+
+    for (const src of (winner.overrides || [])) add(src);
+    for (const src of (loser.overrides || [])) add(src);
+    add(loser);
+
+    return Object.assign({}, winner, { overrides: overrides });
   },
 
   /** An edge as a CSS `border-*` shorthand value. */
