@@ -9,6 +9,7 @@ const PanelData = {
 
   id: 'data',
   label: 'Data',
+  hint: 'The CSV, its columns and their types',
 
   render(spec) {
     const panel = Util.el('div.panel');
@@ -35,7 +36,9 @@ const PanelData = {
         (value) => Store.update((draft) => { draft.meta.name = value; }, { coalesce: 'meta.name' }))),
       Controls.actions([
         Controls.button('Replace data…', () => App.pickCsv()),
-        Controls.button('Start over', () => App.reset(), { kind: 'danger' })
+        // The same flow the top bar's New project runs, so there is one way to
+        // clear a project and one place that offers to save it first.
+        Controls.button('New project…', () => App.newProject(), { kind: 'danger' })
       ])
     ], { key: 'data.file' }));
 
@@ -55,6 +58,11 @@ const PanelData = {
         Util.el('div.field-hint', { text: '• ' + w })
       ), { key: 'data.warnings' }));
     }
+
+    /* ---- Corrections ---- */
+
+    const corrections = PanelData.corrections(spec);
+    if (corrections) panel.appendChild(corrections);
 
     /* ---- Column types ---- */
 
@@ -79,60 +87,71 @@ const PanelData = {
       [Util.el('div.item-list', null, typeRows)],
       { key: 'data.columns', collapsed: true }));
 
-    /* ---- Preview ---- */
-
-    panel.appendChild(Controls.section('First rows', [PanelData.preview(source)],
-      { key: 'data.preview', collapsed: true }));
-
     return panel;
   },
 
-  /** A raw look at the imported data, before any table shaping. */
-  preview(source) {
-    const wrap = Util.el('div', {
-      style: { overflowX: 'auto', border: '1px solid var(--border-subtle)', borderRadius: '3px' }
-    });
-    const table = Util.el('table', {
-      style: { borderCollapse: 'collapse', fontSize: '10.5px', fontFamily: 'var(--font-mono)', width: '100%' }
+  /**
+   * Every cell correction made in this project, or null if there are none.
+   *
+   * A correction is invisible once you have clicked away from the cell — the
+   * table just shows the corrected value, which is the point. That makes this
+   * list the only place the question "what does this table say that the file
+   * does not" can be asked, and it belongs in the Data panel because that is
+   * where the file is described.
+   *
+   * Stale ones are shown too, and shown as stale. A correction dropped silently
+   * on import is the failure mode `from` exists to prevent, so it has to
+   * surface where it can be read and retired.
+   */
+  corrections(spec) {
+    const list = spec.corrections || [];
+    if (!list.length) return null;
+
+    const model = App.model;
+    const stale = new Set(((model && model.staleCorrections) || []).map((c) => c.id));
+    const columns = App.workingColumnsById();
+
+    const rows = list.map((correction) => {
+      const column = columns[correction.colId];
+      const where = (column ? Spec.columnTitle(spec, column) : correction.colId) +
+        ', row ' + (correction.srcIndex + 1);
+
+      const head = [
+        Util.el('div.item-title', {
+          text: '“' + Util.truncate(correction.from, 18) + '” → “' +
+            Util.truncate(correction.to, 18) + '”'
+        }),
+        Controls.button('Remove', () => Store.update((draft) => {
+          Corrections.remove(draft, correction.id);
+        }), { kind: 'ghost' })
+      ];
+
+      return Util.el('div.item', null, [
+        Util.el('div.item-head', null, head),
+        Util.el('div.item-sub', {
+          text: stale.has(correction.id) ? where + '  ·  not applied' : where
+        })
+      ]);
     });
 
-    const headRow = Util.el('tr');
-    for (const col of source.columns.slice(0, 8)) {
-      headRow.appendChild(Util.el('th', {
-        text: Util.truncate(col.name, 12),
-        style: {
-          padding: '3px 5px', textAlign: 'left', color: 'var(--text-mid)',
-          borderBottom: '1px solid var(--border-medium)', whiteSpace: 'nowrap'
-        }
+    const nodes = [
+      Util.el('div.field-hint', {
+        text: 'Edits made to individual cells. They live in the project, never in the ' +
+          'imported file, and they reach the exports — including the R, as a ' +
+          'dplyr::mutate() step.'
+      }),
+      Util.el('div.item-list', null, rows)
+    ];
+
+    if (stale.size) {
+      nodes.push(Util.el('div.field-hint.is-warn', {
+        text: stale.size + ' of these no longer match the value they were made against, ' +
+          'so they are not being applied. That usually means the data was replaced.'
       }));
     }
-    table.appendChild(Util.el('thead', null, [headRow]));
 
-    const body = Util.el('tbody');
-    for (const row of source.rows.slice(0, 8)) {
-      const tr = Util.el('tr');
-      for (const col of source.columns.slice(0, 8)) {
-        tr.appendChild(Util.el('td', {
-          text: Util.truncate(String(row[col.id] === undefined ? '' : row[col.id]), 14),
-          style: {
-            padding: '2px 5px', color: 'var(--text-dim)',
-            borderBottom: '1px solid var(--border-subtle)', whiteSpace: 'nowrap'
-          }
-        }));
-      }
-      body.appendChild(tr);
-    }
-    table.appendChild(body);
-    wrap.appendChild(table);
-
-    const notes = [];
-    if (source.columns.length > 8) notes.push((source.columns.length - 8) + ' more columns');
-    if (source.rows.length > 8) notes.push((source.rows.length - 8) + ' more rows');
-
-    return Util.el('div', null, [
-      wrap,
-      notes.length ? Util.el('div.field-hint', { text: notes.join(' · ') + ' not shown' }) : null
-    ]);
+    return Controls.section('Corrections (' + list.length + ')', nodes,
+      { key: 'data.corrections' });
   },
 
   /** Sample data buttons, shown when nothing is loaded. */
@@ -145,10 +164,7 @@ const PanelData = {
         () => App.loadSample('data/samples/wide.csv'), { block: true }),
       Util.el('div', { style: { height: '5px' } }),
       Controls.button('gtcars (gt’s own example)',
-        () => App.loadSample('data/samples/gtcars.csv'), { block: true }),
-      Util.el('div.field-hint', {
-        text: 'Samples load over http. Opening index.html straight from disk blocks the fetch — use the Import button instead.'
-      })
+        () => App.loadSample('data/samples/gtcars.csv'), { block: true })
     ], { key: 'data.samples' });
   }
 };

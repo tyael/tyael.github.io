@@ -13,6 +13,7 @@ const PanelSummaries = {
 
   id: 'summaries',
   label: 'Totals',
+  hint: 'Group subtotals and a grand total row',
 
   render(spec) {
     const panel = Util.el('div.panel');

@@ -21,18 +21,37 @@ const App = {
   model: null,
   zoom: 1,
 
+  /** The surface behind the table: 'light', 'dark' or 'checker'. */
+  canvasSurface: 'light',
+
+  /**
+   * The zoom track the +/− buttons step along, and the dropdown lists.
+   *
+   * Fit lands wherever the table happens to need, which is almost never a stop.
+   * Stepping *to the next stop* rather than multiplying is what makes 100%
+   * reachable from there: multiplying by a constant from 63% only ever visits
+   * multiples of 63%.
+   */
+  ZOOM_STOPS: [0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2, 3, 4],
+
   /* ================================================================
      Boot
      ================================================================ */
 
   init() {
-    // Essentials first — they fill the rail's five-column grid exactly — then
-    // the advanced tier behind a disclosure.
+    // Essentials first, then the advanced tier behind a disclosure. Each strip
+    // sizes its own columns to how many tabs it holds, so the two tiers do not
+    // have to stay the same length.
+    //
+    // Export is not here: it is the top bar's button and its menu. It is the
+    // one thing you do *to* a finished table rather than *to* the design, and
+    // putting it in the rail meant a top-right button whose whole effect
+    // landed in the opposite corner of the screen.
     App.panels = [
-      PanelData, PanelStructure, PanelContent, PanelFormat, PanelExport,
+      PanelData, PanelStructure, PanelSort, PanelContent, PanelFormat,
       PanelReshape, PanelColor, PanelSummaries, PanelStyle, PanelOptions
     ];
-    App.essentialIds = ['data', 'structure', 'content', 'format', 'export'];
+    App.essentialIds = ['data', 'structure', 'sort', 'content', 'format'];
 
     App.buildTabs();
     App.wireChrome();
@@ -42,10 +61,10 @@ const App = {
 
     const restored = Store.loadSaved();
     if (restored && Spec.hasData(restored)) {
-      Store.init(restored);
+      Store.init(restored, 'Restored last session');
       Util.toast('Restored your last session', 'ok');
     } else {
-      Store.init(Spec.create());
+      Store.init(Spec.create(), 'New project');
     }
   },
 
@@ -126,7 +145,7 @@ const App = {
       return;
     }
 
-    const paper = Util.el('div.paper' + (App.canvasDark ? '.is-dark' : ''));
+    const paper = Util.el('div.paper.surface-' + (App.canvasSurface || 'light'));
     const rendered = RenderHtml.render(model, { selectable: App.selectMode !== false, tableId: 'gt-preview' });
 
     App.setPreviewStyle(rendered.css);
@@ -136,6 +155,19 @@ const App = {
     // it — the same node the standalone HTML export puts in its <figure>.
     const caption = RenderHtml.captionNode(model, rendered.id);
     if (caption) paper.appendChild(caption);
+
+    // A filter that is on but forgotten is the easiest way to publish a table
+    // that quietly omits half its data, so it is said on the table itself
+    // rather than only in the panel that set it.
+    if (model.filteredOut) {
+      const notice = Util.el('div.preview-notice', {
+        text: model.filteredOut.toLocaleString() + ' row' +
+          (model.filteredOut === 1 ? '' : 's') + ' hidden by the filter. '
+      });
+      notice.appendChild(Controls.button('Show the filter', () => App.goToPanel('sort', 'sort.filter'),
+        { kind: 'ghost' }));
+      paper.appendChild(notice);
+    }
 
     if (model.truncated) {
       paper.appendChild(Util.el('div.preview-notice', {
@@ -160,6 +192,24 @@ const App = {
     host.style.transform = 'scale(' + App.zoom + ')';
   },
 
+  /**
+   * A copy of the brand mark, for anywhere else that wants it.
+   *
+   * Cloned rather than rebuilt: the geometry is written once, inline in
+   * `index.html`, so there is no second copy of it to fall out of step. The
+   * favicon is the one unavoidable duplicate — a browser cannot read an inline
+   * SVG for that — and a pipeline check holds the two together.
+   */
+  markSvg() {
+    const source = Util.qs('.brand-mark');
+    if (!source) return Util.el('span');
+    const copy = source.cloneNode(true);
+    copy.removeAttribute('class');
+    copy.removeAttribute('aria-label');
+    copy.setAttribute('aria-hidden', 'true');
+    return copy;
+  },
+
   /** The generated table CSS lives in one stylesheet in the document head. */
   setPreviewStyle(css) {
     let node = document.getElementById('preview-style');
@@ -172,13 +222,14 @@ const App = {
 
   emptyState(message) {
     const wrap = Util.el('div.empty-state');
-    wrap.appendChild(Util.el('div.empty-mark', { text: '▦' }));
+    wrap.appendChild(Util.el('div.empty-mark', null, [App.markSvg()]));
     wrap.appendChild(Util.el('h2', { text: message || 'Nothing to show' }));
 
     if (!Spec.hasData(Store.get())) {
       wrap.appendChild(Util.el('p', { text: 'Import a CSV to begin, or load one of the samples.' }));
       const actions = Util.el('div.empty-actions');
       actions.appendChild(Controls.button('Import CSV', () => App.pickCsv(), { kind: 'primary' }));
+      actions.appendChild(Controls.button('Paste a table', () => ImportPreview.awaitPaste()));
       for (const sample of [
         { path: 'data/samples/long.csv', label: 'Sample: long / tidy' },
         { path: 'data/samples/wide.csv', label: 'Sample: wide' },
@@ -243,8 +294,28 @@ const App = {
    *   keys to force open (the Inspector's link opens both a group and its
    *   "More" disclosure, so this takes an array as well as a single key)
    */
-  goToPanel(id, sectionKey) {
+  /**
+   * Make a panel the active one.
+   *
+   * **Choosing an advanced-tier panel opens that tier for good.** The strip is
+   * shown while such a panel is active whether or not `moreOpen` is set — but
+   * that is `forced`, not a record of anything, so clicking any essential tab
+   * afterwards closed the disclosure and took the panel you had just been
+   * using off the screen entirely. There was no way back except noticing the
+   * More toggle, which is exactly what "I cannot click back into Colour by
+   * value" was.
+   *
+   * Set here, in response to a choice, rather than computed during a render:
+   * `onChange`'s note explains why deriving it per render would re-open the
+   * tier on every keystroke and never let it be collapsed again.
+   */
+  setPanel(id) {
     App.activePanel = id;
+    if (App.essentialIds.indexOf(id) < 0) App.moreOpen = true;
+  },
+
+  goToPanel(id, sectionKey) {
+    App.setPanel(id);
 
     // A search query left over from a previous visit to Options can filter the
     // very group being navigated to out of the list entirely (`render` skips a
@@ -274,11 +345,11 @@ const App = {
       const host = App.essentialIds.indexOf(panel.id) >= 0 ? essentials : more;
       host.appendChild(Util.el('button.rail-tab', {
         text: panel.label,
-        title: panel.label,
+        title: panel.hint || panel.label,
         dataset: { panel: panel.id },
         on: {
           click: () => {
-            App.activePanel = panel.id;
+            App.setPanel(panel.id);
             App.renderRail();
           }
         }
@@ -330,6 +401,8 @@ const App = {
 
     Util.qs('#btn-undo').disabled = !Store.canUndo();
     Util.qs('#btn-redo').disabled = !Store.canRedo();
+    // The history list has something to say only once something has been done.
+    Util.qs('#btn-history').disabled = Store.entries().length < 2;
 
     const label = Spec.hasData(spec)
       ? spec.source.filename + '  ·  ' + spec.source.rows.length + '×' + spec.source.columns.length
@@ -338,7 +411,7 @@ const App = {
 
     App.updateSelectionChip();
 
-    Util.qs('#zoom-value').textContent = Math.round(App.zoom * 100) + '%';
+    App.syncZoomUi();
 
     const right = Util.qs('#status-right');
     if (App.model && App.model.ok) {
@@ -370,19 +443,18 @@ const App = {
   },
 
   wireChrome() {
-    Util.qs('#btn-import').addEventListener('click', () => App.pickCsv());
+    Util.qs('#btn-new').addEventListener('click', () => App.newProject());
+    Util.qs('#btn-paste').addEventListener('click', () => ImportPreview.awaitPaste());
     const import2 = Util.qs('#btn-import-2');
     if (import2) import2.addEventListener('click', () => App.pickCsv());
 
     Util.qs('#btn-undo').addEventListener('click', () => Store.undo());
     Util.qs('#btn-redo').addEventListener('click', () => Store.redo());
+    Util.qs('#btn-history').addEventListener('click', () => HistoryMenu.toggle());
     Util.qs('#btn-open-spec').addEventListener('click', () => Util.qs('#file-spec').click());
     Util.qs('#btn-save-spec').addEventListener('click', () => App.saveSpec());
 
-    Util.qs('#btn-export').addEventListener('click', () => {
-      App.activePanel = 'export';
-      App.renderRail();
-    });
+    Util.qs('#btn-export').addEventListener('click', () => ExportMenu.toggle());
 
     Util.qs('#file-csv').addEventListener('change', (e) => {
       const file = e.target.files[0];
@@ -402,12 +474,16 @@ const App = {
 
     /* ---- Stage toolbar ---- */
 
-    Util.qs('#btn-zoom-in').addEventListener('click', () => App.setZoom(App.zoom * 1.15));
-    Util.qs('#btn-zoom-out').addEventListener('click', () => App.setZoom(App.zoom / 1.15));
+    Util.qs('#btn-zoom-in').addEventListener('click', () => App.zoomStep(1));
+    Util.qs('#btn-zoom-out').addEventListener('click', () => App.zoomStep(-1));
     Util.qs('#btn-zoom-fit').addEventListener('click', () => App.zoomToFit());
 
-    Util.qs('#toggle-canvas-dark').addEventListener('change', (e) => {
-      App.canvasDark = e.target.checked;
+    Util.qs('#zoom-select').addEventListener('change', (e) => {
+      App.setZoom(parseFloat(e.target.value) / 100);
+    });
+
+    Util.qs('#canvas-surface').addEventListener('change', (e) => {
+      App.canvasSurface = e.target.value;
       App.renderPreview();
     });
 
@@ -431,6 +507,26 @@ const App = {
     Util.qs('#modal-close').addEventListener('click', () => App.closeModal());
     Util.qs('#modal-backdrop').addEventListener('click', (e) => {
       if (e.target.id === 'modal-backdrop') App.closeModal();
+    });
+
+    /* ---- Paste a table anywhere ---- */
+
+    // The counterpart to dropping a file anywhere. Guarded on a focused field,
+    // or pasting into the title box would import the title; and on the modal,
+    // which has its own paste target and would otherwise handle it twice.
+    document.addEventListener('paste', (e) => {
+      if (ImportPreview.isOpen()) return;
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+      if (document.activeElement && document.activeElement.isContentEditable) return;
+
+      const data = e.clipboardData;
+      if (!data) return;
+      const html = data.getData('text/html');
+      const text = data.getData('text/plain');
+      if (!(html && /<table/i.test(html)) && !(text && text.indexOf('\t') >= 0)) return;
+
+      e.preventDefault();
+      ImportPreview.fromClipboard(data);
     });
 
     /* ---- Drag and drop a CSV anywhere ---- */
@@ -463,9 +559,23 @@ const App = {
       }
 
       if (e.key === 'Escape') {
+        // Innermost surface first: the menu sits above the rail but below a
+        // modal, and the modal is the only one of the three that can be open
+        // while the menu is not.
         if (!Util.qs('#modal-backdrop').hidden) { App.closeModal(); return; }
+        if (Popover.isOpen()) { Popover.dismiss(); return; }
         if (!inField) Selection.clear();
+        return;
       }
+
+      // Zoom, unmodified and outside any field. Deliberately not Ctrl +/−/0:
+      // those are the browser's own zoom, and taking them would leave someone
+      // who had zoomed the whole UI with no way back to 100%.
+      if (inField || e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === '+' || e.key === '=') { e.preventDefault(); App.zoomStep(1); }
+      else if (e.key === '-' || e.key === '_') { e.preventDefault(); App.zoomStep(-1); }
+      else if (e.key === '0') { e.preventDefault(); App.setZoom(1); }
     });
   },
 
@@ -474,9 +584,10 @@ const App = {
      ================================================================ */
 
   setZoom(value) {
-    App.zoom = Util.clamp(value, 0.25, 4);
+    if (!isFinite(value)) return;
+    App.zoom = Util.clamp(value, App.ZOOM_STOPS[0], App.ZOOM_STOPS[App.ZOOM_STOPS.length - 1]);
     Util.qs('#preview-host').style.transform = 'scale(' + App.zoom + ')';
-    Util.qs('#zoom-value').textContent = Math.round(App.zoom * 100) + '%';
+    App.syncZoomUi();
     // Resize handles are positioned in unscaled pixels, so they need rebuilding.
     const table = Util.qs('#preview-host .gt-table');
     if (table) Selection.attachResizers(Util.qs('#preview-host'), table, App.model);
@@ -489,6 +600,26 @@ const App = {
     LineInfo.invalidateCache();
   },
 
+  /**
+   * Step to the next stop on the zoom track, in the given direction.
+   *
+   * Always lands *on* the track, so however far off it Fit left the zoom, one
+   * press is enough to be back on stops the buttons and the dropdown agree
+   * about.
+   */
+  zoomStep(direction) {
+    const stops = App.ZOOM_STOPS;
+    const epsilon = 0.001;
+
+    if (direction > 0) {
+      const next = stops.find((stop) => stop > App.zoom + epsilon);
+      App.setZoom(next === undefined ? stops[stops.length - 1] : next);
+    } else {
+      const below = stops.filter((stop) => stop < App.zoom - epsilon);
+      App.setZoom(below.length ? below[below.length - 1] : stops[0]);
+    }
+  },
+
   zoomToFit() {
     const table = Util.qs('#preview-host .gt-table');
     const scroll = Util.qs('#stage-scroll');
@@ -497,6 +628,41 @@ const App = {
     const available = scroll.clientWidth - 72;
     const natural = table.getBoundingClientRect().width / App.zoom;
     App.setZoom(natural > 0 ? Math.min(2, available / natural) : 1);
+  },
+
+  /**
+   * Repaint the zoom dropdown and the step buttons from `App.zoom`.
+   *
+   * A zoom Fit landed between two stops gets an entry of its own at the top of
+   * the list, so the readout never lies about where it is and every stop —
+   * 100% above all — stays one click away. That entry disappears again as soon
+   * as the zoom is back on the track.
+   */
+  syncZoomUi() {
+    const select = Util.qs('#zoom-select');
+    if (!select) return;
+
+    const stops = App.ZOOM_STOPS;
+    const percent = Math.round(App.zoom * 100);
+    const onTrack = stops.some((stop) => Math.round(stop * 100) === percent);
+
+    const wanted = stops.map((stop) => Math.round(stop * 100));
+    if (!onTrack) wanted.unshift(percent);
+
+    // Rebuild only when the list itself changed. `updateChrome` runs this on
+    // every render, and replacing the options under an open dropdown would
+    // shut it.
+    const current = Util.qsa('option', select).map((option) => Number(option.value));
+    if (current.join() !== wanted.join()) {
+      Util.clear(select);
+      for (const value of wanted) {
+        select.appendChild(Util.el('option', { value: String(value), text: value + '%' }));
+      }
+    }
+    select.value = String(percent);
+
+    Util.qs('#btn-zoom-out').disabled = App.zoom <= stops[0] + 0.001;
+    Util.qs('#btn-zoom-in').disabled = App.zoom >= stops[stops.length - 1] - 0.001;
   },
 
   /* ================================================================
@@ -511,7 +677,10 @@ const App = {
     try {
       Util.status('Parsing ' + file.name + '…');
       const text = await Util.readFile(file);
-      App.adoptSource(Csv.parse(text, file.name));
+      const grid = Csv.toGrid(text);
+      ImportPreview.show(
+        { rows: grid.rows, headerRows: 1, warnings: grid.warnings, caption: null },
+        { filename: file.name, delimiter: grid.delimiter });
     } catch (err) {
       console.error(err);
       Util.toast('Could not read that file: ' + err.message, 'error');
@@ -537,7 +706,8 @@ const App = {
   },
 
   /** Replace the data, keeping settings that still make sense. */
-  adoptSource(source) {
+  adoptSource(source, opts) {
+    opts = opts || {};
     const current = Store.get();
     const hadData = Spec.hasData(current);
 
@@ -558,7 +728,19 @@ const App = {
       spec = Spec.fromSource(source);
     }
 
-    Store.replace(spec, 'replace');
+    // Title, subtitle, caption and a source note, so an import lands as a
+    // table that already looks like one — and so the parts that carry those
+    // things are visible rather than waiting to be discovered. Nothing the
+    // user has written is overwritten; see `Spec.applySuggestions`.
+    Spec.applySuggestions(spec, source);
+
+    // After `adoptColumns`, which resets the structure — a two-row header the
+    // importer read as column groups would otherwise be thrown away here.
+    if (opts.spanners && opts.spanners.length) {
+      spec.structure.spanners = opts.spanners;
+    }
+
+    Store.replace(spec, 'replace', 'Imported ' + Spec.sourceLabel(source));
 
     if (source.warnings && source.warnings.length) {
       Util.toast(source.warnings[0], 'error', 5000);
@@ -566,7 +748,7 @@ const App = {
       Util.toast('Loaded ' + source.rows.length + ' rows — pick a look under Data › Look', 'ok');
     }
 
-    App.activePanel = 'structure';
+    App.setPanel('structure');
     App.renderRail();
   },
 
@@ -582,20 +764,12 @@ const App = {
     try {
       const text = await Util.readFile(file);
       const spec = Spec.migrate(JSON.parse(text));
-      Store.replace(spec, 'replace');
+      Store.replace(spec, 'replace', 'Opened ' + file.name);
       Util.toast('Opened ' + file.name, 'ok');
     } catch (err) {
       console.error(err);
       Util.toast('That is not a valid project file: ' + err.message, 'error');
     }
-  },
-
-  reset() {
-    if (!window.confirm('Discard this table and start over?')) return;
-    Store.clearSaved();
-    Store.replace(Spec.create(), 'replace');
-    App.activePanel = 'data';
-    App.renderRail();
   },
 
   /* ================================================================
@@ -609,6 +783,62 @@ const App = {
     Util.clear(body);
     body.appendChild(node);
     Util.qs('#modal-backdrop').hidden = false;
+  },
+
+  /** Put arbitrary content in the modal and show it. */
+  showModal(title, nodes) {
+    const body = Util.qs('#modal-body');
+    Util.qs('#modal-title').textContent = title;
+    Util.clear(body);
+    Util.append(body, nodes);
+    Util.qs('#modal-backdrop').hidden = false;
+    const first = Util.qs('button', body);
+    if (first) first.focus();
+  },
+
+  /**
+   * Start again, with a chance to save first.
+   *
+   * Three ways out rather than a yes/no `confirm`: losing an afternoon's work
+   * to a misread dialog is exactly what a Cancel and an explicit "save first"
+   * are for. Nothing is cleared until the file has actually been written.
+   */
+  newProject() {
+    if (!Spec.hasData(Store.get())) {
+      App.startFresh();
+      return;
+    }
+
+    App.showModal('Start a new project?', [
+      Util.el('p.modal-text', {
+        text: 'This clears the data, the design and the history. Save the project first ' +
+          'if you want to come back to it — the file carries the data with it, so it ' +
+          'reopens exactly as it is now.'
+      }),
+      // `Util.el` is (tag, attrs, children) — the array has to go third, or it
+      // is read as attributes and every button silently vanishes.
+      Util.el('div.row-actions', null, [
+        Controls.button('Save project, then start', () => {
+          App.saveSpec();
+          App.closeModal();
+          App.startFresh();
+        }, { kind: 'primary' }),
+        Controls.button('Start without saving', () => {
+          App.closeModal();
+          App.startFresh();
+        }, { kind: 'danger' }),
+        Controls.button('Cancel', () => App.closeModal(), { kind: 'ghost' })
+      ])
+    ]);
+  },
+
+  /** Clear everything back to an empty project. */
+  startFresh() {
+    Selection.clear();
+    Store.replace(Spec.create(), 'replace', 'New project');
+    App.setPanel('data');
+    App.renderRail();
+    Util.toast('New project — import a CSV to begin', 'ok');
   },
 
   showCode(title, code, filename, mime) {
@@ -637,14 +867,22 @@ const App = {
      Shared lookups for the panels
      ================================================================ */
 
-  /** The working columns, post-reshape, as {id, label, type}. */
+  /**
+   * The working columns, post-reshape, as `{id, label, name, type}`.
+   *
+   * `label` is what the editor calls the column and is never empty; `name` is
+   * the raw header it arrived with, which only "Reset labels" has any business
+   * with. Both come from `Spec`, so this cannot drift from what `compute.js`
+   * draws — it did, and a column could read "Mfr" in the table and `mfr` here.
+   */
   workingColumns() {
     const spec = Store.get();
     if (!Spec.hasData(spec)) return [];
     const derived = Reshape.derive(spec.source, spec.reshape);
     return derived.columns.map((col) => ({
       id: col.id,
-      label: spec.structure.labels[col.id] || col.shortName || col.name,
+      label: Spec.columnTitle(spec, col),
+      name: col.name,
       type: col.type
     }));
   },
@@ -658,10 +896,16 @@ const App = {
     return out;
   },
 
+  /**
+   * The working rows with cell corrections applied — the same rows `compute.js`
+   * builds the table from. A panel reading the uncorrected ones would seed a
+   * `where` expression against a value the table no longer shows.
+   */
   workingRows() {
     const spec = Store.get();
     if (!Spec.hasData(spec)) return [];
-    return Reshape.derive(spec.source, spec.reshape).rows;
+    const working = Reshape.derive(spec.source, spec.reshape);
+    return Corrections.apply(working.rows, spec.corrections).rows;
   },
 
   /** Row-group labels in display order. */

@@ -11,7 +11,8 @@
 const PanelFormat = {
 
   id: 'format',
-  label: 'Format',
+  label: 'Number format',
+  hint: 'How numbers, dates and missing values are printed',
 
   render(spec) {
     const panel = Util.el('div.panel');
@@ -63,12 +64,17 @@ const PanelFormat = {
             { hint: param.hint }));
         }
 
-        body.appendChild(PanelFormat.samplePreview(rule, columns, byId));
+        // There is nothing to preview for a rule with no columns yet, or one
+        // whose column holds nothing but missing values — both return null,
+        // and `appendChild(null)` throws, which takes the whole rail down.
+        const sample = PanelFormat.samplePreview(rule, columns, byId);
+        if (sample) body.appendChild(sample);
       }
 
       return body;
     }, {
       key: 'format',
+      collapsible: true,
       title: (rule) => {
         const def = Formatters.get(rule.type);
         return (def ? def.label : rule.type) + ' → ' + rule.columns.length +
@@ -98,7 +104,7 @@ const PanelFormat = {
         Controls.button('Auto-format numbers', () => PanelFormat.autoFormat(columns),
           { title: 'One suggested rule per numeric column, based on its values' })
       ])
-    ], { key: 'fmt.rules' });
+    ], { key: 'fmt.rules', action: Controls.collapseAll('format', spec.format) });
   },
 
   addRule(selected, columns, byId) {

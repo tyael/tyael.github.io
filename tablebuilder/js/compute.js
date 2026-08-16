@@ -80,6 +80,20 @@ const Compute = {
     const working = Reshape.derive(spec.source, spec.reshape);
     model.warnings.push.apply(model.warnings, working.warnings);
 
+    // Cell corrections sit between the pivot and everything else: filtering,
+    // sorting, grouping, summaries, colour scales and `where` expressions all
+    // read `rows` below, so a corrected value is what every one of them sees.
+    // Applying them any later would leave the table sorting by a typo it no
+    // longer shows.
+    const corrected = Corrections.apply(working.rows, spec.corrections);
+    const rows = corrected.rows;
+    model.corrections = corrected.applied;
+    model.staleCorrections = corrected.stale;
+    if (corrected.stale.length) {
+      model.warnings.push(corrected.stale.length + ' cell correction(s) no longer match the ' +
+        'data they were made against, and were not applied.');
+    }
+
     const columnsById = {};
     for (const col of working.columns) columnsById[col.id] = col;
     model.columns = working.columns;
@@ -91,7 +105,17 @@ const Compute = {
 
     /* ---- 3. Row order ---- */
 
-    let displayRows = working.rows.map((row, i) => ({ row: row, srcIndex: i }));
+    let displayRows = rows.map((row, i) => ({ row: row, srcIndex: i }));
+
+    // Filter first: sorting rows that are about to be dropped is wasted work,
+    // and every count below should describe what is actually shown. `apply`
+    // does not renumber `srcIndex` — style rules and footnotes are pinned to
+    // it, so renumbering would move all of them to different rows.
+    const filtered = Filter.apply(displayRows, spec.structure.filter, columnsById);
+    displayRows = filtered.rows;
+    model.filteredOut = filtered.removed;
+    model.sourceRows = rows.length;
+
     displayRows = Compute.sortRows(displayRows, spec.structure.sort, columnsById);
 
     model.totalRows = displayRows.length;
@@ -128,7 +152,7 @@ const Compute = {
         kind: 'body',
         colId: id,
         key: id,
-        label: st.labels[id] !== undefined ? st.labels[id] : Util.humanise(columnsById[id].name),
+        label: Spec.columnLabel(spec, columnsById[id]),
         align: Compute.alignOf(spec, columnsById[id]),
         width: st.widths[id] || null,
         type: columnsById[id].type
@@ -149,15 +173,23 @@ const Compute = {
     /* ---- 5. Formatting and colouring plans ---- */
 
     const formatPlan = Compute.buildFormatPlan(spec, columnsById);
-    const colorPlan = Compute.buildColorPlan(spec, working, columnsById);
+    // Over the rows that survived the filter, not the whole source: a scale
+    // fitted to rows nobody can see leaves the visible ones bunched at one end
+    // of it. Summaries do the same by construction, since they are built from
+    // `displayRows`.
+    const colorPlan = Compute.buildColorPlan(spec,
+      { columns: working.columns, rows: displayRows.map((item) => item.row) }, columnsById);
 
     /* ---- 6. Style rules ---- */
 
-    const compiledRules = StyleRules.compile(spec.styleRules, {
-      rows: working.rows,
+    const compiled = StyleRules.compile(spec.styleRules, {
+      rows: rows,
       columnsById: columnsById
     });
-    model.ruleError = StyleRules.lastExprError();
+    const compiledRules = compiled.rules;
+    // Comes back from this compile, so it cannot describe a rule that is no
+    // longer here — see the note on `StyleRules.compile`.
+    model.ruleError = compiled.error;
 
     /* ---- 7. Footnote marks ---- */
 
@@ -180,7 +212,7 @@ const Compute = {
       merged: merged,
       rules: compiledRules,
       footnoteIndex: footnoteIndex,
-      workingRows: working.rows
+      workingRows: rows
     };
 
     model.rows = Compute.buildBody(displayRows, ctx);
@@ -190,6 +222,7 @@ const Compute = {
     model.title = spec.parts.title || '';
     model.subtitle = spec.parts.subtitle || '';
     model.caption = spec.parts.caption || '';
+    model.captionAlign = spec.parts.captionAlign || 'center';
     model.stubhead = spec.parts.stubhead || '';
     model.sourceNotes = spec.parts.sourceNotes.map((note) => ({
       id: note.id,

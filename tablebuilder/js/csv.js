@@ -26,6 +26,25 @@ const Csv = {
    */
   parse(text, filename, opts) {
     opts = opts || {};
+    const grid = Csv.toGrid(text, opts);
+    return Csv.fromTable(grid.rows, {
+      headerRows: opts.headerRows === undefined ? 1 : opts.headerRows,
+      filename: filename || 'data.csv',
+      delimiter: grid.delimiter,
+      warnings: grid.warnings
+    }).source;
+  },
+
+  /**
+   * Delimited text into a grid of strings — the parsing half only.
+   *
+   * Separate from `fromTable` so the import preview can show what was found
+   * and ask about the header before anything is committed to a source.
+   *
+   * @returns {{rows, delimiter, warnings}}
+   */
+  toGrid(text, opts) {
+    opts = opts || {};
 
     const result = Papa.parse(text, {
       header: false,
@@ -42,27 +61,123 @@ const Csv = {
       warnings.push(result.errors.length + ' parse issue(s): ' + kinds.join(', '));
     }
 
-    const table = result.data.filter((row) => row.some((cell) => cell !== ''));
-    if (!table.length) throw new Error('That file has no rows.');
+    return {
+      rows: result.data,
+      delimiter: result.meta && result.meta.delimiter ? result.meta.delimiter : ',',
+      warnings: warnings
+    };
+  },
 
-    const header = table[0];
-    const body = table.slice(1);
-    if (!body.length) throw new Error('That file has a header but no data rows.');
+  /**
+   * A grid of text into a `source`, plus any spanners its header implies.
+   *
+   * **Every importer ends here.** CSV, TSV and a pasted HTML table differ in
+   * how they get to a rectangle of strings and in nothing after it, so column
+   * ids, ragged-row repair, type inference and header handling live in one
+   * place rather than once per format.
+   *
+   * @param {Array<Array>} grid - rows of cell text, ragged is fine
+   * @param {Object} [opts]
+   * @param {number} [opts.headerRows=1] - 0 means "no header, name the columns"
+   * @param {Object} [opts.origin] - {kind, label} for a non-file source
+   * @returns {{source, spanners}}
+   */
+  fromTable(grid, opts) {
+    opts = opts || {};
+    const warnings = (opts.warnings || []).slice();
 
-    const columns = Csv.buildColumns(header, warnings);
-    const rows = Csv.buildRows(columns, body, warnings);
+    const table = (grid || [])
+      .map((row) => (row || []).map((cell) =>
+        String(cell === null || cell === undefined ? '' : cell).trim()))
+      .filter((row) => row.some((cell) => cell !== ''));
+    if (!table.length) throw new Error('There are no rows here.');
 
-    for (const col of columns) {
-      col.type = Csv.inferType(rows, col.id);
+    // Ragged input is padded to the widest row rather than to the header's
+    // width: a header narrower than its data would otherwise silently drop
+    // columns, which a paste from a spreadsheet range does routinely.
+    const width = table.reduce((max, row) => Math.max(max, row.length), 0);
+    for (const row of table) {
+      while (row.length < width) row.push('');
     }
 
-    return {
-      filename: filename || 'data.csv',
-      delimiter: result.meta && result.meta.delimiter ? result.meta.delimiter : ',',
+    // Consuming every row as a header leaves nothing to show, and quietly
+    // demoting one to data would hide the mistake. The way out is to say there
+    // is no header — which the import preview offers — not to guess.
+    const headerRows = opts.headerRows === undefined ? 1 : Math.max(0, Math.round(opts.headerRows));
+    if (headerRows >= table.length) {
+      throw new Error(headerRows === 1
+        ? 'That has a header but no data rows.'
+        : 'All ' + table.length + ' row(s) would be header. Reduce the header rows.');
+    }
+
+    const labels = headerRows > 0
+      ? table[headerRows - 1]
+      : Csv.generatedNames(width);
+    const body = table.slice(headerRows);
+
+    const columns = Csv.buildColumns(labels, warnings);
+    const rows = Csv.buildRows(columns, body, warnings);
+    for (const col of columns) col.type = Csv.inferType(rows, col.id);
+
+    const spanners = Csv.spannersFrom(table.slice(0, Math.max(0, headerRows - 1)), columns);
+
+    const source = {
+      filename: opts.filename || 'data.csv',
+      delimiter: opts.delimiter || ',',
       columns: columns,
       rows: rows,
       warnings: warnings
     };
+    if (opts.origin) source.origin = opts.origin;
+
+    return { source: source, spanners: spanners };
+  },
+
+  /** Placeholder column names, for a grid with no header row of its own. */
+  generatedNames(width) {
+    const names = [];
+    for (let i = 0; i < width; i += 1) names.push('Column ' + (i + 1));
+    return names;
+  },
+
+  /**
+   * Spanners implied by the header rows above the labels.
+   *
+   * A run of the same text across adjacent columns is a column group: that is
+   * what a `colspan` becomes once the grid is expanded, and what a
+   * two-row CSV header means when someone types the group once and leaves the
+   * rest blank... except they usually repeat it, which is the case this reads.
+   *
+   * Runs of one are ignored. A single cell above one column is far more often
+   * a stray note than a group of one, and gt draws nothing useful for it.
+   *
+   * Level 1 sits directly above the labels (see `Compute.buildHeader`), so the
+   * rows are numbered upward from the bottom.
+   */
+  spannersFrom(headerRows, columns) {
+    const out = [];
+
+    headerRows.forEach((row, index) => {
+      const level = headerRows.length - index;
+      let start = 0;
+      while (start < columns.length) {
+        const text = (row[start] || '').trim();
+        let end = start;
+        while (end + 1 < columns.length && (row[end + 1] || '').trim() === text) end += 1;
+
+        if (text && end > start) {
+          out.push({
+            id: Util.uid('sp'),
+            label: text,
+            columns: columns.slice(start, end + 1).map((c) => c.id),
+            level: level
+          });
+        }
+        start = end + 1;
+      }
+    });
+
+    return out;
   },
 
   /** Turn a header row into column descriptors with unique ids. */
@@ -168,6 +283,79 @@ const Csv = {
   },
 
   /** Serialise a resolved table back out as CSV (used by the export panel). */
+  /**
+   * The table as rendered, as CSV.
+   *
+   * Not the imported data — the `ResolvedModel`, so every column rename,
+   * reorder, hide and merge, every sort, and every `fmt_*` result is already
+   * in it. What you get is what is on screen, one row per rendered row.
+   *
+   * Two things a CSV has no way to show are folded into columns instead of
+   * being dropped: a row group that renders as a spanning label row becomes a
+   * column, and the stub's header takes the stubhead. Group and summary rows
+   * are kept — a subtotal is part of what is rendered — with a label column
+   * saying which is which when there is anything but plain data rows.
+   *
+   * Lives here rather than in the export menu so it can be tested without a
+   * DOM, and because turning things into CSV is this file's whole job.
+   */
+  fromModel(model) {
+    const GROUP = '__group__';
+    const KIND = '__kind__';
+
+    const asColumn = model.cols.some((col) => col.kind === 'group');
+    const grouped = model.rows.some((row) => row.kind === 'group');
+    const extraRows = model.rows.some((row) => row.kind === 'summary' || row.kind === 'grand');
+
+    const columns = [];
+    // A group that renders as its own spanning row has no column in the model,
+    // so it would vanish from a CSV. Give it one, ahead of everything else.
+    if (grouped && !asColumn) columns.push({ id: GROUP, label: 'Group' });
+    if (extraRows) columns.push({ id: KIND, label: 'Row type' });
+
+    for (const col of model.cols) {
+      columns.push({
+        id: col.colId,
+        label: col.kind === 'stub' ? (model.stubhead || col.label || col.colId) : col.label
+      });
+    }
+
+    // A group label row carries `groupLabel` and no cells at all, so the name
+    // is collected by id rather than read off the row above — which also gets
+    // summary rows their group, and does not depend on row order.
+    const groupLabels = {};
+    for (const row of model.rows) {
+      if (row.kind === 'group') groupLabels[row.groupId] = Markup.toPlain(row.groupLabel || '');
+    }
+
+    const rows = [];
+
+    for (const row of model.rows) {
+      if (row.kind === 'group') continue;
+
+      const out = {};
+      if (grouped && !asColumn) out[GROUP] = groupLabels[row.groupId] || '';
+      if (extraRows) out[KIND] = row.kind === 'data' ? '' : row.kind;
+
+      for (let i = 0; i < row.cells.length; i += 1) {
+        const cell = row.cells[i];
+        // A stub cell carries no `colId` so it
+        // is matched by position instead. Keying on `cell.colId` alone
+        // silently emitted an empty row-label column.
+        const col = cell.colId
+          ? model.cols.find((c) => c.colId === cell.colId)
+          : model.cols[i];
+        if (!col) continue;
+        const text = cell.text !== undefined && cell.text !== null ? cell.text : cell.label;
+        out[col.colId] = Markup.toPlain(text === null || text === undefined ? '' : text);
+      }
+
+      rows.push(out);
+    }
+
+    return Csv.toCsv(columns, rows);
+  },
+
   toCsv(columns, rows) {
     const escape = (value) => {
       const str = value === null || value === undefined ? '' : String(value);

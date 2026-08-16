@@ -72,6 +72,14 @@ const UserThemes = {
       label: label,
       notes: '',
       options: options,
+      // Whatever theme-owned rules are in play travel too. Without this,
+      // saving a look built on Sydney and applying it back would drop the white
+      // header text and leave dark grey on a dark blue band. Only rules the
+      // theme put there are captured — the user's own name column ids and do
+      // not generalise, which is why they are excluded.
+      rules: (spec.styleRules || [])
+        .filter((rule) => rule.fromTheme)
+        .map(Themes.toShorthand),
       fonts: (spec.fonts || []).filter((font) => named.has(font.id))
     };
   },

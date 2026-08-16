@@ -1,6 +1,19 @@
 /* ============================================
    Table Builder — application chrome
-   Dark editor shell around a light print canvas
+
+   A light editor around a white sheet. Nearly every table built here will be
+   read on plain white, so the editor stays within a few steps of it: the
+   chrome is warm greys, the stage is the one tone dark enough to make the
+   sheet read as a separate object, and the sheet itself is true #FFFFFF.
+
+   Colour is spent in two places only, and they never mean the same thing:
+
+     sage (--accent)   the editor's own furniture — tabs, focus, controls
+     oxide red         a mark made *on* the table: what you have selected
+
+   That split is why the in-table affordances in table-preview.css are red and
+   gold rather than the accent: over someone else's table, chrome colour would
+   read as part of their design.
    ============================================ */
 
 * {
@@ -10,38 +23,58 @@
 }
 
 :root {
-  /* Surfaces */
-  --bg-deep: #0b0f16;
-  --bg-surface: #121822;
-  --bg-panel: #161d29;
-  --bg-card: #1c2532;
-  --bg-input: #0e141d;
-  --bg-hover: #202b3a;
-  --bg-active: #26344a;
+  /* Native controls, scrollbars and form widgets follow this. Without it a
+     machine set to a dark OS theme renders <select> popups dark inside an
+     otherwise light app. */
+  color-scheme: light;
 
-  /* Text */
-  --text-bright: #e8eef6;
-  --text-mid: #97a6b8;
-  --text-dim: #5d6b7d;
+  /* Surfaces. Four steps, and the gaps have to be wide enough to survive on a
+     laptop screen at an angle: white cards need to read as cards against the
+     rail behind them, and the stage has to be the one tone clearly darker than
+     the sheet. */
+  --bg-card: #ffffff;    /* section cards, and the input fill */
+  --bg-input: #ffffff;
+  --bg-panel: #f7f6f1;   /* the rails */
+  --bg-sunken: #f1efe8;  /* inset within a card: list items, code blocks */
+  --bg-surface: #edebe3; /* the furniture: top bar, tab strip, toolbar, status */
+  --bg-hover: #e5e3d9;
+  --bg-active: #dbd8cc;
+  --bg-deep: #e0ded5;    /* the stage the sheet sits on */
 
-  /* Lines */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-medium: rgba(255, 255, 255, 0.12);
-  --border-strong: rgba(255, 255, 255, 0.22);
+  /* Text — warm near-black, the colour of ink rather than of a screen.
+     --text-dim is as light as it goes: at #6b6759 it still clears 4.5:1 on
+     --bg-surface, which is the darkest chrome it ever sits on. */
+  --text-bright: #22211c;
+  --text-mid: #5a574d;
+  --text-dim: #6b6759;
 
-  /* Accent */
-  --accent: #4c9fff;
-  --accent-bright: #7ab8ff;
-  --accent-dim: rgba(76, 159, 255, 0.18);
-  --accent-line: rgba(76, 159, 255, 0.45);
+  /* Lines. Ink at low alpha, so a rule reads the same on every surface above. */
+  --border-subtle: rgba(34, 33, 28, 0.10);
+  --border-medium: rgba(34, 33, 28, 0.18);
+  --border-strong: rgba(34, 33, 28, 0.34);
+
+  /* Accent — ledger sage */
+  --accent: #4b6b45;
+  --accent-strong: #3c5738;  /* accent as text, and the hover of accent as fill */
+  --accent-on: #fbfcfa;      /* text on an accent fill */
+  --accent-dim: rgba(75, 107, 69, 0.13);
+  --accent-line: rgba(75, 107, 69, 0.48);
 
   /* Semantic */
-  --ok: #3fb37f;
-  --warn: #e0a33e;
-  --danger: #e05c5c;
-  --danger-dim: rgba(224, 92, 92, 0.16);
+  --ok: #3f7a55;
+  --warn: #8a5f12;
+  --danger: #a3372c;
+  --danger-dim: rgba(163, 55, 44, 0.10);
 
-  /* Type */
+  /* Shadow. Warm and shallow — a light room, not a spotlit stage. */
+  --shadow-sheet: 0 1px 2px rgba(34, 33, 28, 0.07), 0 10px 28px rgba(34, 33, 28, 0.11);
+  --shadow-pop: 0 4px 14px rgba(34, 33, 28, 0.13);
+  --shadow-modal: 0 16px 48px rgba(34, 33, 28, 0.22);
+
+  /* Type. The display face is Source Serif 4 — the same face the app sets
+     tables in by default, so the editor and the artefact share a voice. It is
+     already loaded for the table picker, so it costs nothing here. */
+  --font-display: 'Source Serif 4', Georgia, 'Times New Roman', serif;
   --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
@@ -87,7 +120,10 @@ body {
   gap: 16px;
   padding: 0 12px;
   background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-medium);
+  /* The app's own \toprule. booktabs — which this app exports — sets the outer
+     rules heavier than the interior ones, so the outermost division here is
+     2px and every division inside it is a hairline. */
+  border-bottom: 2px solid var(--border-medium);
 }
 
 .topbar-brand {
@@ -97,14 +133,24 @@ body {
   min-width: 0;
 }
 
+/* An inline SVG rather than the ▦ glyph it used to be: that character is not
+   in any font this app loads, so it came from whatever fallback the machine
+   happened to have and looked different on every platform — and at the empty
+   state's size the difference was obvious. `currentColor` keeps it following
+   the accent token. */
 .brand-mark {
   color: var(--accent);
-  font-size: 15px;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  align-self: center;
 }
 
 .brand-name {
+  font-family: var(--font-display);
+  font-size: 15px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.005em;
 }
 
 .brand-file {
@@ -165,13 +211,13 @@ body {
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #04101f;
+  color: var(--accent-on);
   font-weight: 600;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-bright);
-  border-color: var(--accent-bright);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
 .btn-icon {
@@ -187,12 +233,12 @@ body {
 
 .btn-danger {
   color: var(--danger);
-  border-color: rgba(224, 92, 92, 0.35);
+  border-color: rgba(163, 55, 44, 0.32);
   background: var(--danger-dim);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: rgba(224, 92, 92, 0.26);
+  background: rgba(163, 55, 44, 0.18);
   border-color: var(--danger);
 }
 
@@ -240,6 +286,18 @@ textarea:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+/* Buttons had no focus style of their own, so they fell back to the UA ring —
+   which is blue, and lands in the middle of the export menu the moment it
+   opens and takes focus. */
+.btn:focus-visible,
+.rail-tab:focus-visible,
+.rail-more-toggle:focus-visible,
+.chip:focus-visible,
+.section-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 input[type="checkbox"] {
@@ -336,9 +394,10 @@ select {
 }
 
 .rail-head h3 {
-  font-size: 12px;
+  font-family: var(--font-display);
+  font-size: 13.5px;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 
 .rail-head-hint {
@@ -353,10 +412,14 @@ select {
 
 /* Left rail tab strip */
 
+/* Columns are generated from however many tabs the strip holds, so the two
+   tiers can be different lengths — they are, since Export left the rail for
+   the top bar. `minmax(0, …)` keeps a long label from widening its column. */
 .rail-tabs {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   border-bottom: 1px solid var(--border-medium);
   background: var(--bg-surface);
 }
@@ -417,21 +480,31 @@ select {
   text-overflow: ellipsis;
 }
 
+/* Tabs wrap to two lines rather than truncate. A label is the only name a
+   panel has in the left rail, so "TITLES & NOTES" earns its second line where
+   "TITLES &…" would have been worse than the vague word it replaced.
+   `min-height` fixes the row at two lines so the essentials strip and the more
+   strip stay the same height whatever their labels are. */
 .rail-tab {
   font-family: inherit;
   font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  line-height: 1.15;
   text-transform: uppercase;
+  text-align: center;
+  text-wrap: balance;
   color: var(--text-dim);
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  padding: 7px 2px 6px;
+  padding: 6px 3px 5px;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .rail-tab:hover {
@@ -439,8 +512,11 @@ select {
   background: var(--bg-hover);
 }
 
+/* The active tab lifts to the panel's own tone and is underscored by a 2px
+   rule — the app's own vocabulary for emphasis, since deciding line weights is
+   what it is for. */
 .rail-tab.is-active {
-  color: var(--accent-bright);
+  color: var(--accent-strong);
   border-bottom-color: var(--accent);
   background: var(--bg-panel);
 }
@@ -479,18 +555,21 @@ select {
   justify-content: space-between;
   gap: 6px;
   padding: 6px 9px;
-  background: rgba(255, 255, 255, 0.025);
+  background: rgba(34, 33, 28, 0.025);
   border-bottom: 1px solid var(--border-subtle);
   cursor: pointer;
   user-select: none;
 }
 
+/* Section titles carry the accent. They are the most repeated heading in the
+   app, so they are where a colour reads as structure rather than decoration —
+   a spine down the rail that ties the two rails and the modal together. */
 .section-head h4 {
   font-size: 10.5px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-mid);
+  color: var(--accent-strong);
 }
 
 .section-head .caret {
@@ -550,6 +629,17 @@ select {
   line-height: 1.4;
 }
 
+/* Two hints in a row are two separate remarks, not one paragraph. */
+.field-hint + .field-hint {
+  margin-top: 5px;
+}
+
+/* A hint that is a caution rather than a description. Ochre, not oxide red:
+   nothing is broken, the value simply means less than it looks like it does. */
+.field-hint.is-warn {
+  color: var(--warn);
+}
+
 .wrap-any {
   overflow-wrap: anywhere;
   line-height: 1.35;
@@ -603,10 +693,11 @@ select {
   gap: 5px;
 }
 
+/* Items sit inside a white card, so they inset rather than lift. */
 .item {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  background: var(--bg-input);
+  background: var(--bg-sunken);
   padding: 6px 7px;
 }
 
@@ -614,6 +705,29 @@ select {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.item-caret {
+  color: var(--text-dim);
+  font-size: 9px;
+  cursor: pointer;
+  flex: 0 0 auto;
+  padding: 2px;
+  user-select: none;
+  transition: transform 0.14s;
+}
+
+.item.is-collapsed .item-caret {
+  transform: rotate(-90deg);
+}
+
+.item.is-collapsed .item-body {
+  display: none;
+}
+
+.item-title.is-clickable {
+  cursor: pointer;
+  user-select: none;
 }
 
 .item-title {
@@ -636,6 +750,20 @@ select {
   white-space: nowrap;
 }
 
+/* Why an item's toggle cannot do anything, and the way to release it. Ochre
+   like `.field-inert-note`, which says the same kind of thing about a field:
+   nothing is broken, this control just has no work to do here. */
+.item-inert-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--warn);
+}
+
 .item-body {
   margin-top: 7px;
   padding-top: 7px;
@@ -647,11 +775,24 @@ select {
   box-shadow: 0 0 0 1px var(--accent-dim);
 }
 
+/* The only part of an item that starts a drag, so it gets a bigger target than
+   the glyph and does not select as text when pressed. */
 .item-drag {
   cursor: grab;
   color: var(--text-dim);
   font-size: 11px;
   flex: 0 0 auto;
+  padding: 2px 3px;
+  margin: -2px -1px -2px -3px;
+  user-select: none;
+}
+
+.item-drag:hover {
+  color: var(--text-bright);
+}
+
+.item-drag:active {
+  cursor: grabbing;
 }
 
 .item.is-dragging {
@@ -701,7 +842,7 @@ select {
 .chip.is-on {
   background: var(--accent-dim);
   border-color: var(--accent-line);
-  color: var(--accent-bright);
+  color: var(--accent-strong);
 }
 
 .chip-empty {
@@ -724,6 +865,70 @@ select {
   color: var(--danger);
 }
 
+/* What a row expression can name. Scrolls rather than growing: it sits inside
+   a rule item inside a panel, and a wide dataset would otherwise push the
+   style controls off the screen. */
+.scope-box {
+  margin-top: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  background: var(--bg-panel);
+}
+
+.scope-head {
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 4px 6px 0;
+}
+
+.scope-chips {
+  max-height: 132px;
+  overflow-y: auto;
+  padding: 5px 6px 6px;
+}
+
+.scope-chip {
+  background: var(--bg-card);
+  color: var(--text-mid);
+}
+
+.scope-chip:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent-line);
+  color: var(--accent-strong);
+}
+
+/* The type is a note about the chip, not part of the token you would type. */
+.scope-chip-type {
+  font-family: var(--font-ui);
+  font-size: 9px;
+  color: var(--text-dim);
+}
+
+.scope-chip:hover .scope-chip-type {
+  color: var(--accent-strong);
+}
+
+/* `row` and `n` sit outside the scrolling area — they are always in scope, so
+   they should not be something you scroll a long column list to reach. */
+.scope-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.scope-foot-label {
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
 /* Data type badge */
 
 .type-badge {
@@ -736,10 +941,10 @@ select {
   flex: 0 0 auto;
 }
 
-.type-number { background: rgba(76, 159, 255, 0.18); color: var(--accent-bright); }
-.type-text   { background: rgba(151, 166, 184, 0.16); color: var(--text-mid); }
-.type-date   { background: rgba(63, 179, 127, 0.16); color: var(--ok); }
-.type-bool   { background: rgba(224, 163, 62, 0.16); color: var(--warn); }
+.type-number { background: rgba(75, 107, 69, 0.14);  color: var(--accent-strong); }
+.type-text   { background: rgba(34, 33, 28, 0.07);   color: var(--text-mid); }
+.type-date   { background: rgba(63, 122, 85, 0.14);  color: var(--ok); }
+.type-bool   { background: rgba(138, 95, 18, 0.14);  color: var(--warn); }
 
 /* ============================================
    Stage (centre preview)
@@ -777,23 +982,26 @@ select {
   min-width: 0;
 }
 
-.zoom-value {
-  font-family: var(--font-mono);
+/* Toolbar selects size to their content — the rail's full-width rule is wrong
+   in a horizontal bar. */
+.stage-select {
+  width: auto;
   font-size: 11px;
-  color: var(--text-mid);
-  min-width: 42px;
+  padding: 2px 4px;
+}
+
+.zoom-select {
+  font-family: var(--font-mono);
   text-align: center;
 }
 
+/* Left plain. The dark shell carried a faint diagonal weave here; the same
+   figure on a light ground reads as a visible checkerboard and competes with
+   the table, which is the one thing on this screen that should hold the eye. */
 .stage-canvas {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background:
-    linear-gradient(45deg, rgba(255,255,255,0.012) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.012) 75%),
-    linear-gradient(45deg, rgba(255,255,255,0.012) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.012) 75%);
-  background-size: 20px 20px;
-  background-position: 0 0, 10px 10px;
 }
 
 .stage-scroll {
@@ -821,13 +1029,18 @@ select {
 }
 
 .empty-mark {
-  font-size: 40px;
   color: var(--border-strong);
   margin-bottom: 10px;
 }
 
+.empty-mark svg {
+  width: 44px;
+  height: 44px;
+}
+
 .empty-state h2 {
-  font-size: 16px;
+  font-family: var(--font-display);
+  font-size: 19px;
   font-weight: 600;
   color: var(--text-mid);
   margin-bottom: 5px;
@@ -870,7 +1083,7 @@ select {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(4, 8, 14, 0.72);
+  background: rgba(34, 33, 28, 0.38);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -884,9 +1097,9 @@ select {
 
 .modal {
   background: var(--bg-panel);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-medium);
   border-radius: 7px;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--shadow-modal);
   width: min(860px, 100%);
   max-height: 100%;
   display: flex;
@@ -902,7 +1115,8 @@ select {
 }
 
 .modal-head h3 {
-  font-size: 13px;
+  font-family: var(--font-display);
+  font-size: 15px;
   font-weight: 600;
 }
 
@@ -915,7 +1129,7 @@ select {
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.55;
-  background: var(--bg-input);
+  background: var(--bg-sunken);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
   padding: 10px;
@@ -924,6 +1138,74 @@ select {
   max-height: 52vh;
   color: var(--text-bright);
   tab-size: 2;
+}
+
+/* ============================================
+   Import preview
+   ============================================ */
+
+.paste-target {
+  width: 100%;
+  min-height: 84px;
+  margin-bottom: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: center;
+  padding-top: 30px;
+}
+
+.import-summary {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.import-warning {
+  font-size: 11.5px;
+  color: var(--warn);
+  background: rgba(138, 95, 18, 0.08);
+  border-left: 3px solid var(--warn);
+  padding: 5px 9px;
+  margin-bottom: 8px;
+}
+
+/* Its own scroll box: a wide paste must not push the modal off screen. */
+.import-grid-wrap {
+  max-height: 44vh;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  margin: 10px 0 12px;
+}
+
+.import-grid {
+  border-collapse: collapse;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.import-grid th,
+.import-grid td {
+  border: 1px solid var(--border-subtle);
+  padding: 3px 7px;
+  text-align: left;
+  font-weight: normal;
+}
+
+/* What will become the column labels, so the header choice is legible at a
+   glance rather than counted out. */
+.import-grid .is-header th {
+  background: var(--accent-dim);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+/* Names the app supplied rather than ones that were in the data. */
+.import-grid .is-generated th {
+  background: var(--bg-sunken);
+  color: var(--text-dim);
+  font-style: italic;
 }
 
 /* ============================================
@@ -945,21 +1227,25 @@ select {
 
 .toast {
   background: var(--bg-card);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-medium);
   border-radius: var(--radius);
   padding: 7px 14px;
   font-size: 12px;
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-pop);
   animation: toast-in 0.16s ease-out;
 }
 
+/* A toast floats over the stage, where a hairline alone would not carry the
+   result. The left edge takes the weight instead. */
 .toast.is-error {
-  border-color: var(--danger);
-  color: #ffd9d9;
+  border-color: var(--border-medium);
+  border-left: 3px solid var(--danger);
+  color: var(--danger);
 }
 
 .toast.is-ok {
-  border-color: rgba(63, 179, 127, 0.6);
+  border-color: var(--border-medium);
+  border-left: 3px solid var(--ok);
 }
 
 @keyframes toast-in {
@@ -981,14 +1267,14 @@ select {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border-medium);
+  background: rgba(34, 33, 28, 0.24);
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--border-strong);
+  background: rgba(34, 33, 28, 0.42);
   background-clip: content-box;
 }
 
@@ -1012,6 +1298,146 @@ select {
 .nowrap { white-space: nowrap; }
 
 /* ============================================
+   Export menu
+   ============================================ */
+
+/* One popover, two users: the export menu and the history list. */
+.popover {
+  position: fixed;
+  z-index: 150;
+  width: 264px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-pop);
+  animation: menu-in 0.12s ease-out;
+}
+
+.popover.history-menu {
+  width: 292px;
+}
+
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popover { animation: none; }
+}
+
+.popover .btn {
+  margin-bottom: 4px;
+}
+
+/* The group label is the same micro-heading the rail's sections use, so the
+   menu reads as part of the same app rather than as a stray popover. */
+.export-menu-group {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-strong);
+  padding: 7px 2px 5px;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 6px;
+}
+
+.export-menu-group:first-child {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 2px;
+}
+
+.export-menu-hint {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  line-height: 1.4;
+  padding: 0 2px 6px;
+}
+
+.export-menu-note {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 6px 2px;
+}
+
+.popover .field {
+  margin-bottom: 6px;
+  grid-template-columns: 44px 1fr;
+}
+
+/* ---- History list ---- */
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 46vh;
+  overflow-y: auto;
+  margin-bottom: 6px;
+}
+
+.history-item {
+  display: grid;
+  grid-template-columns: 12px 1fr auto;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text-bright);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 4px 5px;
+  cursor: pointer;
+}
+
+.history-item:hover {
+  background: var(--bg-hover);
+}
+
+.history-item.is-current {
+  background: var(--accent-dim);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+/* Redone-past states: still reachable, but not part of the table as it stands. */
+.history-item.is-future {
+  color: var(--text-dim);
+}
+
+.history-mark {
+  color: var(--accent);
+  font-size: 9px;
+}
+
+.history-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.modal-text {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-mid);
+  margin-bottom: 12px;
+}
+
+/* ============================================
    Line info card
    ============================================ */
 
@@ -1022,8 +1448,8 @@ select {
   padding: 9px 10px;
   border: 1px solid var(--border-medium);
   border-radius: var(--radius);
-  background: var(--bg-panel);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-pop);
   font-size: 11.5px;
   line-height: 1.45;
   pointer-events: auto;
@@ -1047,7 +1473,7 @@ select {
 
 .line-card-source {
   margin-top: 5px;
-  color: var(--accent-bright);
+  color: var(--accent-strong);
 }
 
 .line-card-hint {

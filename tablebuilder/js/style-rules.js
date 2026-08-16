@@ -56,6 +56,36 @@ const StyleRules = {
 
   SIDES: ['top', 'right', 'bottom', 'left'],
 
+  /* ---------- Referring to a column from a row expression ---------- */
+
+  /**
+   * Can this column id be a bare variable in a compiled row expression?
+   *
+   * Two ways it cannot: the slug is not a JS identifier (a header of "2024"
+   * slugs to `2024`), or it collides with something already in the compiled
+   * scope — `n`, `row`, `v`, `Math`, or a keyword. Both stay reachable through
+   * `v['…']`.
+   */
+  bareName(colId) {
+    return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(colId) &&
+      StyleRules.RESERVED.indexOf(colId) < 0;
+  },
+
+  /**
+   * How a column is written inside a row expression.
+   *
+   * **The one place that decides.** `evalRowExpr` builds the scope, `seedExpr`
+   * writes an expression into a new rule, and the Style panel lists what is
+   * available — three producers of the same fact, and the panel's copy was
+   * missing the reserved-word half. So a column called `n` was advertised as
+   * being in scope by name when typing `n` actually gives you the row count.
+   */
+  ref(colId) {
+    return StyleRules.bareName(colId)
+      ? colId
+      : "v['" + String(colId).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "']";
+  },
+
   /** Words that cannot become a `var` in a compiled row expression. */
   RESERVED: ['var', 'let', 'const', 'if', 'else', 'for', 'while', 'do', 'function',
     'return', 'new', 'this', 'typeof', 'instanceof', 'in', 'of', 'class', 'null',
@@ -91,9 +121,12 @@ const StyleRules = {
     if (!style) return true;
     const noText = !style.text || Object.keys(style.text).every((k) => !style.text[k]);
     const noFill = !style.fill || !style.fill.color;
+    // A border of `none` counts as set: it is a rule saying "take the line off
+    // these cells", which is a real instruction and must survive compile().
+    // Inheriting is the absence of the side, not a style of 'none'.
     const noBorders = !style.borders || StyleRules.SIDES.every((s) => {
       const b = style.borders[s];
-      return !b || !b.style || b.style === 'none';
+      return !b || !b.style;
     });
     return noText && noFill && noBorders;
   },
@@ -128,12 +161,30 @@ const StyleRules = {
   /**
    * Turn the spec's rules into a fast matcher.
    *
+   * **The row-expression error is returned, not stashed.** It used to live in
+   * `StyleRules._exprError`, a module-level flag set on failure and cleared
+   * only by a later *successful* evaluation — so it belonged to no particular
+   * compile and outlived everything:
+   *
+   *   - deleting the rule with the bad expression left the warning on screen,
+   *     because with no rules left nothing ever evaluated to clear it;
+   *   - so did merely disabling it, which `continue`s before the eval;
+   *   - two rules reported whichever ran last, not whichever was broken;
+   *   - and `Selection.paintRulePreview` compiles too, on *hover*, so running
+   *     the pointer over a valid rule silently cleared a real error, while
+   *     hovering a broken one raised a warning about a rule the render had
+   *     nothing to do with.
+   *
+   * An error is a fact about one compile, so it comes back with that compile.
+   *
    * @param {Array} rules - spec.styleRules
    * @param {Object} ctx  - {rows, columnsById} the working data, for row expressions
-   * @returns {Array} compiled rules, in application order
+   * @returns {{rules: Array, error: ?string}} compiled rules in application
+   *   order, and the first row-expression failure among them
    */
   compile(rules, ctx) {
     const out = [];
+    let error = null;
 
     for (const rule of rules) {
       if (!rule.enabled || StyleRules.isEmptyStyle(rule.style)) continue;
@@ -147,7 +198,13 @@ const StyleRules = {
         if (loc.rows && loc.rows.mode === 'index' && loc.rows.indices.length) {
           rowSet = new Set(loc.rows.indices);
         } else if (loc.rows && loc.rows.mode === 'expr' && loc.rows.expr) {
-          rowSet = StyleRules.evalRowExpr(loc.rows.expr, ctx);
+          const result = StyleRules.evalRowExpr(loc.rows.expr, ctx);
+          rowSet = result.rows;
+          // The first failure is the one reported; naming the rule is what
+          // makes the warning actionable when several are in play.
+          if (result.error && !error) {
+            error = (rule.label ? '“' + rule.label + '” — ' : '') + result.error;
+          }
         }
 
         return {
@@ -162,7 +219,7 @@ const StyleRules = {
       out.push({ id: rule.id, locations: locations, style: rule.style });
     }
 
-    return out;
+    return { rules: out, error: error };
   },
 
   /**
@@ -173,6 +230,11 @@ const StyleRules = {
    * scope, so `pop > 1e6 && region != "NT"` works. This is a local, offline
    * tool driven entirely by its own user — there is no untrusted input to
    * sandbox against — but it is still wrapped so a typo cannot break rendering.
+   *
+   * Pure: the failure comes back with the result rather than being left
+   * somewhere for a later caller to find. See `compile`.
+   *
+   * @returns {{rows: Set, error: ?string}}
    */
   evalRowExpr(expr, ctx) {
     const rows = (ctx && ctx.rows) || [];
@@ -181,9 +243,8 @@ const StyleRules = {
     // Only columns whose id is a usable JS identifier can be put in scope by
     // name. A CSV header of "2024" slugs to "2024", which is not one — those
     // stay reachable through `v['2024']`.
-    const columnIds = Object.keys((ctx && ctx.columnsById) || {})
-      .filter((id) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(id) && StyleRules.RESERVED.indexOf(id) < 0);
-    if (!Object.keys((ctx && ctx.columnsById) || {}).length) return set;
+    const columnIds = Object.keys((ctx && ctx.columnsById) || {}).filter(StyleRules.bareName);
+    if (!Object.keys((ctx && ctx.columnsById) || {}).length) return { rows: set, error: null };
 
     let fn;
     try {
@@ -192,8 +253,7 @@ const StyleRules = {
         (columnIds.length ? 'var ' + columnIds.map((id) => id + ' = v.' + id).join(', ') + ';' : '') +
         'return (' + expr + ');');
     } catch (err) {
-      StyleRules._exprError = 'Syntax error: ' + err.message;
-      return set;
+      return { rows: set, error: 'Syntax error: ' + err.message };
     }
 
     // Values are handed over pre-coerced: numeric columns as numbers so that
@@ -209,21 +269,12 @@ const StyleRules = {
       try {
         if (fn(scope, i, rows.length)) set.add(i);
       } catch (err) {
-        StyleRules._exprError = 'Evaluation error: ' + err.message;
-        return set;
+        return { rows: set, error: 'Evaluation error: ' + err.message };
       }
     }
 
-    StyleRules._exprError = null;
-    return set;
+    return { rows: set, error: null };
   },
-
-  /** The last row-expression error, for the panel to surface. */
-  lastExprError() {
-    return StyleRules._exprError || null;
-  },
-
-  _exprError: null,
 
   /* ---------- Matching ---------- */
 
@@ -377,6 +428,57 @@ const StyleRules = {
       return loc;
     });
     return StyleRules.coalesce(rule, dataRows);
+  },
+
+  /**
+   * The location for a quick body-scoped rule: a whole column, one row, or the
+   * rows a `where` expression matches.
+   *
+   * Body only, deliberately. A column rule does not reach the column heading
+   * and a row rule does not reach the row label, which is what
+   * `cells_body(columns=)` and `cells_body(rows=)` mean in gt — the heading and
+   * the stub are their own parts and are styled as such.
+   *
+   * @param {Object} scope - {kind:'column', colId} | {kind:'row', srcIndex}
+   *   | {kind:'where', expr}
+   */
+  bodyScope(scope) {
+    const loc = StyleRules.emptyLocation('body');
+    if (!scope) return loc;
+
+    if (scope.kind === 'column') {
+      loc.columns = [scope.colId];
+      loc.rows = { mode: 'all', indices: [], expr: '' };
+    } else if (scope.kind === 'row') {
+      loc.rows = { mode: 'index', indices: [scope.srcIndex], expr: '' };
+    } else if (scope.kind === 'where') {
+      loc.rows = { mode: 'expr', indices: [], expr: scope.expr || '' };
+    }
+    return loc;
+  },
+
+  /**
+   * A row expression that matches the clicked cell's own value, as a starting
+   * point for one the user then edits.
+   *
+   * `==` rather than a guessed `>=`: the operator and any round number are the
+   * user's intent, not something a click can know, and an expression that is
+   * exactly true of what was clicked is the one honest seed. It is not
+   * necessarily unique to that row — which is why the button says how many
+   * rows it currently matches.
+   *
+   * Falls back to `v['id']` when the column id is not a usable identifier,
+   * matching what `evalRowExpr` actually puts in scope.
+   */
+  seedExpr(colId, value, type) {
+    const ref = StyleRules.ref(colId);
+
+    if (value === null || value === undefined || value === '') return ref + " == ''";
+    if (type === 'number') {
+      const n = Util.toNumber(value);
+      if (n !== null && isFinite(n)) return ref + ' == ' + n;
+    }
+    return ref + ' == ' + JSON.stringify(String(value));
   },
 
   /**

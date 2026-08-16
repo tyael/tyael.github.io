@@ -12,6 +12,7 @@ const PanelStyle = {
 
   id: 'style',
   label: 'Style',
+  hint: 'Style rules aimed at cells you select',
 
   render(spec) {
     const panel = Util.el('div.panel');
@@ -30,16 +31,23 @@ const PanelStyle = {
       'Select cells in the table and style them from the inspector to add one.'
     ));
 
-    if (spec.ruleError || (App.model && App.model.ruleError)) {
+    // Only the model has this. `spec.ruleError` was also read here and never
+    // written anywhere — and would have thrown on the line below whenever
+    // `App.model` was null.
+    if (App.model && App.model.ruleError) {
       panel.appendChild(Util.el('div.field-hint', {
         style: { color: 'var(--danger)' },
-        text: '⚠ Row expression: ' + (App.model.ruleError || spec.ruleError)
+        text: '⚠ Row expression: ' + App.model.ruleError
       }));
     }
 
     const list = Controls.itemList(spec.styleRules, (rule, index) =>
       PanelStyle.body(rule, index, columns, byId), {
       key: 'styleRules',
+      // A rule's editor is three sections deep, so a list of them is long
+      // before it is useful. The subtitle stays visible when collapsed, which
+      // is what says which rule this is.
+      collapsible: true,
       title: (rule) => rule.label || 'Style rule',
       subtitle: (rule) => StyleRules.describe(rule, byId),
       enabled: (rule) => rule.enabled !== false,
@@ -72,7 +80,7 @@ const PanelStyle = {
           Store.update((draft) => { draft.styleRules = []; });
         }, { kind: 'danger' }) : null
       ].filter(Boolean))
-    ], { key: 'style.rules' }));
+    ], { key: 'style.rules', action: Controls.collapseAll('styleRules', spec.styleRules) }));
 
     return panel;
   },
@@ -117,6 +125,99 @@ const PanelStyle = {
     }, 'sr.' + rule.id));
 
     return body;
+  },
+
+  /**
+   * Everything a row expression can name, complete and clickable.
+   *
+   * This used to be one line of text — `in scope: a, b, c…` — truncated at 90
+   * characters, which on any real dataset trailed off before the column you
+   * wanted. Worse, it listed only ids that are bare JS identifiers, so a column
+   * needing `v['2024']` did not appear at all and there was nothing to say the
+   * form existed. And its identifier test omitted the reserved words, so a
+   * column called `n` was advertised as usable by name when typing `n` gives
+   * you the row count instead.
+   *
+   * Every column is listed now, each in the exact form you would type — which
+   * comes from `StyleRules.ref`, the same function `evalRowExpr` and `seedExpr`
+   * use, so the list cannot advertise a name the compiler does not accept.
+   * `row` and `n` are listed too: they are in scope and were only ever
+   * mentioned in a sentence above.
+   *
+   * The box scrolls rather than growing, because this sits inside a rule item
+   * inside a panel, and a fifty-column dataset would otherwise push the style
+   * controls off the screen.
+   */
+  scopeList(columns, exprKey, onChange) {
+    const TYPE_ABBR = { number: 'num', text: 'text', date: 'date', bool: 'bool' };
+
+    /* Insert at the caret, or append when the field is not focused. */
+    const insert = (token) => {
+      const field = document.querySelector('[data-ctl="' + CSS.escape(exprKey) + '"]');
+      if (!field) return;
+
+      const focused = document.activeElement === field;
+      const start = focused ? field.selectionStart : field.value.length;
+      const end = focused ? field.selectionEnd : field.value.length;
+      const next = field.value.slice(0, start) + token + field.value.slice(end);
+      const caret = start + token.length;
+
+      // Written into the live field *before* the store update, so the rebuild
+      // that follows finds the caret where the user will expect it —
+      // `rememberFocus` reads `selectionStart` off the focused control, and a
+      // panel rebuild is exactly what happens next.
+      field.value = next;
+      field.focus();
+      try { field.setSelectionRange(caret, caret); } catch (e) { /* not selectable */ }
+
+      onChange(next);
+    };
+
+    const chip = (token, title, suffix) => Util.el('button.chip.scope-chip', {
+      type: 'button',
+      title: title,
+      on: {
+        // The chip must not steal focus, or the caret position it is about to
+        // insert at is gone by the time the click lands.
+        mousedown: (e) => e.preventDefault(),
+        click: () => insert(token)
+      }
+    }, [
+      Util.el('span', { text: token }),
+      suffix ? Util.el('span.scope-chip-type', { text: suffix }) : null
+    ]);
+
+    const chips = columns.map((col) => {
+      const token = StyleRules.ref(col.id);
+      const type = TYPE_ABBR[col.type] || col.type || '';
+
+      // Two different reasons a column cannot be written bare, and saying the
+      // wrong one is worse than saying nothing: `n` *is* a valid JavaScript
+      // name, it is just already taken by the row count.
+      let note = col.label;
+      if (StyleRules.RESERVED.indexOf(col.id) >= 0) {
+        note = col.label + ' — “' + col.id + '” already means something else in an ' +
+          'expression, so the column is reached through v[…]';
+      } else if (!StyleRules.bareName(col.id)) {
+        note = col.label + ' — “' + col.id + '” is not a name JavaScript can use, ' +
+          'so the column is reached through v[…]';
+      }
+      return chip(token, note, type);
+    });
+
+    return Util.el('div.scope-box', null, [
+      Util.el('div.scope-head', {
+        text: 'In scope (' + columns.length + ' column' + (columns.length === 1 ? '' : 's') + ')'
+      }),
+      Util.el('div.chip-set.scope-chips', null, chips),
+      // Outside the scrolling area: these two are always in scope, so they
+      // should not be something you have to scroll a long column list to find.
+      Util.el('div.scope-foot', null, [
+        Util.el('span.scope-foot-label', { text: 'also' }),
+        chip('row', 'The 0-based index of the row', 'num'),
+        chip('n', 'The number of rows', 'num')
+      ])
+    ]);
   },
 
   locationEditor(rule, ruleIndex, loc, locIndex, columns, byId) {
@@ -177,16 +278,16 @@ const PanelStyle = {
           { placeholder: 'population > 1e6 && state != "NT"' }), { wide: true }));
 
         nodes.push(Util.el('div.field-hint', {
-          text: 'A JavaScript condition over the row. Column ids are in scope by name; ' +
-            'use v["2024"] for ids that are not valid identifiers. `row` is the 0-based index, `n` the row count.'
+          text: 'A JavaScript condition over the row. Click a name below to insert it. ' +
+            'Numeric columns arrive as numbers, so > and < compare as you would expect; ' +
+            'everything else arrives as text.'
         }));
 
-        const validIds = columns.filter((c) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(c.id));
-        if (validIds.length) {
-          nodes.push(Util.el('div.item-sub', {
-            text: 'in scope: ' + Util.truncate(validIds.map((c) => c.id).join(', '), 90)
-          }));
-        }
+        nodes.push(PanelStyle.scopeList(columns,
+          'loc.expr.' + rule.id + '.' + locIndex,
+          (value) => Store.update((draft) => {
+            draft.styleRules[ruleIndex].locations[locIndex].rows.expr = value;
+          }, { coalesce: 'loc.expr.' + rule.id + '.' + locIndex })));
       }
     }
 
@@ -231,7 +332,9 @@ const PanelStyle = {
       // `key` is a side, or 'all' to set every side at once.
       const sides = key === 'all' ? StyleRules.SIDES : [key];
       for (const side of sides) {
-        if (!value || value.style === 'none') delete style.borders[side];
+        // Inheriting is the *absence* of the side. A style of 'none' is kept,
+        // because it means something different: take the line off these cells.
+        if (!value || !value.style || value.style === 'inherit') delete style.borders[side];
         else style.borders[side] = Object.assign({}, style.borders[side], value);
       }
     } else if (section === 'fill') {
@@ -258,10 +361,13 @@ const PanelStyle = {
 
     /* ---- Text ---- */
 
+    // Every one of these is optional: a rule sets what it sets and the rest
+    // comes from the part's own options. "inherit" is that state, and it is
+    // the one a new rule starts in.
     const textFields = StyleRules.TEXT_PROPS.map((prop) =>
       Controls.field(prop.label,
         Controls.forParam(prop, text[prop.key], (value) => onSet('text', prop.key, value),
-          keyPrefix + '.text')));
+          keyPrefix + '.text', { unset: 'inherit' })));
 
     wrap.appendChild(Controls.section('Text', textFields, { key: keyPrefix + '.text' }));
 
@@ -316,10 +422,14 @@ const PanelStyle = {
       Util.el('div.chip-set', null, sideButtons),
       Util.el('div', { style: { height: '7px' } }),
 
+      // 'inherit' and 'none' are different answers and both are needed: leave
+      // the option's line alone, or take it off these cells. The dropdown used
+      // to offer only the option list, where 'none' did the first and there
+      // was no way to ask for the second.
       Controls.field('Style', Controls.select(keyPrefix + '.border.style',
-        OptionsSchema.BORDER_STYLES, shown.style || 'none',
+        ['inherit'].concat(OptionsSchema.BORDER_STYLES), shown.style || 'inherit',
         (value) => {
-          if (value === 'none') onSet('borders', state, null);
+          if (value === 'inherit') onSet('borders', state, null);
           else write({ style: value });
         })),
 
@@ -330,7 +440,8 @@ const PanelStyle = {
         shown.color || '#000000', (value) => write({ color: value }))),
 
       Util.el('div.field-hint', {
-        text: 'Borders set here beat the table-wide rules and lines under Options.'
+        text: 'Borders set here beat the table-wide borders and lines under Options. ' +
+          '“inherit” leaves them alone; “none” takes the line off these cells.'
       })
     ], { key: keyPrefix + '.borders' });
   },

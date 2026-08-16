@@ -417,10 +417,14 @@ const RenderHtml = {
       'font-weight': opt['table.font.weight'],
       'font-style': opt['table.font.style'],
       'color': opt['table.font.color'],
-      'border-top': border('table.border.top'),
-      'border-bottom': border('table.border.bottom'),
-      'border-left': border('table.border.left'),
-      'border-right': border('table.border.right'),
+      // No border on the element at all. Every edge of this table is drawn by
+      // `edges.js` so that all of them resolve through one precedence path —
+      // an element border is a second mechanism, and two mechanisms drawing
+      // the same edge stack rather than one winning.
+      'border-top': null,
+      'border-bottom': null,
+      'border-left': null,
+      'border-right': null,
       '-webkit-font-smoothing': 'antialiased',
       'text-rendering': 'optimizeLegibility'
     }, margins));
@@ -537,13 +541,15 @@ const RenderHtml = {
     // The caption belongs to the figure, not the table, so it sits outside the
     // table element and cannot inherit its font. It is styled by id rather than
     // by `sel + ' …'` for the same reason.
+    // Its alignment is its own (`parts.captionAlign`). It used to be derived
+    // from `table.align` — where the *table* sits on the page — which is a
+    // third, unrelated thing, and left the caption with no control of its own.
     rule(sel + '-caption', {
       'font-family': OptionsSchema.fontStack(opt['table.font.names']),
       'font-size': Util.cssLength(opt['table.font.size'], '16px'),
       'color': opt['table.font.color'],
       'margin-top': '10px',
-      'text-align': opt['table.align'] === 'right' ? 'right'
-        : (opt['table.align'] === 'center' ? 'center' : 'left')
+      'text-align': model.captionAlign || 'center'
     });
 
     /* ---- Striping ---- */

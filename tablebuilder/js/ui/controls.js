@@ -128,7 +128,9 @@ const Controls = {
           text: req.fix.label,
           on: {
             click: () => {
-              App.activePanel = req.fix.panel;
+              // Through `setPanel`, so a fix that points at an advanced-tier
+              // panel opens that tier rather than landing on a hidden tab.
+              App.setPanel(req.fix.panel);
               App.renderRail();
             }
           }
@@ -268,7 +270,7 @@ const Controls = {
     const field = Util.el('input', {
       type: 'text',
       value: value === null || value === undefined ? '' : value,
-      placeholder: opts.nullable ? 'not set' : '#000000',
+      placeholder: opts.placeholder || (opts.nullable ? 'not set' : '#000000'),
       dataset: { ctl: key },
       style: { fontFamily: 'var(--font-mono)', fontSize: '11px' },
       on: {
@@ -423,20 +425,51 @@ const Controls = {
     items.forEach((item, index) => {
       const head = Util.el('div.item-head');
 
+      let handle = null;
       if (opts.onReorder) {
-        head.appendChild(Util.el('span.item-drag', { text: '⠿', title: 'Drag to reorder' }));
+        handle = Util.el('span.item-drag', { text: '⠿', title: 'Drag to reorder' });
+        head.appendChild(handle);
       }
 
-      head.appendChild(Util.el('div.item-title', {
-        text: opts.title ? opts.title(item, index) : ('Item ' + (index + 1))
-      }));
+      // Collapse is per item and remembered, so a long list stays scannable
+      // across rebuilds. See `Controls.itemStateKey` for what identifies an
+      // item — the list and the collapse-all control must agree, and deriving
+      // it in two places is how they stopped agreeing once already.
+      const stateKey = opts.collapsible ? Controls.itemStateKey(opts.key, item, index) : null;
+      const startCollapsed = stateKey ? Controls.sectionState(stateKey, false) : false;
+
+      let caret = null;
+      if (opts.collapsible) {
+        caret = Util.el('span.item-caret', { text: '▾', title: 'Show or hide the details' });
+        head.appendChild(caret);
+      }
+
+      const title = Util.el('div.item-title' + (opts.collapsible ? '.is-clickable' : ''), {
+        text: opts.title ? opts.title(item, index) : ('Item ' + (index + 1)),
+        title: opts.collapsible ? 'Show or hide the details' : ''
+      });
+      head.appendChild(title);
+
+      // An item whose toggle cannot do anything says so, once, from one place.
+      // `opts.toggleInert` returns `{because, fix}` or null; the checkbox and
+      // the note below both read it, so they cannot describe different reasons.
+      const inert = opts.toggleInert ? opts.toggleInert(item, index) : null;
 
       if (opts.onToggle) {
-        head.appendChild(Controls.checkbox(
+        const box = Controls.checkbox(
           (opts.key || 'item') + '.' + index + '.on',
           opts.enabled ? opts.enabled(item) : true,
           (on) => opts.onToggle(item, index, on)
-        ));
+        );
+        if (inert) {
+          // Genuinely disabled, unlike `Controls.field`'s inert text controls —
+          // those stay editable because disabling one would trap whatever had
+          // already been typed into it. A checkbox holds nothing, so a control
+          // that visibly moves and changes nothing is the worse option.
+          box.disabled = true;
+          box.title = inert.because;
+        }
+        head.appendChild(box);
       }
 
       if (opts.onRemove) {
@@ -447,26 +480,136 @@ const Controls = {
         }));
       }
 
-      const node = Util.el('div.item', null, [head]);
+      const node = Util.el('div.item' + (startCollapsed ? '.is-collapsed' : ''), null, [head]);
+
+      if (opts.collapsible) {
+        const toggle = () => {
+          const next = !node.classList.contains('is-collapsed');
+          node.classList.toggle('is-collapsed', next);
+          Controls.setSectionState(stateKey, next);
+        };
+        // The title and the caret, not the whole head: the head also carries
+        // the enable checkbox and the remove button, and a click on either of
+        // those is not a request to collapse.
+        title.addEventListener('click', toggle);
+        caret.addEventListener('click', toggle);
+      }
       if (opts.subtitle) {
         const sub = opts.subtitle(item, index);
         if (sub) node.appendChild(Util.el('div.item-sub', { text: sub }));
       }
 
+      if (inert) {
+        const note = Util.el('div.item-inert-note', null, [
+          Util.el('span', { text: inert.because })
+        ]);
+        if (inert.fix) {
+          note.appendChild(Util.el('button.btn.btn-mini.btn-ghost', {
+            type: 'button',
+            text: inert.fix.label,
+            on: {
+              click: (e) => {
+                e.stopPropagation();
+                App.goToPanel(inert.fix.panel, inert.fix.section);
+              }
+            }
+          }));
+        }
+        node.appendChild(note);
+      }
+
       const body = renderItem(item, index);
       if (body) node.appendChild(Util.el('div.item-body', null, [body]));
 
-      if (opts.onReorder) Controls.makeDraggable(node, list, index, opts.onReorder);
+      if (opts.onReorder) Controls.makeDraggable(node, list, index, opts.onReorder, handle);
       list.appendChild(node);
     });
 
     return list;
   },
 
-  /** Wire up HTML5 drag-and-drop reordering for one item. */
-  makeDraggable(node, list, index, onReorder) {
-    node.setAttribute('draggable', 'true');
+  /**
+   * Where an item's collapsed state is remembered.
+   *
+   * Identified by whatever the item is, in preference to where it sits: an
+   * object's `id`, a plain string list's own value (the columns list is a list
+   * of column ids), and only then the index. Keyed by index, reordering the
+   * list would leave the collapsed state behind on whatever moved into the
+   * slot.
+   */
+  itemStateKey(listKey, item, index) {
+    const id = (item && item.id) || (typeof item === 'string' ? item : null);
+    return 'item.' + (listKey || 'item') + '.' + (id === null ? index : id);
+  },
+
+  /**
+   * A collapse-all / expand-all control for a section holding a collapsible
+   * list, to be passed as that section's `action`.
+   *
+   * It offers whichever is useful: *Expand all* only when everything is
+   * already collapsed, *Collapse all* otherwise — so a half-collapsed list
+   * offers the one that tidies it. Nothing is offered for a list of one,
+   * where both would be a no-op.
+   */
+  collapseAll(listKey, items) {
+    if (!items || items.length < 2) return null;
+
+    const keys = items.map((item, index) => Controls.itemStateKey(listKey, item, index));
+    const allCollapsed = keys.every((key) => Controls.sectionState(key, false));
+
+    return Util.el('button.btn.btn-mini.btn-ghost', {
+      type: 'button',
+      text: allCollapsed ? 'Expand all' : 'Collapse all',
+      title: allCollapsed ? 'Show every item' : 'Hide the details of every item',
+      on: {
+        click: (e) => {
+          // The section head is itself a toggle, and this button sits inside
+          // it — without this the section would close on the way past.
+          e.stopPropagation();
+          for (const key of keys) Controls.setSectionState(key, !allCollapsed);
+          App.renderRail();
+        }
+      }
+    });
+  },
+
+  /**
+   * Wire up HTML5 drag-and-drop reordering for one item.
+   *
+   * **The item is only draggable while the pointer is on its handle.** An
+   * ancestor carrying `draggable="true"` makes the browser treat a mousedown
+   * inside it as the start of a drag rather than as a caret placement, so
+   * every text field inside a reorderable item lost click-to-position and
+   * drag-to-select: you could focus it and move about with the arrow keys, but
+   * not click into the middle of what you had typed. That is every field in a
+   * style rule, footnote, source note, format rule, colour rule, spanner,
+   * merge and sort key — the `⠿` was decorative and the whole item was the
+   * drag source.
+   *
+   * The flag goes up on mousedown over the handle and comes down when the drag
+   * ends, or on any mouseup, so a press that never becomes a drag leaves
+   * nothing latched.
+   */
+  makeDraggable(node, list, index, onReorder, handle) {
+    node.setAttribute('draggable', 'false');
     node.dataset.index = index;
+
+    const disarm = () => node.setAttribute('draggable', 'false');
+    const arm = () => {
+      node.setAttribute('draggable', 'true');
+      // On the document, and once: a press that ends anywhere at all must put
+      // the flag back, or the item stays draggable and takes the next click
+      // meant for a field inside it.
+      document.addEventListener('mouseup', disarm, { once: true });
+    };
+
+    if (handle) {
+      handle.addEventListener('mousedown', arm);
+    } else {
+      // No handle to grab: keep the old whole-item behaviour rather than
+      // silently making the list unorderable.
+      node.setAttribute('draggable', 'true');
+    }
 
     node.addEventListener('dragstart', (e) => {
       e.dataTransfer.effectAllowed = 'move';
@@ -476,6 +619,7 @@ const Controls = {
 
     node.addEventListener('dragend', () => {
       node.classList.remove('is-dragging');
+      if (handle) disarm();
       for (const other of Util.qsa('.item', list)) other.classList.remove('is-drop-target');
     });
 
@@ -565,14 +709,26 @@ const Controls = {
   },
 
   /** Build the control for one formatter parameter. */
-  forParam(param, value, onChange, keyPrefix) {
+  /**
+   * A control for one schema param.
+   *
+   * `opts.unset` names the "not set" state and makes it reachable — a style
+   * rule's properties are all optional, and a select with no empty option
+   * rendered blank when unset and could never be put back. It is passed by the
+   * caller rather than read off the param because the same params are used for
+   * number formats and summaries, where there is nothing to inherit from and
+   * an empty option would be a lie.
+   */
+  forParam(param, value, onChange, keyPrefix, opts) {
     const key = (keyPrefix || 'param') + '.' + param.key;
+    const unset = (opts && opts.unset) || null;
 
     switch (param.type) {
       case 'bool':
         return Controls.checkbox(key, value, onChange);
       case 'select':
-        return Controls.select(key, param.enum, value, onChange, { labels: param.enumLabels });
+        return Controls.select(key, param.enum, value, onChange,
+          { labels: param.enumLabels, placeholder: unset });
       case 'int':
         return Controls.number(key, value, onChange,
           { min: param.min, max: param.max, step: 1, nullable: true });
@@ -580,11 +736,12 @@ const Controls = {
         return Controls.number(key, value, onChange,
           { min: param.min, max: param.max, step: 'any', nullable: true });
       case 'color':
-        return Controls.color(key, value, onChange, {});
+        return Controls.color(key, value, onChange,
+          { nullable: !!unset, placeholder: unset });
       case 'fonts':
         return Controls.fonts(key, value, onChange, { nullable: true });
       case 'len':
-        return Controls.length(key, value, onChange, {});
+        return Controls.length(key, value, onChange, { placeholder: unset });
       case 'text':
       default:
         return Controls.text(key, value, onChange, { placeholder: String(param.default || '') });

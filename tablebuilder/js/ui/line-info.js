@@ -143,8 +143,8 @@ const LineInfo = {
 
     const out = {
       title: drawn
-        ? (hit.axis === 'v' ? 'Vertical rule' : 'Horizontal rule')
-        : 'No rule here',
+        ? (hit.axis === 'v' ? 'Vertical line' : 'Horizontal line')
+        : 'No line here',
       detail: LineInfo.where(hit, model),
       values: drawn ? src.style + '  ·  ' + src.width + 'px  ·  ' + src.color :
         (src && src.style && src.style !== 'none' && src.style !== 'hidden')

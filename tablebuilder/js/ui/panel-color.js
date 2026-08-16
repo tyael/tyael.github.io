@@ -12,7 +12,10 @@
 const PanelColor = {
 
   id: 'color',
-  label: 'Colour',
+  // Non-breaking space binds "by value": a line should not end on a
+  // preposition, so the break falls after "Colour".
+  label: 'Colour by\u00A0value',
+  hint: 'Shade cells on a colour scale across the numbers in a column',
 
   METHODS: [
     { value: 'numeric', label: 'Continuous' },
@@ -36,6 +39,7 @@ const PanelColor = {
     const list = Controls.itemList(spec.dataColor, (rule, index) =>
       PanelColor.ruleBody(rule, index, spec, columns, byId), {
       key: 'dataColor',
+      collapsible: true,
       title: (rule) => (rule.palette || 'Blues') + ' → ' + rule.columns.length +
         ' column' + (rule.columns.length === 1 ? '' : 's'),
       subtitle: (rule) => (PanelColor.METHODS.find((m) => m.value === rule.method) || {}).label +
@@ -59,7 +63,7 @@ const PanelColor = {
         Controls.button(selected.length ? 'Add for selection (' + selected.length + ')' : 'Add rule',
           () => PanelColor.addRule(selected, columns, byId), { kind: 'primary' })
       ])
-    ], { key: 'color.rules' }));
+    ], { key: 'color.rules', action: Controls.collapseAll('dataColor', spec.dataColor) }));
 
     return panel;
   },
@@ -135,7 +139,11 @@ const PanelColor = {
         (value) => update((r) => { r.sharedDomain = value; })),
       { hint: 'On fits one scale across every listed column — right when they share units, wrong when they do not.' }));
 
-    body.appendChild(PanelColor.legend(rule, spec, byId));
+    // Null when the rule names no column that still exists — deselecting them
+    // all, or an import that took the column away. `appendChild(null)` throws
+    // and the rail goes blank with nothing on screen to explain it.
+    const legend = PanelColor.legend(rule, spec, byId);
+    if (legend) body.appendChild(legend);
 
     return body;
   },

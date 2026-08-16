@@ -11,7 +11,11 @@
 const PanelContent = {
 
   id: 'content',
-  label: 'Content',
+  // Non-breaking space before the ampersand: `text-wrap: balance` otherwise
+  // evens the two lines as "TITLES / & NOTES", and a line may not open on an
+  // ampersand. Binding it to the word before forces "TITLES & / NOTES".
+  label: 'Titles\u00A0& notes',
+  hint: 'Title, subtitle, caption, footnotes and source notes',
 
   MARKUP_HINT: '**bold**  *italic*  ^{sup}  _{sub}  `code`  <br>',
 
@@ -24,6 +28,8 @@ const PanelContent = {
     }
 
     panel.appendChild(PanelContent.headerSection(spec));
+    panel.appendChild(PanelContent.captionSection(spec));
+    panel.appendChild(PanelContent.stubheadSection(spec));
     panel.appendChild(PanelContent.footnotesSection(spec));
     panel.appendChild(PanelContent.sourceSection(spec));
 
@@ -41,33 +47,71 @@ const PanelContent = {
       draft.parts[key] = value;
     }, { coalesce: 'parts.' + key });
 
-    return Controls.section('Header', [
+    return Controls.section('Title & subtitle', [
       Controls.field('Title', Controls.textarea('parts.title', parts.title, set('title'),
         { rows: 2, placeholder: 'Table title' }), { wide: true }),
 
       Controls.field('Subtitle', Controls.textarea('parts.subtitle', parts.subtitle, set('subtitle'),
         { rows: 2, placeholder: 'Optional subtitle' }), { wide: true }),
 
-      Controls.field('Row-label header', Controls.text('parts.stubhead', parts.stubhead, set('stubhead'),
-        { placeholder: 'Label for the row-label column' }),
-        {
-          hint: 'The cell above the row labels — gt calls this the stubhead.',
-          requires: {
-            met: !!spec.structure.rownameCol,
-            because: 'Not shown yet — no row-label column is set.',
-            fix: { panel: 'structure', label: 'Set one' }
-          }
-        }),
-
-      Controls.field('Caption', Controls.textarea('parts.caption', parts.caption, set('caption'),
-        { rows: 2, placeholder: 'Figure caption, exported alongside the table' }), { wide: true }),
-
+      // This is `heading.align`, and it reaches the title and subtitle only.
+      // It used to sit in a box that also held the caption and the row-label
+      // header, neither of which it touches.
       Controls.field('Align', Controls.select('opt.headingAlign',
         ['center', 'left', 'right'], spec.options['heading.align'],
         (value) => Store.update((draft) => { draft.options['heading.align'] = value; }))),
 
       Util.el('div.field-hint', { text: PanelContent.MARKUP_HINT })
     ], { key: 'content.header' });
+  },
+
+  /* ================================================================
+     Caption
+     ================================================================ */
+
+  captionSection(spec) {
+    const parts = spec.parts;
+
+    return Controls.section('Caption', [
+      Controls.field(null, Controls.textarea('parts.caption', parts.caption,
+        (value) => Store.update((draft) => { draft.parts.caption = value; },
+          { coalesce: 'parts.caption' }),
+        { rows: 2, placeholder: 'Figure caption, shown below the table' }), { wide: true }),
+
+      Controls.field('Align', Controls.select('parts.captionAlign',
+        ['center', 'left', 'right'], parts.captionAlign || 'center',
+        (value) => Store.update((draft) => { draft.parts.captionAlign = value; }))),
+
+      Util.el('div.field-hint', {
+        text: 'A caption labels the figure rather than the table, so it sits below it and ' +
+          'has its own alignment. It reaches the preview, the standalone HTML page, LaTeX ' +
+          '\\caption{} and gt’s tab_caption() — but not the SVG, PNG or HTML fragment, ' +
+          'which are the table alone.'
+      }),
+      Util.el('div.field-hint', { text: PanelContent.MARKUP_HINT })
+    ], { key: 'content.caption' });
+  },
+
+  /* ================================================================
+     Row-label header
+     ================================================================ */
+
+  stubheadSection(spec) {
+    return Controls.section('Row-label header', [
+      Controls.field(null, Controls.text('parts.stubhead', spec.parts.stubhead,
+        (value) => Store.update((draft) => { draft.parts.stubhead = value; },
+          { coalesce: 'parts.stubhead' }),
+        { placeholder: 'Label for the row-label column' }),
+        {
+          wide: true,
+          hint: 'The cell above the row labels — gt calls this the stubhead.',
+          requires: {
+            met: !!spec.structure.rownameCol,
+            because: 'Not shown yet — no row-label column is set.',
+            fix: { panel: 'structure', label: 'Set one' }
+          }
+        })
+    ], { key: 'content.stubhead' });
   },
 
   /* ================================================================

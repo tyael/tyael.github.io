@@ -219,6 +219,60 @@ const Edges = {
       }
     }
 
+    /* ---- The outermost top and bottom ---- */
+
+    // Through the grid, like everything else. Painted on the element they were
+    // a *second* mechanism: the table's bottom border and the body's bottom
+    // border both drew, one on the element and one on the cells, and stacked
+    // into a line twice as thick instead of one winning. Here they resolve
+    // against every other claim on the same edge by the ordinary rules.
+    Edges.setH(grid, 0, all, Edges.edge(opt, 'table.border.top', 'structural'));
+    Edges.setH(grid, grid.nRows, all, Edges.edge(opt, 'table.border.bottom', 'structural'));
+
+    /* ---- Left and right edges, per band ---- */
+
+    // A top or bottom edge belongs to one place: the table has one of each.
+    // The sides run the whole height and therefore pass through the heading,
+    // the labels, the body and the footer — so they are drawn per band rather
+    // than as one border around the element, and each band can say whether it
+    // is enclosed.
+    //
+    // This is what `heading.border.lr`, `column_labels.border.lr`,
+    // `footnotes.border.lr` and `source_notes.border.lr` are for. They have
+    // been in the schema and in the Options panel since the beginning and drew
+    // nothing at all.
+    const sides = {
+      table: [Edges.edge(opt, 'table.border.left', 'structural'),
+        Edges.edge(opt, 'table.border.right', 'structural')],
+      heading: [Edges.edge(opt, 'heading.border.lr', 'structural'),
+        Edges.edge(opt, 'heading.border.lr', 'structural')],
+      labels: [Edges.edge(opt, 'column_labels.border.lr', 'structural'),
+        Edges.edge(opt, 'column_labels.border.lr', 'structural')],
+      footnote: [Edges.edge(opt, 'footnotes.border.lr', 'structural'),
+        Edges.edge(opt, 'footnotes.border.lr', 'structural')],
+      source: [Edges.edge(opt, 'source_notes.border.lr', 'structural'),
+        Edges.edge(opt, 'source_notes.border.lr', 'structural')]
+    };
+
+    for (let r = 0; r < grid.nRows; r += 1) {
+      const row = rows[r];
+      const bands = [];
+
+      // The table's own sides enclose the table proper — the column labels and
+      // the body. The heading and the footer are their own blocks above and
+      // below it, which is the arrangement the `.lr` options describe.
+      if (isHeader(row) || isBody(row)) bands.push(sides.table);
+      if (isHeader(row)) bands.push(sides.labels);
+      if (row.kind === 'title' || row.kind === 'subtitle') bands.push(sides.heading);
+      if (row.kind === 'footnote') bands.push(sides.footnote);
+      if (row.kind === 'source_note') bands.push(sides.source);
+
+      for (const band of bands) {
+        Edges.setV(grid, r, 0, band[0]);
+        Edges.setV(grid, r, nCols, band[1]);
+      }
+    }
+
     /* ---- The stub's right-hand rule ---- */
 
     const stubIndex = model.cols.findIndex((c) => c.kind === 'stub');
@@ -382,12 +436,27 @@ const Edges = {
   },
 
   /** Write a horizontal edge, keeping the stronger one. */
+  /**
+   * Does this candidate take an existing line *off* the grid?
+   *
+   * Only a style rule can, and only over an option. A rule that says `none` is
+   * the one way to remove a line from particular cells without switching the
+   * option off for the whole table — before this, an undrawn candidate simply
+   * never reached the grid, so the option's line stayed and the rule looked
+   * like it had done nothing.
+   */
+  suppresses(current, edge) {
+    return !!current && !edge.drawn &&
+      edge.source.kind === 'rule' && current.source.kind !== 'rule';
+  },
+
   setH(grid, r, range, edge) {
     if (!edge || r < 0 || r > grid.nRows) return;
     for (let c = Math.max(0, range.from); c < Math.min(grid.nCols, range.to); c += 1) {
       // Only drawn candidates reach the drawing grid, so `h` keeps its exact
       // meaning: null is "no line here". Provenance takes every candidate.
       if (edge.drawn) grid.h[r][c] = Edges.stronger(grid.h[r][c], edge);
+      else if (Edges.suppresses(grid.h[r][c], edge)) grid.h[r][c] = null;
       grid.hSrc[r][c] = Edges.strongerSource(grid.hSrc[r][c], edge);
     }
   },
@@ -396,6 +465,7 @@ const Edges = {
   setV(grid, r, c, edge) {
     if (!edge || r < 0 || r >= grid.nRows || c < 0 || c > grid.nCols) return;
     if (edge.drawn) grid.v[r][c] = Edges.stronger(grid.v[r][c], edge);
+    else if (Edges.suppresses(grid.v[r][c], edge)) grid.v[r][c] = null;
     grid.vSrc[r][c] = Edges.strongerSource(grid.vSrc[r][c], edge);
   },
 
@@ -443,8 +513,16 @@ const Edges = {
     let winner;
     let loser;
     if (a.drawn !== b.drawn) {
-      winner = a.drawn ? a : b;
-      loser = a.drawn ? b : a;
+      // A style rule wins whether or not it draws: "no border on these cells"
+      // is as much a decision as a border is, and it is the only way to take a
+      // line off a table without turning the option off everywhere. Between
+      // two options the drawn one still wins — several options claim the
+      // header/body boundary and the one asking for a line means it.
+      const drawnOne = a.drawn ? a : b;
+      const blankOne = a.drawn ? b : a;
+      const suppresses = blankOne.source.kind === 'rule' && drawnOne.source.kind !== 'rule';
+      winner = suppresses ? blankOne : drawnOne;
+      loser = suppresses ? drawnOne : blankOne;
     } else if (a.drawn) {
       winner = Edges.stronger(a, b);
       loser = winner === a ? b : a;

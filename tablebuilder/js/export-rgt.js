@@ -85,6 +85,42 @@ const ExportRgt = {
     return out;
   },
 
+  /**
+   * `dplyr::mutate()` for the cell corrections, or null if there are none.
+   *
+   * Emitted as a row-numbered `case_when` rather than baked into the tibble
+   * above, for two reasons. A correction stays legible *as* a correction, so
+   * the R says what was changed rather than presenting the fixed value as
+   * though it came out of the file. And the branch that points at
+   * `readr::read_csv()` instead of inlining the rows gets corrected too — bake
+   * them into the tibble and every table over `MAX_INLINE_ROWS` would export
+   * uncorrected.
+   *
+   * Row numbers are positions in the data as imported, which is exactly what
+   * `srcIndex` counts, and `dplyr::mutate` runs before the `filter()` below, so
+   * nothing has been dropped from underneath them yet.
+   *
+   * Only *applied* corrections are emitted. One whose guard no longer matches
+   * did not change the preview and must not change the export.
+   */
+  corrections(spec, working, columnsById) {
+    const applied = Corrections.apply(working.rows, spec.corrections).applied;
+    if (!applied.length) return null;
+
+    const args = [];
+    for (const [colId, entries] of Util.groupBy(applied, (c) => c.colId)) {
+      const column = columnsById[colId];
+      if (!column) continue;
+      const symbol = ExportRgt.symbol(colId);
+      const clauses = entries.map((c) =>
+        'dplyr::row_number() == ' + (c.srcIndex + 1) + ' ~ ' + ExportRgt.value(c.to, column.type));
+      args.push(symbol + ' = dplyr::case_when(' + clauses.join(', ') +
+        ', .default = ' + symbol + ')');
+    }
+
+    return args.length ? 'dplyr::mutate(' + args.join(', ') + ')' : null;
+  },
+
   /* ================================================================
      Pipeline
      ================================================================ */
@@ -94,6 +130,36 @@ const ExportRgt = {
     const lines = [];
     const columnsById = {};
     for (const col of working.columns) columnsById[col.id] = col;
+
+    /* ---- mutate(): cell corrections ---- */
+
+    // Before filter(), because in the preview the filter is applied to the
+    // corrected value, and before gt() because a correction is data. Without
+    // this the exported table would still carry a typo the preview does not —
+    // the same divergence dplyr::filter() is here to avoid.
+    const corrections = ExportRgt.corrections(spec, working, columnsById);
+    if (corrections) lines.push(corrections);
+
+    /* ---- filter() ---- */
+
+    // Before gt(), because it decides which rows there are. The data block
+    // above emits every row of the source, so without this the exported table
+    // would have rows the preview does not — and the summary rows would be
+    // computed over a different set than the ones on screen.
+    const conditions = Filter.active(st.filter, columnsById);
+    if (conditions.length) {
+      const joiner = (st.filter.match === 'any') ? ' | ' : ', ';
+      const parts = conditions.map((condition) => {
+        const op = Filter.get(condition.op);
+        const column = columnsById[condition.col];
+        const numeric = !!(column && column.type === 'number');
+        const expr = op.r(ExportRgt.symbol(condition.col), condition.value, condition.value2, numeric);
+        // `any` joins with `|`, so anything that is itself a compound (between,
+        // is empty) has to be parenthesised or the precedence changes.
+        return (joiner === ' | ' && /[|&]/.test(expr)) ? '(' + expr + ')' : expr;
+      });
+      lines.push('dplyr::filter(' + parts.join(joiner) + ')');
+    }
 
     /* ---- gt() ---- */
 
@@ -491,8 +557,14 @@ const ExportRgt = {
         return 'cells_column_labels(' + args.join(', ') + ')';
 
       case 'column_spanners': {
+        // From the model's own spec, not `Store.get()`. This was the one place
+        // an exporter reached for global state instead of what it was handed,
+        // which made `ExportRgt.build(spec, model)` not a function of its
+        // arguments — it would emit the *store's* spanner labels for whatever
+        // spec it was given, and throw outright on an empty store.
+        const authored = (model && model.spec && model.spec.structure.spanners) || [];
         const spanners = (loc.spanners || [])
-          .map((id) => (Store.get().structure.spanners.find((sp) => sp.id === id) || {}).label)
+          .map((id) => (authored.find((sp) => sp.id === id) || {}).label)
           .filter(Boolean);
         return 'cells_column_spanners(spanners = ' +
           (spanners.length ? ExportRgt.strVector(spanners) : 'everything()') + ')';

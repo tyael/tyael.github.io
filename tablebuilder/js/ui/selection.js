@@ -312,6 +312,9 @@ const Selection = {
   paintRulePreview(table, rule) {
     if (!rule || !rule.locations) return;
 
+    // The error this may produce is deliberately dropped: hovering a rule is
+    // not editing it, and the render's own compile is what the warning in the
+    // Style panel reports on.
     const compiled = StyleRules.compile([Object.assign({}, rule, {
       enabled: true,
       style: { text: { color: '#000' } }   // force a non-empty style so it compiles
@@ -319,12 +322,12 @@ const Selection = {
       rows: App.workingRows(),
       columnsById: App.workingColumnsById()
     });
-    if (!compiled.length) return;
+    if (!compiled.rules.length) return;
 
     for (const cell of Util.qsa('.gt-cell', table)) {
       const item = Selection.descriptorOf(cell);
       if (!item) continue;
-      if (StyleRules.resolve(compiled, item)) cell.classList.add('is-rule-preview');
+      if (StyleRules.resolve(compiled.rules, item)) cell.classList.add('is-rule-preview');
     }
   },
 
@@ -372,14 +375,20 @@ const Selection = {
     return items.length + ' × ' + base;
   },
 
-  /** A column's display label, falling back to its id. */
+  /**
+   * What to call a column in the selection chip and summary.
+   *
+   * Goes through `Spec.columnTitle` rather than reading `model.cols` for the
+   * label, because a hidden column can still be part of a selection descriptor
+   * while having no entry in `model.cols` at all — and because the label a
+   * chip shows and the label the table draws must not be decided twice.
+   * `describe()` keeps the raw id: that one is gt code, where the id is the
+   * name.
+   */
   columnLabel(colId) {
     const model = App.model;
-    if (model && model.cols) {
-      const col = model.cols.find((c) => c.colId === colId);
-      if (col && col.label) return col.label;
-    }
-    return colId;
+    const column = model && model.columnsById ? model.columnsById[colId] : null;
+    return column ? Spec.columnTitle(Store.get(), column) : colId;
   },
 
   /**

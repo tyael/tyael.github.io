@@ -23,8 +23,17 @@
 
 const Markup = {
 
-  /** Characters that start a markup construct, for the fast-path check. */
-  TRIGGER: /[*^_`<]/,
+  /**
+   * Characters that start a markup construct, for the fast-path check.
+   *
+   * The backslash belongs here even though it starts nothing: `parse` consumes
+   * `\_` as an escape, so a string whose only special character is a backslash
+   * must not take the fast path. Without it `a\_b` came back with the escape
+   * still in it, while `a\_b*c*` — the same escape, with an unrelated bold
+   * elsewhere — resolved it. `hasMarkup` is unaffected: an escape parses to
+   * one plain text node, which is what it reports.
+   */
+  TRIGGER: /[*^_`<\\]/,
 
   /**
    * Parse text into a token tree.
@@ -182,6 +191,20 @@ const Markup = {
       }
     }
     return out;
+  },
+
+  /**
+   * Escape this markup's own special characters, so a string survives `parse`
+   * unchanged.
+   *
+   * Needed by anything that derives a part's text from data rather than from
+   * typing: a filename like `field_survey.csv` reads as a subscript otherwise
+   * (`_s`, the bare single-character form), and renders as "field<sub>s</sub>urvey".
+   * The escape set matches the one `parse` consumes.
+   */
+  escape(str) {
+    return String(str === null || str === undefined ? '' : str)
+      .replace(/([\\*^_`<])/g, '\\$1');
   },
 
   /** Escape LaTeX's special characters in literal text. */

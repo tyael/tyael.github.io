@@ -9,24 +9,45 @@
    are stripped on export.
    ============================================ */
 
+/* The sheet. On a light stage a heavy shadow reads as grime, so the edge is
+   carried by a hairline and the shadow only lifts it off the stage. */
 .paper {
   background: #ffffff;
   padding: 28px 32px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.28), 0 12px 40px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(34, 33, 28, 0.14);
+  box-shadow: var(--shadow-sheet);
   display: inline-block;
 }
 
-.paper.is-dark {
+/* The surface behind the table. It shows through wherever the table's own
+   background is transparent, which is the whole point of offering a choice:
+   a dark page and a checkerboard answer "what does this look like where it is
+   going" and "is this actually transparent" respectively. */
+
+.paper.surface-dark {
   background: #10151c;
 }
 
-.paper.is-transparent {
-  background: transparent;
-  box-shadow: none;
+.paper.surface-checker {
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(45deg, #d9dde3 25%, transparent 25%, transparent 75%, #d9dde3 75%),
+    linear-gradient(45deg, #d9dde3 25%, transparent 25%, transparent 75%, #d9dde3 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
 }
 
 /* ============================================
    Selection affordances (editor only)
+
+   These land on top of a table whose own colours belong to the user, so they
+   deliberately do *not* use the editor's sage accent — chrome colour sitting
+   inside the table would read as part of the design. They are marks made on a
+   proof: red for what you have selected, gold for the anchor the next
+   shift-click extends from.
+
+   The three that can be on screen at once — range, anchor and rule preview —
+   carry three different hues for that reason.
    ============================================ */
 
 .gt-table.is-selectable .gt-cell {
@@ -35,32 +56,34 @@
 
 /* Hover highlight — an inset ring so it never shifts layout */
 .gt-table.is-selectable .gt-cell:hover {
-  box-shadow: inset 0 0 0 1px rgba(76, 159, 255, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(34, 33, 28, 0.28);
 }
 
 /* Selected cells. Uses outline + inset shadow rather than border so that
-   the generated border model is left completely untouched. */
+   the generated border model is left completely untouched. The white inner
+   ring separates the mark from a table rule running under it. */
 .gt-cell.is-selected {
   box-shadow:
-    inset 0 0 0 2px rgba(76, 159, 255, 0.9),
-    inset 0 0 0 3px rgba(255, 255, 255, 0.5) !important;
+    inset 0 0 0 2px rgba(163, 55, 44, 0.88),
+    inset 0 0 0 3px rgba(255, 255, 255, 0.55) !important;
 }
 
 .gt-cell.is-selected-anchor {
   box-shadow:
-    inset 0 0 0 2px rgba(255, 176, 46, 0.95),
-    inset 0 0 0 3px rgba(255, 255, 255, 0.5) !important;
+    inset 0 0 0 2px rgba(176, 124, 26, 0.95),
+    inset 0 0 0 3px rgba(255, 255, 255, 0.55) !important;
 }
 
 /* Footnote-attach affordance */
 .gt-table.is-footnote-mode .gt-cell:hover {
-  box-shadow: inset 0 0 0 2px rgba(224, 163, 62, 0.85);
+  box-shadow: inset 0 0 0 2px rgba(138, 95, 18, 0.85);
   cursor: crosshair;
 }
 
-/* Rule-preview: flashes the cells a hovered style rule targets */
+/* Rule-preview: flashes the cells a hovered style rule targets. Sage, because
+   this one *is* chrome — it shows the reach of an item in the rail. */
 .gt-cell.is-rule-preview {
-  box-shadow: inset 0 0 0 2px rgba(63, 179, 127, 0.85) !important;
+  box-shadow: inset 0 0 0 2px rgba(75, 107, 69, 0.9) !important;
 }
 
 /* ============================================
@@ -99,15 +122,15 @@
   margin-top: 10px;
   font-family: var(--font-ui);
   font-size: 11px;
-  color: #8a6d1f;
-  background: #fff5d6;
-  border: 1px solid #e8cf85;
+  color: #7d5710;
+  background: #fbf3dd;
+  border: 1px solid #e3cf95;
   border-radius: 3px;
   padding: 5px 9px;
   display: inline-block;
 }
 
-.paper.is-dark .preview-notice {
+.paper.surface-dark .preview-notice {
   color: #e0c37a;
   background: rgba(224, 163, 62, 0.12);
   border-color: rgba(224, 163, 62, 0.4);

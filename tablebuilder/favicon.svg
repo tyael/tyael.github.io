@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <!-- Table Builder's mark: a header band over a ruled body with a stub
+       column. One path, not a set of rectangles — abutting rectangles each
+       antialias their own shared edge, and two half-covered edges composite to
+       less than one, so the seams show and the mark reads as loose overlapping
+       pieces rather than one shape.
+
+       Drawn on a 16-unit grid with whole-number coordinates so every rule
+       lands on a whole pixel at favicon size. The outline runs clockwise and
+       the four cells counter-clockwise, so the default nonzero fill rule
+       punches them out.
+
+       The favicon sits on a white tile: the sage on its own is too dark to pick
+       out of a dark browser tab, and a tile carries its own contrast whatever
+       the tab is. The mark stays sage rather than being knocked out white, so
+       the icon looks like the app does — and at 16px a sage mark on white
+       holds its shape better than a white one on sage.
+       The same path is inline in index.html with fill="currentColor", where it
+       follows the accent instead; a pipeline check holds the two paths equal. -->
+  <rect width="16" height="16" fill="#FFFFFF"/>
+  <path fill="#4B6B45" d="M1 1H15V15H1Z M2 5V9H7V5Z M8 5V9H14V5Z M2 10V14H7V10Z M8 10V14H14V10Z"/>
+</svg>

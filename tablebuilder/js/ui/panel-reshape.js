@@ -9,6 +9,7 @@ const PanelReshape = {
 
   id: 'reshape',
   label: 'Reshape',
+  hint: 'Pivot the data between long and wide before tabulating',
 
   render(spec) {
     const panel = Util.el('div.panel');

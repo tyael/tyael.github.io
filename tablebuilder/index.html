@@ -7,7 +7,10 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Lato:wght@400;700&family=Merriweather:wght@400;700&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;600&family=Roboto+Condensed:wght@400;700&family=EB+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Lato:wght@400;700&family=Merriweather:wght@400;700&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;600&family=Public+Sans:wght@300;400;700&family=Roboto:wght@300;400;700&family=Roboto+Condensed:wght@400;700&family=EB+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="favicon.ico" sizes="16x16 32x32 48x48 64x64">
 
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="css/table-preview.css">
@@ -19,20 +22,27 @@
   <!-- ============ Top bar ============ -->
   <header class="topbar">
     <div class="topbar-brand">
-      <span class="brand-mark">▦</span>
+      <svg class="brand-mark" viewBox="0 0 16 16" fill="currentColor" role="img" aria-label="Table Builder">
+        <path d="M1 1H15V15H1Z M2 5V9H7V5Z M8 5V9H14V5Z M2 10V14H7V10Z M8 10V14H14V10Z"/>
+      </svg>
       <span class="brand-name">Table Builder</span>
       <span class="brand-file" id="file-label">no data</span>
     </div>
 
     <div class="topbar-actions">
-      <button class="btn" id="btn-import" title="Import a CSV or TSV file">Import CSV</button>
+      <button class="btn" id="btn-new" title="Clear everything and start again">New project</button>
+      <button class="btn" id="btn-paste" title="Paste a table from a spreadsheet or a web page">Paste table</button>
+      <span class="topbar-sep"></span>
       <button class="btn btn-icon" id="btn-undo" title="Undo (Ctrl+Z)" disabled>↶</button>
       <button class="btn btn-icon" id="btn-redo" title="Redo (Ctrl+Shift+Z)" disabled>↷</button>
+      <button class="btn btn-icon" id="btn-history" title="Everything done since the data was loaded"
+              aria-expanded="false" disabled>▾</button>
       <span class="topbar-sep"></span>
-      <button class="btn" id="btn-open-spec" title="Open a saved .tablespec.json">Open</button>
-      <button class="btn" id="btn-save-spec" title="Save the design as .tablespec.json">Save</button>
+      <button class="btn" id="btn-open-spec" title="Open a saved project (.tablespec.json)">Open project</button>
+      <button class="btn" id="btn-save-spec" title="Save this project as .tablespec.json">Save project</button>
       <span class="topbar-sep"></span>
-      <button class="btn btn-primary" id="btn-export" title="Export the table">Export ▾</button>
+      <button class="btn btn-primary" id="btn-export" title="Export the table"
+              aria-expanded="false">Export ▾</button>
     </div>
   </header>
 
@@ -51,17 +61,20 @@
     <main class="stage" id="stage">
       <div class="stage-toolbar">
         <div class="stage-toolbar-group">
-          <label class="mini-label">Zoom</label>
-          <button class="btn btn-mini" id="btn-zoom-out">−</button>
-          <span class="zoom-value" id="zoom-value">100%</span>
-          <button class="btn btn-mini" id="btn-zoom-in">+</button>
-          <button class="btn btn-mini" id="btn-zoom-fit">Fit</button>
+          <label class="mini-label" for="zoom-select">Zoom</label>
+          <button class="btn btn-mini" id="btn-zoom-out" title="Zoom out (−)">−</button>
+          <select class="stage-select zoom-select" id="zoom-select" title="Zoom level (0 for 100%)"></select>
+          <button class="btn btn-mini" id="btn-zoom-in" title="Zoom in (+)">+</button>
+          <button class="btn btn-mini" id="btn-zoom-fit" title="Fit the table to the stage width">Fit</button>
         </div>
         <div class="stage-toolbar-group">
-          <label class="switch">
-            <input type="checkbox" id="toggle-canvas-dark">
-            <span>Dark canvas</span>
-          </label>
+          <label class="mini-label" for="canvas-surface">Canvas</label>
+          <select class="stage-select" id="canvas-surface"
+                  title="The surface the table sits on. Only visible where the table's own background is transparent — set that under Options › Table › Background.">
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+            <option value="checker">Checkerboard</option>
+          </select>
           <label class="switch">
             <input type="checkbox" id="toggle-select" checked>
             <span>Select mode</span>
@@ -76,7 +89,7 @@
         <div class="stage-scroll" id="stage-scroll">
           <div class="preview-host" id="preview-host">
             <div class="empty-state" id="empty-state">
-              <div class="empty-mark">▦</div>
+              <div class="empty-mark"></div>
               <h2>No data loaded</h2>
               <p>Import a CSV to begin, or load one of the samples.</p>
               <div class="empty-actions">
@@ -137,9 +150,13 @@
 <script src="js/markup.js"></script>
 <script src="js/palettes.js"></script>
 <script src="js/formatters.js"></script>
+<script src="js/history.js"></script>
 <script src="js/spec.js"></script>
 <script src="js/csv.js"></script>
+<script src="js/import-html.js"></script>
 <script src="js/reshape.js"></script>
+<script src="js/corrections.js"></script>
+<script src="js/filter.js"></script>
 <script src="js/style-rules.js"></script>
 <script src="js/compute.js"></script>
 <script src="js/edges.js"></script>
@@ -153,6 +170,8 @@
 <script src="js/themes.js"></script>
 
 <script src="js/ui/controls.js"></script>
+<script src="js/ui/popover.js"></script>
+<script src="js/ui/import-preview.js"></script>
 <script src="js/ui/theme-picker.js"></script>
 <script src="js/ui/font-manager.js"></script>
 <script src="js/ui/selection.js"></script>
@@ -161,13 +180,15 @@
 <script src="js/ui/panel-data.js"></script>
 <script src="js/ui/panel-reshape.js"></script>
 <script src="js/ui/panel-structure.js"></script>
+<script src="js/ui/panel-sort.js"></script>
 <script src="js/ui/panel-content.js"></script>
 <script src="js/ui/panel-format.js"></script>
 <script src="js/ui/panel-color.js"></script>
 <script src="js/ui/panel-summaries.js"></script>
 <script src="js/ui/panel-style.js"></script>
 <script src="js/ui/panel-options.js"></script>
-<script src="js/ui/panel-export.js"></script>
+<script src="js/ui/export-menu.js"></script>
+<script src="js/ui/history-menu.js"></script>
 
 <script src="js/main.js"></script>
 

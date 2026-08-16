@@ -12,6 +12,7 @@ const PanelStructure = {
 
   id: 'structure',
   label: 'Structure',
+  hint: 'Which rows and columns, in what order, grouped how',
 
   render(spec) {
     const panel = Util.el('div.panel');
@@ -28,7 +29,6 @@ const PanelStructure = {
     panel.appendChild(PanelStructure.stubSection(spec, columns));
     panel.appendChild(PanelStructure.columnsSection(spec, columns, byId));
     panel.appendChild(PanelStructure.spannersSection(spec, columns, byId));
-    panel.appendChild(PanelStructure.sortSection(spec, columns));
     panel.appendChild(PanelStructure.mergeSection(spec, columns, byId));
 
     return panel;
@@ -127,12 +127,38 @@ const PanelStructure = {
       return body;
     }, {
       key: 'columns',
-      title: (colId) => (st.labels[colId] || byId[colId].label || colId),
+      // One item per column, so this is the longest list in the app on any
+      // real dataset — and reordering, hiding and renaming all happen from the
+      // collapsed row.
+      collapsible: true,
+      // `byId[colId].label` is already `Spec.columnTitle` — it never comes back
+      // empty, and re-deriving it from `st.labels` here is what let this panel
+      // show a column's id while the table drew its humanised name.
+      title: (colId) => byId[colId].label,
       subtitle: (colId) => byId[colId].id + '  ·  ' + byId[colId].type +
         (colId === st.rownameCol ? '  ·  stub' : '') +
         (colId === st.groupnameCol ? '  ·  groups' : '') +
         (hidden.has(colId) ? '  ·  hidden' : ''),
       enabled: (colId) => !hidden.has(colId),
+      // A column taken for the row labels or the row groups is consumed by
+      // `gt()` itself and is no longer an ordinary column: `compute.js` draws
+      // it whatever `hidden` says, and `export-rgt.js` deliberately leaves it
+      // out of `cols_hide()`. The checkbox was still offered and did nothing.
+      toggleInert: (colId) => {
+        if (colId === st.rownameCol) {
+          return {
+            because: 'This column is the row labels, so it is always shown.',
+            fix: { label: 'Change row labels', panel: 'structure', section: 'st.stub' }
+          };
+        }
+        if (colId === st.groupnameCol) {
+          return {
+            because: 'This column groups the rows, so it is always shown.',
+            fix: { label: 'Change row groups', panel: 'structure', section: 'st.stub' }
+          };
+        }
+        return null;
+      },
       onToggle: (colId, index, on) => {
         Store.update((draft) => {
           const next = new Set(draft.structure.hidden);
@@ -155,11 +181,14 @@ const PanelStructure = {
       list,
       Controls.actions([
         Controls.button('Show all', () => Store.update((draft) => { draft.structure.hidden = []; }), { kind: 'ghost' }),
+        // From the raw header the column arrived with, not from its current
+        // label — humanising the label leaves a rename in place and only
+        // re-cases it, so "Reset" reset nothing on an already-renamed column.
         Controls.button('Reset labels', () => Store.update((draft) => {
-          for (const col of columns) draft.structure.labels[col.id] = Util.humanise(col.label);
+          for (const col of columns) draft.structure.labels[col.id] = Util.humanise(col.name);
         }), { kind: 'ghost' })
       ])
-    ], { key: 'st.columns' });
+    ], { key: 'st.columns', action: Controls.collapseAll('columns', ordered) });
   },
 
   /* ================================================================
@@ -273,51 +302,6 @@ const PanelStructure = {
     });
 
     Util.toast('Spanners built from column names', 'ok');
-  },
-
-  /* ================================================================
-     Sorting
-     ================================================================ */
-
-  sortSection(spec, columns) {
-    const sort = spec.structure.sort;
-
-    const list = Controls.itemList(sort, (entry, index) => Util.el('div', null, [
-      Controls.field('Column', Controls.columnSelect('sort.col.' + index, columns, entry.col,
-        (value) => Store.update((draft) => {
-          if (value) draft.structure.sort[index].col = value;
-          else draft.structure.sort.splice(index, 1);
-        }))),
-      Controls.field('Direction', Controls.select('sort.dir.' + index,
-        [{ value: 'asc', label: 'Ascending' }, { value: 'desc', label: 'Descending' }],
-        entry.dir, (value) => Store.update((draft) => { draft.structure.sort[index].dir = value; })))
-    ]), {
-      key: 'sort',
-      title: (entry) => {
-        const col = columns.find((c) => c.id === entry.col);
-        return (col ? col.label : entry.col) + (entry.dir === 'desc' ? ' ↓' : ' ↑');
-      },
-      onRemove: (entry, index) => Store.update((draft) => { draft.structure.sort.splice(index, 1); }),
-      onReorder: (from, to) => Store.update((draft) => {
-        draft.structure.sort = Util.moveItem(draft.structure.sort, from, to);
-      })
-    });
-
-    return Controls.section('Sorting', [
-      list,
-      Controls.button('Add sort key', () => {
-        Store.update((draft) => {
-          const used = new Set(draft.structure.sort.map((s) => s.col));
-          const next = columns.find((c) => !used.has(c.id));
-          if (!next) return false;
-          draft.structure.sort.push({ col: next.id, dir: 'asc' });
-          return undefined;
-        });
-      }, { block: true }),
-      Util.el('div.field-hint', {
-        text: 'Sorting happens before grouping, so rows stay inside their group either way.'
-      })
-    ], { key: 'st.sort', collapsed: true });
   },
 
   /* ================================================================

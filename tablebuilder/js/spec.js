@@ -32,6 +32,11 @@ const Spec = {
         rows: []       // [{colId: value}]
       },
 
+      /* Per-cell value fixes, applied over the working rows. Sparse, and each
+         guarded by the value it was written against — see corrections.js. The
+         source above stays the file as imported. */
+      corrections: [],   // [{id, srcIndex, colId, from, to}]
+
       /* Optional long -> wide reshape applied before anything else. */
       reshape: {
         mode: 'none',      // 'none' | 'pivot'
@@ -55,7 +60,11 @@ const Spec = {
         rowGroupOrder: [],      // group labels, in display order
         stubIndent: {},         // rowIndex -> indent steps
         merges: [],             // [{id, type, target, columns, pattern, sep}]
-        sort: []                // [{col, dir:'asc'|'desc'}]
+        sort: [],               // [{col, dir:'asc'|'desc'}]
+        filter: {               // which rows appear at all — see filter.js
+          match: 'all',         // 'all' | 'any'
+          conditions: []        // [{id, col, op, value, value2}]
+        }
       },
 
       /* Header/footer text parts. */
@@ -64,6 +73,14 @@ const Spec = {
         subtitle: '',
         stubhead: '',
         caption: '',
+        // The caption labels the figure, not the table, so its alignment is
+        // its own — not `heading.align` (the title block) and not
+        // `table.align` (where the table sits on the page), which it used to
+        // borrow. It lives here rather than in `spec.options` because gt has
+        // no caption styling: `export-rgt.js` emits every changed option as a
+        // `tab_options()` argument, so an option gt does not have would
+        // produce R that does not run.
+        captionAlign: 'center',
         sourceNotes: [],   // [{id, text}]
         footnotes: []      // [{id, text, location}]
       },
@@ -98,6 +115,9 @@ const Spec = {
       meta: {
         name: 'Untitled table',
         theme: 'gt-default',
+        // What `Spec.applySuggestions` last wrote into `parts`, so a later
+        // import can tell its own suggestion from something the user typed.
+        auto: {},
         created: new Date().toISOString(),
         modified: new Date().toISOString()
       }
@@ -113,6 +133,100 @@ const Spec = {
     spec.source = source;
     Spec.adoptColumns(spec, source.columns);
     spec.meta.name = (source.filename || 'table').replace(/\.[^.]+$/, '');
+    return spec;
+  },
+
+  /**
+   * Where the data came from, in words — the thing a source note names.
+   *
+   * A source carries `origin: {kind, label}` when an importer knows better
+   * than a filename; a pasted table or a fetched URL would set one. CSV import
+   * does not, so this falls back to the filename. **This is the one place that
+   * decides what "the source" is called**, so a new importer adds its origin
+   * and every derived string follows.
+   */
+  sourceLabel(source) {
+    if (!source) return '';
+    if (source.origin && source.origin.label) return String(source.origin.label);
+    return String(source.filename || '');
+  },
+
+  /**
+   * A first pass at the prose for a freshly imported table.
+   *
+   * Pure, and derived only from the source, so the same import always suggests
+   * the same thing — which is what lets `applySuggestions` tell an untouched
+   * suggestion from something the user wrote.
+   */
+  suggestParts(source) {
+    const label = Spec.sourceLabel(source);
+
+    // A source that came with a title of its own — an HTML table's `<caption>`
+    // — has already said what it is called, better than a filename can.
+    const given = source && source.origin && source.origin.title;
+    const stem = label.replace(/\.[^.]+$/, '').replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const title = given ? String(given)
+      : (stem ? stem.charAt(0).toUpperCase() + stem.slice(1) : 'Untitled table');
+
+    const rows = (source && source.rows) ? source.rows.length : 0;
+    const cols = (source && source.columns) ? source.columns.length : 0;
+    const plural = (n, word) => n.toLocaleString() + ' ' + word + (n === 1 ? '' : 's');
+
+    return {
+      // The title is safe unescaped — deriving it replaced every `_`, `-` and
+      // `.` with a space already. The source note keeps the name verbatim, so
+      // it has to be escaped: `field_survey.csv` is a subscript otherwise.
+      title: title,
+      // The shape of the data rather than filler: it reads like a real
+      // subtitle, it is true, and it tells you what the parser actually found.
+      subtitle: plural(rows, 'row') + ' × ' + plural(cols, 'column'),
+      caption: 'Made with Table Builder',
+      sourceNote: label ? 'Source: ' + Markup.escape(label) : ''
+    };
+  },
+
+  /**
+   * Fill in the prose for an import, without ever overwriting the user's own.
+   *
+   * A part is replaced only when it is empty or still holds the suggestion
+   * from last time — recorded in `meta.auto`. So loading a sample and then
+   * importing your own file re-derives the title and the source note, while
+   * anything you have typed survives untouched.
+   *
+   * A spec saved before `meta.auto` existed has none, so nothing matches and
+   * every part is treated as authored. That is the safe way round.
+   */
+  applySuggestions(spec, source) {
+    const next = Spec.suggestParts(source);
+    const auto = spec.meta.auto || {};
+    const untouched = (value, was) => !value || (was !== undefined && value === was);
+
+    for (const key of ['title', 'subtitle', 'caption']) {
+      if (untouched(spec.parts[key], auto[key])) spec.parts[key] = next[key];
+    }
+
+    if (next.sourceNote) {
+      const existing = auto.sourceNoteId
+        ? spec.parts.sourceNotes.find((note) => note.id === auto.sourceNoteId)
+        : null;
+
+      if (existing) {
+        if (untouched(existing.text, auto.sourceNote)) existing.text = next.sourceNote;
+      } else if (!spec.parts.sourceNotes.length) {
+        // Only ever *added* to a table with no source notes at all. Appending
+        // to someone's existing list would put a second, unasked-for note
+        // under their table on every import.
+        const note = { id: Util.uid('sn'), text: next.sourceNote };
+        spec.parts.sourceNotes.push(note);
+        auto.sourceNoteId = note.id;
+      }
+    }
+
+    spec.meta.auto = Object.assign({}, auto, {
+      title: next.title, subtitle: next.subtitle,
+      caption: next.caption, sourceNote: next.sourceNote
+    });
+
     return spec;
   },
 
@@ -154,7 +268,59 @@ const Spec = {
     spec.format = spec.format.filter((f) => f.columns.some((id) => known.has(id)));
     spec.dataColor = spec.dataColor.filter((d) => d.columns.some((id) => known.has(id)));
 
+    // A correction naming a column that no longer exists can never apply and
+    // can never be explained. One naming a column that *does* still exist is
+    // kept: its `from` guard decides whether it still means anything, which is
+    // a question only the new data can answer.
+    if (Array.isArray(spec.corrections)) {
+      spec.corrections = spec.corrections.filter((c) => c && known.has(c.colId));
+    }
+
     return spec;
+  },
+
+  /* ================================================================
+     Naming a column
+     ================================================================ */
+
+  /**
+   * The label the table draws over a column.
+   *
+   * `adoptColumns` pre-fills `structure.labels` with the humanised header on
+   * import, so the fallback here is reached only by a column that arrived
+   * without one — a pivot-derived column, or a hand-edited project file. An
+   * explicit `''` is a decision and comes back as-is: clearing a column label
+   * is how you ask for a blank heading.
+   *
+   * **This and `columnTitle` are the only two places a column's display name is
+   * decided.** There were four, and they disagreed. `compute.js` humanised the
+   * raw header, `App.workingColumns` did not, `Selection.columnLabel` fell back
+   * to the id, and the Structure panel fell back to the id too — via a `.label`
+   * that did not exist on the object it was reading. So a column could be "Mfr"
+   * in the table and `mfr` in the rail at the same moment, and a cleared label
+   * showed as blank in one place and as the id in three others.
+   */
+  columnLabel(spec, column) {
+    if (!column) return '';
+    const label = spec.structure.labels[column.id];
+    if (label !== undefined) return label;
+    return column.shortName || Util.humanise(column.name || column.id);
+  },
+
+  /**
+   * What the *editor* calls a column: pickers, chips, the selection summary,
+   * button text, prose. Never empty — a column whose label has been cleared
+   * still has to be pickable out of a list, so it falls back to its id.
+   *
+   * The split is the point. `columnLabel` answers "what does the table say",
+   * `columnTitle` answers "what do we call this when talking about it". The
+   * raw id is a third thing again and belongs only where the user has to type
+   * it: a `where` expression, the emitted R, and the Data panel's description
+   * of the file it parsed.
+   */
+  columnTitle(spec, column) {
+    if (!column) return '';
+    return Spec.columnLabel(spec, column) || column.id;
   },
 
   /** Default alignment for a column: numbers right, everything else left. */
@@ -179,13 +345,22 @@ const Spec = {
     // Options: unknown keys are dropped, missing keys take their default.
     out.options = Object.assign({}, base.options, obj.options || {});
 
-    for (const key of ['format', 'dataColor', 'styleRules', 'fonts']) {
+    for (const key of ['format', 'dataColor', 'styleRules', 'fonts', 'corrections']) {
       if (!Array.isArray(out[key])) out[key] = [];
     }
     if (!Array.isArray(out.summaries.groups)) out.summaries.groups = [];
     if (!Array.isArray(out.summaries.grand)) out.summaries.grand = [];
     if (!Array.isArray(out.parts.sourceNotes)) out.parts.sourceNotes = [];
     if (!Array.isArray(out.parts.footnotes)) out.parts.footnotes = [];
+
+    // A spec saved before the caption had an alignment of its own inherits the
+    // one it was actually drawn with — `table.align`, which the caption's CSS
+    // used to derive from — so reopening a project does not move its caption.
+    if (!obj.parts || obj.parts.captionAlign === undefined) {
+      const tableAlign = out.options['table.align'];
+      out.parts.captionAlign = tableAlign === 'right' ? 'right'
+        : (tableAlign === 'center' ? 'center' : 'left');
+    }
 
     out.version = Spec.VERSION;
     return out;
@@ -201,11 +376,22 @@ const Spec = {
 /**
  * Store — owns the current spec, the undo stack, and change notification.
  */
+/**
+ * Store — owns the current spec, the history, and change notification.
+ *
+ * History is one timeline of states with a cursor into it, rather than the two
+ * stacks it used to be. Undo moves the cursor back, redo moves it forward, and
+ * a new action drops everything after it. That is the same behaviour two
+ * stacks gave, and it also *is* the list the history menu shows: with two
+ * stacks the actions were split across both and neither knew its own order.
+ *
+ * `_history[0]` is where the session started — an import, an opened project or
+ * an empty one — so the cursor sitting at 0 means "nothing done yet".
+ */
 const Store = {
 
-  _spec: null,
-  _undo: [],
-  _redo: [],
+  _history: [],
+  _cursor: 0,
   _subs: [],
   _lastCommit: { key: null, at: 0 },
   _muted: false,
@@ -214,17 +400,17 @@ const Store = {
   COALESCE_MS: 700,
 
   /** Start with a given spec (or an empty one). */
-  init(spec) {
-    Store._spec = spec || Spec.create();
-    Store._undo = [];
-    Store._redo = [];
+  init(spec, label) {
+    Store._history = [{ spec: spec || Spec.create(), label: label || 'Opened', at: Date.now() }];
+    Store._cursor = 0;
     Store._lastCommit = { key: null, at: 0 };
     Store.emit('init');
   },
 
   /** The live spec. Treat as read-only; mutate through `update`. */
   get() {
-    return Store._spec;
+    const entry = Store._history[Store._cursor];
+    return entry ? entry.spec : null;
   },
 
   /**
@@ -235,10 +421,12 @@ const Store = {
    * @param {string} [opts.coalesce] - repeated updates with the same key inside
    *   COALESCE_MS collapse into one undo entry (for sliders and drags)
    * @param {string} [opts.reason] - change reason passed to subscribers
+   * @param {string} [opts.label] - what to call this in the history list;
+   *   derived from the change itself when absent
    */
   update(fn, opts) {
     opts = opts || {};
-    const previous = Store._spec;
+    const previous = Store.get();
     const draft = Util.clone(previous);
 
     const result = fn(draft);
@@ -252,43 +440,78 @@ const Store = {
       Store._lastCommit.key === opts.coalesce &&
       (now - Store._lastCommit.at) < Store.COALESCE_MS;
 
-    if (!coalescing) {
-      Store._undo.push(previous);
-      if (Store._undo.length > Store.MAX_UNDO) Store._undo.shift();
-    }
-    Store._lastCommit = { key: opts.coalesce || null, at: now };
-    Store._redo = [];
-    Store._spec = next;
+    const label = opts.label || History.describe(previous, next);
 
+    if (coalescing) {
+      // Typing in a field is one action, not one per keystroke: the entry the
+      // run started is rewritten rather than a new one added.
+      Store._history[Store._cursor] = { spec: next, label: label, at: now };
+    } else {
+      // Anything redone-past is gone the moment a new branch starts.
+      Store._history.length = Store._cursor + 1;
+      Store._history.push({ spec: next, label: label, at: now });
+      Store._cursor += 1;
+
+      // The oldest state falls off the end. The cursor moves with it, since it
+      // counts from the start of the list.
+      if (Store._history.length > Store.MAX_UNDO + 1) {
+        Store._history.shift();
+        Store._cursor -= 1;
+      }
+    }
+
+    Store._lastCommit = { key: opts.coalesce || null, at: now };
     Store.emit(opts.reason || 'update');
   },
 
-  /** Replace the whole spec, clearing history (import / new file). */
-  replace(spec, reason) {
-    Store._spec = spec;
-    Store._undo = [];
-    Store._redo = [];
+  /** Replace the whole spec, starting a fresh history (import / open / new). */
+  replace(spec, reason, label) {
+    Store._history = [{ spec: spec, label: label || 'Opened', at: Date.now() }];
+    Store._cursor = 0;
     Store._lastCommit = { key: null, at: 0 };
     Store.emit(reason || 'replace');
   },
 
-  canUndo() { return Store._undo.length > 0; },
-  canRedo() { return Store._redo.length > 0; },
+  canUndo() { return Store._cursor > 0; },
+  canRedo() { return Store._cursor < Store._history.length - 1; },
 
   undo() {
-    if (!Store._undo.length) return;
-    Store._redo.push(Store._spec);
-    Store._spec = Store._undo.pop();
+    if (!Store.canUndo()) return;
+    Store._cursor -= 1;
     Store._lastCommit = { key: null, at: 0 };
     Store.emit('undo');
   },
 
   redo() {
-    if (!Store._redo.length) return;
-    Store._undo.push(Store._spec);
-    Store._spec = Store._redo.pop();
+    if (!Store.canRedo()) return;
+    Store._cursor += 1;
     Store._lastCommit = { key: null, at: 0 };
     Store.emit('redo');
+  },
+
+  /**
+   * The whole timeline, oldest first, for the history menu.
+   * @returns {Array<{index, label, at, current, future}>}
+   */
+  entries() {
+    return Store._history.map((entry, index) => ({
+      index: index,
+      label: entry.label,
+      at: entry.at,
+      current: index === Store._cursor,
+      // Redone-past states: still reachable, but not part of the table as it
+      // stands. The menu dims them.
+      future: index > Store._cursor
+    }));
+  },
+
+  /** Move the cursor straight to a point in the timeline. */
+  jumpTo(index) {
+    const target = Math.max(0, Math.min(Store._history.length - 1, index));
+    if (target === Store._cursor) return;
+    Store._cursor = target;
+    Store._lastCommit = { key: null, at: 0 };
+    Store.emit('jump');
   },
 
   /** Subscribe to changes. Returns an unsubscribe function. */
@@ -304,7 +527,7 @@ const Store = {
     if (Store._muted) return;
     for (const fn of Store._subs.slice()) {
       try {
-        fn(Store._spec, reason);
+        fn(Store.get(), reason);
       } catch (err) {
         console.error('Store subscriber failed:', err);
       }
@@ -316,7 +539,7 @@ const Store = {
   /** Persist the working spec to localStorage (debounced by the caller). */
   save() {
     try {
-      localStorage.setItem(Spec.STORAGE_KEY, JSON.stringify(Store._spec));
+      localStorage.setItem(Spec.STORAGE_KEY, JSON.stringify(Store.get()));
       return true;
     } catch (err) {
       // Quota exceeded on a very large CSV — not fatal, the session still works.

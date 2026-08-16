@@ -26,6 +26,11 @@ const FONT_WEIGHTS = ['initial', 'normal', 'bold', 'bolder', 'lighter',
 /** Named font stacks offered throughout the app. */
 const FONT_STACKS = [
   { id: 'system-sans', label: 'System sans', stack: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" },
+  // Named, not "a sans": one of the themes reproduces a specification that
+  // says Arial in as many words, and is held to it. No webfont — Arial is on
+  // every machine that matters here, and Helvetica and Liberation Sans are
+  // metric-compatible with it.
+  { id: 'arial', label: 'Arial', stack: "Arial, 'Liberation Sans', Helvetica, sans-serif" },
   { id: 'system-serif', label: 'System serif', stack: "Georgia, Cambria, 'Times New Roman', Times, serif" },
   { id: 'system-mono', label: 'System mono', stack: "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" },
   { id: 'source-serif', label: 'Source Serif 4', stack: "'Source Serif 4', Georgia, serif", web: 'Source Serif 4' },
@@ -35,6 +40,10 @@ const FONT_STACKS = [
   { id: 'inter', label: 'Inter', stack: "'Inter', system-ui, sans-serif", web: 'Inter' },
   { id: 'lato', label: 'Lato', stack: "'Lato', Helvetica, Arial, sans-serif", web: 'Lato' },
   { id: 'ibm-plex-sans', label: 'IBM Plex Sans', stack: "'IBM Plex Sans', Helvetica, Arial, sans-serif", web: 'IBM Plex Sans' },
+  // The closest free grotesque to Helvetica Neue, which is not free. Carries
+  // a real 300 rather than a synthesised one.
+  { id: 'public-sans', label: 'Public Sans', stack: "'Public Sans', Helvetica, Arial, sans-serif", web: 'Public Sans' },
+  { id: 'roboto', label: 'Roboto', stack: "'Roboto', Helvetica, Arial, sans-serif", web: 'Roboto' },
   { id: 'roboto-condensed', label: 'Roboto Condensed', stack: "'Roboto Condensed', 'Arial Narrow', sans-serif", web: 'Roboto Condensed' },
   { id: 'ibm-plex-mono', label: 'IBM Plex Mono', stack: "'IBM Plex Mono', ui-monospace, monospace", web: 'IBM Plex Mono' },
   { id: 'jetbrains-mono', label: 'JetBrains Mono', stack: "'JetBrains Mono', ui-monospace, monospace", web: 'JetBrains Mono' }
@@ -72,7 +81,7 @@ const OptionsSchema = {
     { id: 'column_labels', label: 'Column labels', hint: 'The column label row and any spanner rows above it.' },
     { id: 'row_group', label: 'Row groups', hint: 'Group label rows that break up the body.' },
     { id: 'stub', label: 'Stub', hint: 'The row-label column on the left.' },
-    { id: 'table_body', label: 'Body', hint: 'Data rows: rules, padding and striping.' },
+    { id: 'table_body', label: 'Body', hint: 'Data rows: lines, padding and striping.' },
     { id: 'summary_row', label: 'Summary rows', hint: 'Group-wise and grand summary rows.' },
     { id: 'footnotes', label: 'Footnotes', hint: 'The footnote block in the table footer.' },
     { id: 'source_notes', label: 'Source notes', hint: 'The source note block in the table footer.' }
@@ -125,10 +134,10 @@ const OptionsSchema = {
     ...borderTriplet('column_labels.border.top', 'column_labels', 'Top border', 'solid', '2px', '#D3D3D3'),
     ...borderTriplet('column_labels.border.bottom', 'column_labels', 'Bottom border', 'solid', '2px', '#D3D3D3'),
     ...borderTriplet('column_labels.border.lr', 'column_labels', 'Side borders', 'none', '1px', '#D3D3D3'),
-    ...borderTriplet('column_labels.vlines', 'column_labels', 'Vertical rules', 'none', '1px', '#D3D3D3'),
-    ...borderTriplet('column_labels.spanner.border.bottom', 'column_labels', 'Spanner rule', 'solid', '1px', '#D3D3D3'),
-    { key: 'column_labels.spanner.underline', group: 'column_labels', label: 'Underline spanners', type: 'bool', default: true,
-      hint: 'Draw the rule only under the columns a spanner covers, as gt does.' },
+    ...borderTriplet('column_labels.vlines', 'column_labels', 'Vertical lines', 'none', '1px', '#D3D3D3'),
+    ...borderTriplet('column_labels.spanner.border.bottom', 'column_labels', 'Column-group line', 'solid', '1px', '#D3D3D3'),
+    { key: 'column_labels.spanner.underline', group: 'column_labels', label: 'Underline column groups', type: 'bool', default: true,
+      hint: 'Draw the line only under the columns a group covers, as gt does.' },
 
     /* ---------- Row groups ---------- */
     { key: 'row_group.background.color', group: 'row_group', label: 'Background', type: 'color', default: '', nullable: true },
@@ -164,8 +173,8 @@ const OptionsSchema = {
     /* ---------- Body ---------- */
     { key: 'data_row.padding', group: 'table_body', label: 'Row padding', type: 'len', default: '8px' },
     { key: 'data_row.padding.horizontal', group: 'table_body', label: 'Row padding (h)', type: 'len', default: '5px' },
-    ...borderTriplet('table_body.hlines', 'table_body', 'Horizontal rules', 'solid', '1px', '#D3D3D3'),
-    ...borderTriplet('table_body.vlines', 'table_body', 'Vertical rules', 'none', '1px', '#D3D3D3'),
+    ...borderTriplet('table_body.hlines', 'table_body', 'Horizontal lines', 'solid', '1px', '#D3D3D3'),
+    ...borderTriplet('table_body.vlines', 'table_body', 'Vertical lines', 'none', '1px', '#D3D3D3'),
     ...borderTriplet('table_body.border.top', 'table_body', 'Top border', 'solid', '2px', '#D3D3D3'),
     ...borderTriplet('table_body.border.bottom', 'table_body', 'Bottom border', 'solid', '2px', '#D3D3D3'),
     { key: 'row.striping.include_table_body', group: 'table_body', label: 'Stripe body rows', type: 'bool', default: false },

@@ -18,6 +18,7 @@ const PanelOptions = {
 
   id: 'options',
   label: 'Options',
+  hint: 'Table-wide appearance defaults, and themes',
 
   _query: '',
 
@@ -263,7 +264,7 @@ const PanelOptions = {
     if (PanelOptions.rowChanged(row, changedKeys)) {
       const label = Util.qs('label', field);
       if (label) {
-        label.style.color = 'var(--accent-bright)';
+        label.style.color = 'var(--accent-strong)';
         label.title = PanelOptions.rowOptions(row)
           .filter((option) => changedKeys.has(option.key))
           .map((option) => option.key + '  (changed — default: ' + option.default + ')')
@@ -281,7 +282,7 @@ const PanelOptions = {
   themeSection(spec) {
     return Controls.section('Themes', [
       Util.el('div.field-hint', {
-        text: 'A theme is just a bundle of option values — apply one, then keep editing. ' +
+        text: 'A theme sets the appearance options, and sometimes a rule or two for things options cannot reach, like the text colour on a coloured header. Apply one, then keep editing. ' +
           'Save your own once a table looks the way you want it.'
       }),
       ThemePicker.render(spec)
