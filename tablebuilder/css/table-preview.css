@@ -90,11 +90,17 @@
    Column resize handles (editor only)
    ============================================ */
 
+/* The band is 7 *screen* px wide whatever the zoom, and centred on the line.
+   A plain `width: 7px` is scaled with the table like everything else inside
+   `#preview-host`, so at the 0.4 Fit lands on for a wide table the band came out
+   under 3px — the one table you most need to drag columns on, and the hardest to
+   hit. `--stage-zoom` is written onto the host by `App.paintZoom`, alongside the
+   transform it divides out, so nothing has to be rebuilt when the zoom changes. */
 .col-resizer {
   position: absolute;
   top: 0;
-  width: 7px;
-  margin-left: -3px;
+  width: calc(7px / var(--stage-zoom, 1));
+  margin-left: calc(-3.5px / var(--stage-zoom, 1));
   cursor: col-resize;
   z-index: 4;
 }

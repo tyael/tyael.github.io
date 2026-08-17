@@ -58,14 +58,30 @@ const FONT_STACKS = [
  * together, so `OptionsSchema.rows()` can fold them into one row for display
  * without anything downstream learning that composites exist.
  */
-function borderTriplet(prefix, group, label, style, width, color) {
+function borderTriplet(prefix, group, label, style, width, color, hint) {
   const stamp = (role) => ({ border: prefix, borderRole: role, borderLabel: label });
+  // The hint belongs to the composite row the three fold into, so it rides on
+  // the style entry — the one `OptionsSchema.rows()` builds that row from.
   return [
-    Object.assign({ key: prefix + '.style', group: group, label: label + ' style', type: 'select', enum: BORDER_STYLES, default: style }, stamp('style')),
+    Object.assign({ key: prefix + '.style', group: group, label: label + ' style', type: 'select', enum: BORDER_STYLES, default: style }, stamp('style'), hint ? { hint: hint } : null),
     Object.assign({ key: prefix + '.width', group: group, label: label + ' width', type: 'len', default: width }, stamp('width')),
     Object.assign({ key: prefix + '.color', group: group, label: label + ' colour', type: 'color', default: color }, stamp('color'))
   ];
 }
+
+/**
+ * The column form's font overrides, and the Row groups option each defers to.
+ *
+ * A row group is one part in this app whichever form it takes — one entry in
+ * `StyleRules.PARTS`, one `optionGroup`, one `data-part` on the cell — so the
+ * Row groups options govern both, and these three narrow gt arguments are an
+ * override on top. See `OptionsSchema.withGroupColumnOverrides`.
+ */
+const GROUP_COLUMN_OVERRIDES = {
+  'stub_row_group.font.size': 'row_group.font.size',
+  'stub_row_group.font.weight': 'row_group.font.weight',
+  'stub_row_group.text_transform': 'row_group.text_transform'
+};
 
 const OptionsSchema = {
 
@@ -153,10 +169,18 @@ const OptionsSchema = {
     { key: 'row_group.default_label', group: 'row_group', label: 'Default label', type: 'text', default: '',
       structural: true,
       hint: 'Label used for rows whose group value is missing.' },
+    // Top and bottom mark the boundary between one group and the next, so they
+    // are drawn whichever form the group takes — on the label row, or between
+    // the blocks of rows when the group is a column.
     ...borderTriplet('row_group.border.top', 'row_group', 'Top border', 'solid', '2px', '#D3D3D3'),
     ...borderTriplet('row_group.border.bottom', 'row_group', 'Bottom border', 'solid', '2px', '#D3D3D3'),
-    ...borderTriplet('row_group.border.left', 'row_group', 'Left border', 'none', '1px', '#D3D3D3'),
-    ...borderTriplet('row_group.border.right', 'row_group', 'Right border', 'none', '1px', '#D3D3D3'),
+    // Left and right are the two ends of the label row, as they are in gt. A
+    // group shown as a column has no such row: its own edge is the stub group
+    // column border, which is why the hint sends you there.
+    ...borderTriplet('row_group.border.left', 'row_group', 'Left border', 'none', '1px', '#D3D3D3',
+      'The end of the group label row. With groups shown as a column, the column’s own edge is Stub › Group col border.'),
+    ...borderTriplet('row_group.border.right', 'row_group', 'Right border', 'none', '1px', '#D3D3D3',
+      'The end of the group label row. With groups shown as a column, the column’s own edge is Stub › Group col border.'),
 
     /* ---------- Stub ---------- */
     { key: 'stub.background.color', group: 'stub', label: 'Background', type: 'color', default: '', nullable: true },
@@ -364,6 +388,45 @@ const OptionsSchema = {
   defaults() {
     const out = {};
     for (const opt of OptionsSchema.options) out[opt.key] = opt.default;
+    return out;
+  },
+
+  GROUP_COLUMN_OVERRIDES: GROUP_COLUMN_OVERRIDES,
+
+  /**
+   * The option surface with the row-group column form's three overrides
+   * resolved.
+   *
+   * `stub_row_group.font.size`, `.font.weight` and `.text_transform` are gt's
+   * narrower set for a row group shown as a column, and each defaults to exactly
+   * what its `row_group.*` counterpart defaults to. So until one is set to
+   * something it expresses no intent — while landing on the same element one
+   * rule later, which meant it won anyway and threw away whatever the Row groups
+   * options had said. Resolving them here is what makes `row_group.as_column` a
+   * decision about what the table *is*, as it is flagged, rather than one that
+   * quietly discards a look chosen separately.
+   *
+   * **Derived, and never written back to the spec.** A saved project and a saved
+   * theme keep only what was actually set, so a later change to what an unset
+   * override means still reaches a file written today.
+   *
+   * `render-html.js` and `export-rgt.js` both read this, which is the point of
+   * its being here rather than in either: gt applies `row_group.*` to the heading
+   * row alone, so unless the value is written into gt's own second argument the
+   * exported table loses it and the R stops reproducing the preview.
+   *
+   * Returns the same object when there is nothing to resolve.
+   */
+  withGroupColumnOverrides(options) {
+    if (!options || !options['row_group.as_column']) return options;
+
+    let out = options;
+    for (const key of Object.keys(GROUP_COLUMN_OVERRIDES)) {
+      const def = OptionsSchema.get(key);
+      if (def && options[key] !== def.default) continue;   // set: it means it
+      if (out === options) out = Object.assign({}, options);
+      out[key] = options[GROUP_COLUMN_OVERRIDES[key]];
+    }
     return out;
   },
 

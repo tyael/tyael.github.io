@@ -300,6 +300,12 @@ const Measure = {
   /**
    * The x position of every column boundary and the y of every row boundary,
    * so the edge grid can be drawn as long straight lines.
+   *
+   * @param {HTMLTableElement} table
+   * @param {{x: number, y: number}} origin - what the positions are measured from
+   * @param {?Object} grid - from Edges.build, for the alignment check only; a
+   *   caller with no grid to check against may pass null
+   * @param {Object} result - written into
    */
   collectGridLines(table, origin, grid, result) {
     // Column boundaries come from the <col> elements, which have the real
@@ -334,7 +340,39 @@ const Measure = {
 
     // A defensive alignment check: the edge grid and the DOM must agree on how
     // many rows there are, or the SVG would draw its lines in the wrong places.
-    result.rowMismatch = (result.rowEdges.length - 1) !== grid.nRows;
-    result.colMismatch = (result.colEdges.length - 1) !== grid.nCols;
+    result.rowMismatch = grid ? (result.rowEdges.length - 1) !== grid.nRows : false;
+    result.colMismatch = grid ? (result.colEdges.length - 1) !== grid.nCols : false;
+  },
+
+  /**
+   * The same boundaries, in the table's own unscaled pixels and measured from
+   * its top-left corner.
+   *
+   * `collectGridLines` reads live rects. The SVG exporter measures an off-screen
+   * host at zoom 1, so for it the two are the same thing — but everything on the
+   * stage reads a table carrying `#preview-host`'s zoom `transform`, and needs
+   * the numbers back in the coordinate space the table itself is laid out in.
+   * The division happens here rather than at each caller so that hit-testing a
+   * line and placing the handle that drags it cannot disagree about where the
+   * boundary is.
+   *
+   * @param {HTMLTableElement} table
+   * @param {?Object} grid - from Edges.build; only the mismatch flags use it
+   * @param {number} [zoom=1] - the scale the table is currently drawn at
+   * @returns {{colEdges: number[], rowEdges: number[], rowMismatch: boolean, colMismatch: boolean}}
+   */
+  gridGeometry(table, grid, zoom) {
+    const rect = table.getBoundingClientRect();
+    const scale = zoom || 1;
+    const raw = { colEdges: [], rowEdges: [] };
+
+    Measure.collectGridLines(table, { x: rect.left, y: rect.top }, grid, raw);
+
+    return {
+      colEdges: raw.colEdges.map((x) => x / scale),
+      rowEdges: raw.rowEdges.map((y) => y / scale),
+      rowMismatch: raw.rowMismatch,
+      colMismatch: raw.colMismatch
+    };
   }
 };

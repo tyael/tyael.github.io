@@ -245,7 +245,13 @@ const Markup = {
    * @returns {string} the mark wrapped in this module's own markup
    */
   applyFootnoteSpec(mark, spec) {
-    let out = String(mark);
+    // The mark is data and the wrapping below is markup, so the mark has to be
+    // escaped before it is wrapped in it. `*` is this module's own emphasis
+    // delimiter: the `standard` set's first mark went out as `^{*}`, an
+    // unterminated italic inside a superscript, and rendered as a stray `}`
+    // instead of an asterisk. Every `*`-based mark in `standard` and `extended`
+    // was affected — which is the first footnote in any table using either.
+    let out = Markup.escape(String(mark));
     const flags = String(spec || '');
     if (flags.indexOf('(') >= 0 || flags.indexOf(')') >= 0) out = '(' + out + ')';
     if (flags.indexOf('i') >= 0) out = '*' + out + '*';

@@ -65,7 +65,7 @@
           <button class="btn btn-mini" id="btn-zoom-out" title="Zoom out (−)">−</button>
           <select class="stage-select zoom-select" id="zoom-select" title="Zoom level (0 for 100%)"></select>
           <button class="btn btn-mini" id="btn-zoom-in" title="Zoom in (+)">+</button>
-          <button class="btn btn-mini" id="btn-zoom-fit" title="Fit the table to the stage width">Fit</button>
+          <button class="btn btn-mini" id="btn-zoom-fit" title="Fit the whole sheet across the stage. A table too wide to read at this size can be scrolled instead, at any zoom.">Fit</button>
         </div>
         <div class="stage-toolbar-group">
           <label class="mini-label" for="canvas-surface">Canvas</label>
@@ -87,16 +87,20 @@
 
       <div class="stage-canvas" id="stage-canvas">
         <div class="stage-scroll" id="stage-scroll">
-          <div class="preview-host" id="preview-host">
-            <div class="empty-state" id="empty-state">
-              <div class="empty-mark"></div>
-              <h2>No data loaded</h2>
-              <p>Import a CSV to begin, or load one of the samples.</p>
-              <div class="empty-actions">
-                <button class="btn btn-primary" id="btn-import-2">Import CSV</button>
-                <button class="btn" data-sample="data/samples/long.csv">Sample: long / tidy</button>
-                <button class="btn" data-sample="data/samples/wide.csv">Sample: wide</button>
-                <button class="btn" data-sample="data/samples/gtcars.csv">Sample: gtcars</button>
+          <!-- The box exists to give the zoomed preview a layout size the stage
+               can scroll; App.syncZoomBox writes it. See the CSS. -->
+          <div class="zoom-box" id="zoom-box">
+            <div class="preview-host" id="preview-host">
+              <div class="empty-state" id="empty-state">
+                <div class="empty-mark"></div>
+                <h2>No data loaded</h2>
+                <p>Import a CSV to begin, or load one of the samples.</p>
+                <div class="empty-actions">
+                  <button class="btn btn-primary" id="btn-import-2">Import CSV</button>
+                  <button class="btn" data-sample="data/samples/long.csv">Sample: long / tidy</button>
+                  <button class="btn" data-sample="data/samples/wide.csv">Sample: wide</button>
+                  <button class="btn" data-sample="data/samples/gtcars.csv">Sample: gtcars</button>
+                </div>
               </div>
             </div>
           </div>

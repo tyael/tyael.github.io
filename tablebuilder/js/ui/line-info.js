@@ -19,7 +19,15 @@
 
 const LineInfo = {
 
-  /** How close the cursor must be to a line, in unscaled px. */
+  /**
+   * How close the cursor must be to a line, in **screen** px.
+   *
+   * `edgeAt` works in the table's own unscaled pixels, so the caller divides
+   * this by the zoom on the way in. A fixed unscaled figure meant the card got
+   * harder to summon the further you zoomed out — 1.6px of slack at the 0.4 Fit
+   * lands on for a wide table — which is the table whose lines you are most
+   * likely to be asking about.
+   */
   THRESHOLD: 4,
 
   /* ================================================================
@@ -30,30 +38,20 @@ const LineInfo = {
    * Pixel positions of every grid line, relative to the table's top-left and
    * in unscaled px.
    *
-   * `Measure.collectGridLines` already derives these for the SVG exporter —
-   * from the `<col>` elements, which carry the real resolved widths even under
-   * `table-layout: fixed`. Reusing it keeps one geometry model.
+   * `Measure.gridGeometry` is the one producer — from the `<col>` elements,
+   * which carry the real resolved widths even under `table-layout: fixed`. It
+   * is shared with `Selection.attachResizers`, so the line this names and the
+   * handle that drags it are placed off the same measurement.
+   *
+   * `rowMismatch`/`colMismatch` come through so `edgeAt` can decline rather
+   * than name the wrong line — see the comment there.
    *
    * @param {HTMLTableElement} table
    * @param {Object} grid - from Edges.build
-   * @returns {{colEdges: number[], rowEdges: number[]}}
+   * @returns {{colEdges: number[], rowEdges: number[], rowMismatch: boolean, colMismatch: boolean}}
    */
   geometry(table, grid) {
-    const rect = table.getBoundingClientRect();
-    const zoom = (typeof App !== 'undefined' && App.zoom) || 1;
-    const result = { colEdges: [], rowEdges: [] };
-
-    Measure.collectGridLines(table, { x: rect.left, y: rect.top }, grid, result);
-
-    // collectGridLines reads live rects, which carry the stage's zoom.
-    return {
-      colEdges: result.colEdges.map((x) => x / zoom),
-      rowEdges: result.rowEdges.map((y) => y / zoom),
-      // Carried through so `edgeAt` can decline rather than name the wrong
-      // line — see the comment there.
-      rowMismatch: result.rowMismatch,
-      colMismatch: result.colMismatch
-    };
+    return Measure.gridGeometry(table, grid, (typeof App !== 'undefined' && App.zoom) || 1);
   },
 
   /**
@@ -65,18 +63,22 @@ const LineInfo = {
    * @param {{x: number, y: number}} point - unscaled px from the table's origin
    * @param {Object} geo - from LineInfo.geometry
    * @param {Object} grid - from Edges.build
+   * @param {number} [tolerance] - how close counts, in unscaled px; defaults to
+   *   `THRESHOLD`, which is the figure at zoom 1
    * @returns {?{axis: string, r: number, c: number, src: ?Object, gridRow: ?Object, gridRowCount: number}}
    */
-  edgeAt(point, geo, grid) {
+  edgeAt(point, geo, grid, tolerance) {
     // `collectGridLines` computes this precisely because a grid/DOM
     // disagreement means the measured positions are not where the grid
     // thinks the rows and columns are — naming a line at that point would
     // name the wrong one. Declining is the honest answer.
     if (geo.rowMismatch || geo.colMismatch) return null;
 
+    const slack = tolerance || LineInfo.THRESHOLD;
+
     const near = (values, target) => {
       let best = -1;
-      let bestDistance = LineInfo.THRESHOLD;
+      let bestDistance = slack;
       for (let i = 0; i < values.length; i += 1) {
         const d = Math.abs(values[i] - target);
         if (d <= bestDistance) { bestDistance = d; best = i; }
@@ -85,8 +87,8 @@ const LineInfo = {
     };
 
     const inRange = (values, target) =>
-      values.length > 1 && target >= values[0] - LineInfo.THRESHOLD &&
-      target <= values[values.length - 1] + LineInfo.THRESHOLD;
+      values.length > 1 && target >= values[0] - slack &&
+      target <= values[values.length - 1] + slack;
 
     if (!inRange(geo.colEdges, point.x) || !inRange(geo.rowEdges, point.y)) return null;
 
@@ -406,7 +408,8 @@ const LineInfo = {
           y: (e.clientY - rect.top) / zoom
         };
 
-        const hit = LineInfo.edgeAt(point, cache.geo, cache.grid);
+        const hit = LineInfo.edgeAt(point, cache.geo, cache.grid,
+          LineInfo.THRESHOLD / zoom);
         // No edge under the cursor here — this fires repeatedly for a
         // pointer crossing bare table between a line and the card that
         // named it, so hide on a delay rather than on the spot; a hit

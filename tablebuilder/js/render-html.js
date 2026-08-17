@@ -26,7 +26,10 @@ const RenderHtml = {
     opts = opts || {};
     const id = opts.tableId || 'gt_table';
     const grid = Edges.build(model);
-    const opt = model.options;
+    // The resolved surface, not `model.options` raw: a row group shown as a
+    // column takes the Row groups options unless its own narrower overrides have
+    // been set. `export-rgt.js` resolves through the same function.
+    const opt = OptionsSchema.withGroupColumnOverrides(model.options);
 
     const table = Util.el('table.gt-table', { id: id });
     if (opts.selectable) table.classList.add('is-selectable');
@@ -417,6 +420,16 @@ const RenderHtml = {
       'font-weight': opt['table.font.weight'],
       'font-style': opt['table.font.style'],
       'color': opt['table.font.color'],
+      // Explicit for the same reason `box-sizing` below is, and it was missing:
+      // the editor's `body` sets `line-height: 1.45`, which the preview's table
+      // inherited while the exported file — whose page sets none — got `normal`.
+      // Measured on a 15px body: 21.75px against 17.6px, so every row in the
+      // preview stood 3.8px taller than the same row in the artefact, 17% on a
+      // row and the whole height of a screen over forty of them. `normal` rather
+      // than a number of our own: it is what the export already did, and gt sets
+      // no line-height either, so this moves the preview to the artefact rather
+      // than the artefact to the preview.
+      'line-height': 'normal',
       // No border on the element at all. Every edge of this table is drawn by
       // `edges.js` so that all of them resolve through one precedence path —
       // an element border is a second mechanism, and two mechanisms drawing
@@ -485,6 +498,12 @@ const RenderHtml = {
       'text-align': 'left'
     });
 
+    // gt's narrower set for the column form. It lands on the same element at the
+    // same specificity one rule later, so it *overrides* the block above rather
+    // than adding to it — which is why an unset override had to stop meaning
+    // "initial" and start meaning "whatever Row groups says".
+    // `OptionsSchema.withGroupColumnOverrides` is where that is decided, for the
+    // R exporter as well as here.
     rule(sel + ' .gt-group-col', {
       'font-size': opt['stub_row_group.font.size'],
       'font-weight': opt['stub_row_group.font.weight'],

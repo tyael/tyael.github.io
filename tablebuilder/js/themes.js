@@ -663,14 +663,57 @@ const Themes = {
   },
 
   /**
-   * Langton — no vertical lines anywhere, a rule under the column headings
-   * and one under the body, bold row labels, lettered notes. The plainest of
-   * these, and the closest to booktabs.
+   * John Adam — a full-width grotesque data sheet. Grey column heads under bold
+   * black group names, a hairline between every row, and the heaviest rule in
+   * the table closing the body. No verticals, no bands, no fills.
+   *
+   * Measured off a source image 834px wide at 1x, so the figures below are CSS
+   * pixels and are transcribed as such rather than converted. Cap heights, not
+   * glyph bounding boxes — a bounding box picks up ascenders and descenders and
+   * reads a size or two large:
+   *
+   *   body            cap 11px  →  15px
+   *   title           cap 16px  →  22px (147%), bold, black
+   *   column labels   cap 10px  →  13px (88%), #666666
+   *   row pitch       21px      →  1px of vertical padding on a 15px body
+   *   row lines       1px #BCBCBC
+   *   header rule     1px #949494 — heavier than the row lines by colour
+   *   body's bottom   2px #868686 — the heaviest line in the table
+   *
+   * The source's face is a proprietary condensed grotesque. Roboto is the
+   * closest already loaded: the source runs about 10px of advance per lowercase
+   * character against a 16px cap, which is a shade narrower than a normal-width
+   * sans and nowhere near as narrow as Roboto Condensed.
+   *
+   * **Everything sits on one left edge at 6px**, so the title, the row labels
+   * and the footnotes line up and the rules run 6px past the type at each end.
+   * The source has the type flush at 0 and the figures 12px off their right cell
+   * edge, which is one horizontal padding per column — `data_row.padding` is one
+   * value for the whole body, and a style rule carries text, fill and borders
+   * but no padding (nor does `tab_style`). 6px is the compromise: the last
+   * column of a right-aligned table does not touch the table's edge, and the
+   * indent on the row labels is small enough to read as deliberate.
+   *
+   * Three things in the source are per-column and so cannot belong to a theme
+   * at all: the conditional fills behind the leading figures, the small grey
+   * period columns beside them, and the header's vertical rules — which fall at
+   * the group boundaries, where `column_labels.vlines` would draw one between
+   * every label. On the source's ten columns that is nine lines where it has
+   * three, so this draws none.
    */
-  langton: {
-    'table.font.names': 'arial',
-    'table.font.size': '13px',
-    'table.font.color': '#000000',
+  'john-adam': {
+    'table.font.names': 'roboto',
+    'table.font.size': '15px',
+    // #2F2F2F, off a body stem. Near-black but not black: the title and the
+    // group names are the only true black in the table, which is what gives the
+    // header its weight.
+    'table.font.color': '#2F2F2F',
+    'table.background.color': '#FFFFFF',
+    // The rules run the whole width of the sheet, which is most of the look.
+    // `auto` layout with it, or a fixed layout would divide the width equally
+    // and leave the row labels as narrow as a two-digit figure.
+    'table.width': '100%',
+    'table.layout': 'auto',
     'table.align': 'left',
     'table.border.top.style': 'none',
     'table.border.bottom.style': 'none',
@@ -678,48 +721,82 @@ const Themes = {
     'table.border.right.style': 'none',
 
     'heading.align': 'left',
+    'heading.title.font.size': '147%',
     'heading.title.font.weight': 'bold',
-    'heading.title.font.size': '105%',
-    'heading.border.bottom.style': 'solid',
-    'heading.border.bottom.width': '1px',
-    'heading.border.bottom.color': '#000000',
+    'heading.subtitle.font.size': '100%',
+    'heading.padding': '2px',
+    'heading.padding.horizontal': '6px',
+    // No rule under the title block: the header's own rule is the first line in
+    // the table.
+    'heading.border.bottom.style': 'none',
 
+    'column_labels.font.size': '88%',
     'column_labels.font.weight': 'normal',
-    'column_labels.padding': '2px',
+    'column_labels.padding': '1px',
     'column_labels.padding.horizontal': '6px',
     'column_labels.border.top.style': 'none',
     'column_labels.border.bottom.style': 'solid',
     'column_labels.border.bottom.width': '1px',
-    'column_labels.border.bottom.color': '#000000',
-    'column_labels.border.lr.style': 'none',
+    'column_labels.border.bottom.color': '#949494',
     'column_labels.vlines.style': 'none',
-    'column_labels.spanner.border.bottom.style': 'solid',
-    'column_labels.spanner.border.bottom.width': '1px',
-    'column_labels.spanner.border.bottom.color': '#000000',
+    // A column group is named, not underlined — the group's own vertical rules
+    // do that job in the source, and they are not a theme's to draw.
+    'column_labels.spanner.underline': false,
 
-    'data_row.padding': '2px',
+    'data_row.padding': '1px',
     'data_row.padding.horizontal': '6px',
-    'table_body.hlines.style': 'none',
+    'table_body.hlines.style': 'solid',
+    'table_body.hlines.width': '1px',
+    'table_body.hlines.color': '#BCBCBC',
     'table_body.vlines.style': 'none',
     'table_body.border.top.style': 'none',
     'table_body.border.bottom.style': 'solid',
-    'table_body.border.bottom.width': '1px',
-    'table_body.border.bottom.color': '#000000',
+    'table_body.border.bottom.width': '2px',
+    'table_body.border.bottom.color': '#868686',
 
+    // The row labels are ordinary body text, flush left, with nothing between
+    // them and the figures.
+    'stub.font.weight': 'initial',
     'stub.border.style': 'none',
-    'stub.font.weight': 'bold',
     'stub_row_group.border.style': 'none',
-    'row_group.font.weight': 'bold',
+
+    // A section heading opens a block, so it takes the header's rule above it
+    // and nothing below; the bold black comes from the rule below, the same
+    // black as the column group names.
     'row_group.padding': '2px',
-    'row_group.border.top.style': 'none',
+    'row_group.padding.horizontal': '6px',
+    'row_group.border.top.style': 'solid',
+    'row_group.border.top.width': '1px',
+    'row_group.border.top.color': '#949494',
     'row_group.border.bottom.style': 'none',
-    'summary_row.border.style': 'none',
-    'grand_summary_row.border.style': 'none',
-    'footnotes.marks': 'letters',
-    'footnotes.font.size': '95%',
-    'footnotes.border.bottom.style': 'none',
-    'source_notes.font.size': '95%',
-    'source_notes.border.bottom.style': 'none'
+
+    // A total closes one, so it is ruled off above at the header's weight, and
+    // the grand total at the body's — the two weights already in the table
+    // rather than a third.
+    'summary_row.padding': '1px',
+    'summary_row.padding.horizontal': '6px',
+    'summary_row.border.style': 'solid',
+    'summary_row.border.width': '1px',
+    'summary_row.border.color': '#949494',
+    'grand_summary_row.padding': '1px',
+    'grand_summary_row.padding.horizontal': '6px',
+    'grand_summary_row.border.style': 'solid',
+    'grand_summary_row.border.width': '2px',
+    'grand_summary_row.border.color': '#868686',
+
+    // `* † ‡ §`, doubling to `** †† ‡‡` once the set runs out, upright rather
+    // than italic, and run together into one flowing footer instead of a line
+    // each — all four of which the source does.
+    'footnotes.marks': 'standard',
+    'footnotes.multiline': false,
+    'footnotes.sep': '  ',
+    'footnotes.spec_ref': '^',
+    'footnotes.spec_ftr': '^',
+    'footnotes.font.size': '88%',
+    'footnotes.padding.horizontal': '6px',
+    'source_notes.font.size': '88%',
+    'source_notes.padding': '2px',
+    'source_notes.padding.horizontal': '6px'
   },
 
   /**
@@ -1031,7 +1108,7 @@ const Themes = {
    * Grey were no better. A band with no way to colour the text on it is a band
    * you cannot read.
    *
-   * **Only part-level locations belong here.** Keep style rules
+   * **Only part-level locations belong here.** Style rules are kept
    * out of themes because they name column ids and so do not survive a change
    * of dataset. A location that names a *part* — every column label, every
    * grand-summary row — names nothing dataset-specific, so that reasoning does
@@ -1062,6 +1139,27 @@ const Themes = {
       { label: 'Macquarie header', part: 'column_labels', text: { color: '#FFFFFF' } },
       { label: 'Macquarie spanner', part: 'column_spanners', text: { color: '#FFFFFF' } },
       { label: 'Macquarie stubhead', part: 'stubhead', text: { color: '#FFFFFF' } }
+    ],
+    'john-adam': [
+      // The heads are grey and the group names above them bold black — the one
+      // contrast the header is built on. `tab_options()` has no text colour for
+      // either, so both are rules.
+      { label: 'John Adam heads', part: 'column_labels', text: { color: '#666666' } },
+      { label: 'John Adam stubhead', part: 'stubhead', text: { color: '#666666' } },
+      // `align` because `.gt-spanner` is centred in the generated CSS with no
+      // option behind it, and the source hangs a group name off the left edge of
+      // the columns it covers.
+      { label: 'John Adam groups', part: 'column_spanners',
+        text: { color: '#000000', weight: 'bold', align: 'left' } },
+      // The title is the other true black. It would otherwise take
+      // `table.font.color`, and at 22px bold the near-black reads as grey.
+      { label: 'John Adam title', part: 'title', text: { color: '#000000' } },
+      // A section heading in the body is the same mark as a column group name.
+      { label: 'John Adam sections', part: 'row_groups', text: { color: '#000000', weight: 'bold' } },
+      // The footer is quieter than the body it follows, at #636363 off the
+      // source. Size alone did not separate it far enough.
+      { label: 'John Adam footnotes', part: 'footnotes', text: { color: '#636363' } },
+      { label: 'John Adam source', part: 'source_notes', text: { color: '#636363' } }
     ],
     russell: [
       // The body sits at 300, so a total only has to reach 400 to read as
@@ -1125,7 +1223,8 @@ const Themes = {
 
     /* Reproductions — see the Placenames block above. */
     { id: 'canberra', label: 'Canberra', hint: 'Arial 8pt, black hairlines, shaded totals.' },
-    { id: 'langton', label: 'Langton', hint: 'Rules only, no verticals, bold row labels.' },
+    { id: 'john-adam', label: 'John Adam',
+      hint: 'Full width: grey heads under bold group names, a hairline between every row.' },
     { id: 'sydney', label: 'Sydney', hint: 'A solid blue header band over a blue grid.' },
     { id: 'russell', label: 'Russell', hint: 'Near-black ink, orange rules and totals.' },
 

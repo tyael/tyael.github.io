@@ -190,6 +190,12 @@ const Edges = {
         if (row.kind === 'group') {
           Edges.setH(grid, i, all, Edges.edge(opt, 'row_group.border.top', 'structural'));
           Edges.setH(grid, i + 1, all, Edges.edge(opt, 'row_group.border.bottom', 'structural'));
+          // gt puts these on the group heading cell, which spans the table, so
+          // they are that row's own two ends. They had been in the schema and in
+          // the Options panel since the first commit and drew nothing anywhere —
+          // the same gap `heading.border.lr` and its three siblings were in.
+          Edges.setV(grid, i, 0, Edges.edge(opt, 'row_group.border.left', 'structural'));
+          Edges.setV(grid, i, nCols, Edges.edge(opt, 'row_group.border.right', 'structural'));
         } else if (row.kind === 'summary') {
           // gt draws the summary rule above the block, not between its rows.
           const previous = rows[i - 1];
@@ -201,6 +207,31 @@ const Edges = {
           if (!previous || previous.kind !== 'grand') {
             Edges.setH(grid, i, all, Edges.edge(opt, 'grand_summary_row.border', 'structural'));
           }
+        }
+      }
+
+      // With `row_group.as_column` there are no group label rows to carry the
+      // group's top and bottom border — but the boundaries those rows marked are
+      // still there, between one group's block of rows and the next. Drawing
+      // them there is what keeps the separation the option asked for when a
+      // group is moved from a spanning row into a column: `as_column` is a
+      // decision about what the table *is*, and flipping it should not throw
+      // away a look that was chosen separately.
+      //
+      // `groupId` is what says which block a row belongs to. A grand summary has
+      // none, so it ends the last block rather than joining it.
+      if (model.groupAsColumn) {
+        const groupOf = (r) => {
+          if (!r || !isBody(r) || !r.ref) return null;
+          return r.ref.groupId === undefined || r.ref.groupId === null ? null : r.ref.groupId;
+        };
+        const top = Edges.edge(opt, 'row_group.border.top', 'structural');
+        const bottom = Edges.edge(opt, 'row_group.border.bottom', 'structural');
+        for (let i = 0; i < rows.length; i += 1) {
+          const id = groupOf(rows[i]);
+          if (id === null) continue;
+          if (groupOf(rows[i - 1]) !== id) Edges.setH(grid, i, all, top);
+          if (groupOf(rows[i + 1]) !== id) Edges.setH(grid, i + 1, all, bottom);
         }
       }
     }

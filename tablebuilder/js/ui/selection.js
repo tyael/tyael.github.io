@@ -432,55 +432,82 @@ const Selection = {
   /**
    * Overlay drag handles on the column boundaries so widths can be set by
    * dragging rather than typing a number into the structure panel.
+   *
+   * **Everything here is in unscaled px.** The layer is a child of
+   * `#preview-host`, which carries the stage's zoom as a `transform`, so a
+   * handle written in the table's own pixels is scaled onto the line it belongs
+   * to by the same transform that drew the line. Measuring
+   * `getBoundingClientRect()` and writing the result straight back scaled it
+   * twice: on a 24-column table at the 0.52 Fit lands on, the handles sat 26px
+   * left of the first boundary and 471px left of the last. Wide tables are the
+   * ones you have to zoom to see at all, which is why that is where it showed.
+   *
+   * The boundaries come from `Measure.gridGeometry` — the same measurement
+   * `LineInfo` hit-tests to name a line and offer "drag to resize the column".
+   * A handle and that card describing different lines is the two-producers
+   * failure this codebase keeps paying for, so there is one producer. No grid
+   * is passed: the handles key on the DOM's own columns and have nothing to
+   * check an edge grid against.
    */
   attachResizers(host, table, model) {
     const existing = Util.qs('.resize-layer', host);
     if (existing) existing.remove();
     if (!model || !model.cols.length) return;
 
-    const layer = Util.el('div.resize-layer');
+    const zoom = (typeof App !== 'undefined' && App.zoom) || 1;
+    const geo = Measure.gridGeometry(table, null, zoom);
+    if (geo.colEdges.length < 2) return;
+
     const hostRect = host.getBoundingClientRect();
     const tableRect = table.getBoundingClientRect();
+    const originX = (tableRect.left - hostRect.left) / zoom;
+    const originY = (tableRect.top - hostRect.top) / zoom;
+    const height = tableRect.height / zoom;
 
-    // Measure real boundaries from the first rendered row.
-    const firstRow = table.querySelector('tr');
-    if (!firstRow) return;
-
-    const widths = [];
-    const cols = Util.qsa('col', table);
-    for (const col of cols) widths.push(col.getBoundingClientRect().width);
-    if (!widths.length) return;
-
-    let x = tableRect.left - hostRect.left;
-    for (let i = 0; i < widths.length; i += 1) {
-      x += widths[i];
+    const layer = Util.el('div.resize-layer');
+    for (let i = 0; i < model.cols.length; i += 1) {
       const modelCol = model.cols[i];
-      if (!modelCol || !modelCol.colId) continue;
+      const edge = geo.colEdges[i + 1];
+      if (!modelCol || !modelCol.colId || edge === undefined) continue;
 
       const handle = Util.el('div.col-resizer', {
         style: {
-          left: x + 'px',
-          height: (tableRect.height) + 'px',
-          top: (tableRect.top - hostRect.top) + 'px'
+          left: (originX + edge) + 'px',
+          top: originY + 'px',
+          height: height + 'px'
         },
         title: 'Drag to set the width of “' + (modelCol.label || modelCol.colId) + '”'
       });
 
-      Selection.wireResizer(handle, modelCol.colId, widths[i]);
+      Selection.wireResizer(handle, modelCol.colId, edge - geo.colEdges[i]);
       layer.appendChild(handle);
     }
 
     host.appendChild(layer);
   },
 
+  /**
+   * Turn a handle into a drag that writes a column width.
+   *
+   * `structure.widths` is a CSS length on the table, so both the width the drag
+   * starts from and the distance the pointer travels have to be in the table's
+   * pixels rather than the screen's. `startWidth` arrives unscaled from
+   * `attachResizers`; the pointer delta is divided here, at mousedown, because
+   * the zoom can have changed since the handle was built. Taking the screen
+   * numbers instead snapped the column to `zoom ×` its width on the very first
+   * mousemove — halving it at the zoom Fit usually lands on — and then tracked
+   * the pointer at the wrong speed.
+   */
   wireResizer(handle, colId, startWidth) {
     handle.addEventListener('mousedown', (e) => {
       e.preventDefault();
       const startX = e.clientX;
+      const zoom = (typeof App !== 'undefined' && App.zoom) || 1;
       handle.classList.add('is-dragging');
 
       const onMove = (move) => {
-        const width = Math.max(24, Math.round(startWidth + (move.clientX - startX)));
+        const width = Math.max(24,
+          Math.round(startWidth + (move.clientX - startX) / zoom));
         Store.update((draft) => {
           draft.structure.widths[colId] = width + 'px';
         }, { coalesce: 'resize.' + colId });

@@ -131,6 +131,45 @@ const App = {
     App.renderPreview();
     App.renderPanels();
     App.updateChrome();
+
+    // A render measures geometry back out of the table it has just laid out —
+    // the column resize handles are placed from it — so a font that arrives
+    // afterwards re-lays out the table and leaves those measurements describing
+    // a width it no longer has. Asked *here* rather than above, because a
+    // `<link>`-declared face is not fetched until the layout first asks for it:
+    // at the top of this function the answer is "loaded" and a moment later,
+    // once the preview is in the DOM, it is "loading". `Fonts.sync` cannot cover
+    // it either — it reports only the faces this spec just registered, and the
+    // built-in families come from `index.html`'s own <link>.
+    //
+    // Measured on an 8-column table, the fallback laid it out 16px wider than
+    // Source Serif 4 did, which left every handle 2px per column to the right
+    // of the line it controls: 17px out by the eighth column, 50px by the
+    // twenty-fourth, for the whole life of the render.
+    if (document.fonts && document.fonts.status === 'loading') {
+      Fonts.ready().then(() => App.remeasure());
+    }
+  },
+
+  /**
+   * Measure the laid-out table again, without re-rendering it.
+   *
+   * The render loop is deliberately dumb — any change rebuilds everything — but
+   * a font finishing its load is not a change to the spec, and re-entering the
+   * render from here could not terminate on its own: every pass would find the
+   * fonts settled or not by the same test that scheduled it. Re-measuring is
+   * both narrower and certain to stop, because it renders nothing that could
+   * ask for another font. The two things a render bakes measurements into are
+   * the resize handles and the box the stage scrolls; `LineInfo` measures lazily
+   * on hover and only needs its cache dropped.
+   */
+  remeasure() {
+    const host = Util.qs('#preview-host');
+    const table = host && Util.qs('.gt-table', host);
+    if (!table || !App.model || !App.model.ok) return;
+    Selection.attachResizers(host, table, App.model);
+    LineInfo.invalidateCache();
+    App.syncZoomBox();
   },
 
   renderPreview() {
@@ -142,6 +181,8 @@ const App = {
     if (!model.ok) {
       host.appendChild(App.emptyState(model.error));
       App.setPreviewStyle('');
+      App.paintZoom();
+      App.syncZoomBox();
       return;
     }
 
@@ -182,6 +223,11 @@ const App = {
 
     host.appendChild(paper);
 
+    // Before anything measures. Both the resize handles and `LineInfo` read
+    // live rects and divide the zoom back out of them, so the transform they
+    // are dividing by has to be the one on the element.
+    App.paintZoom();
+
     Selection.attach(rendered.node);
     Selection.attachResizers(host, rendered.node, model);
     // `rendered.grid` is the same `Edges.build` result `RenderHtml.render`
@@ -189,7 +235,7 @@ const App = {
     // `LineInfo` resolving borders a second time on every render.
     LineInfo.attach(host, rendered.node, model, rendered.grid);
 
-    host.style.transform = 'scale(' + App.zoom + ')';
+    App.syncZoomBox();
   },
 
   /**
@@ -585,12 +631,18 @@ const App = {
 
   setZoom(value) {
     if (!isFinite(value)) return;
+    const anchor = App.stageAnchor();
     App.zoom = Util.clamp(value, App.ZOOM_STOPS[0], App.ZOOM_STOPS[App.ZOOM_STOPS.length - 1]);
-    Util.qs('#preview-host').style.transform = 'scale(' + App.zoom + ')';
+    App.paintZoom();
+    App.syncZoomBox();
+    App.scrollToAnchor(anchor);
     App.syncZoomUi();
-    // Resize handles are positioned in unscaled pixels, so they need rebuilding.
-    const table = Util.qs('#preview-host .gt-table');
-    if (table) Selection.attachResizers(Util.qs('#preview-host'), table, App.model);
+    // The resize handles are not rebuilt here. Every figure they are positioned
+    // with is in the table's own unscaled pixels, so the transform this just
+    // changed is what rescales them — the same one that rescales the lines they
+    // sit on. Rebuilding was only ever needed when they were written in screen
+    // pixels, which is the bug that put them in the wrong place to begin with.
+    //
     // This does not go through renderPreview, so LineInfo.attach's own hide()
     // never runs — without this, a card left open across a zoom keeps
     // describing an edge that has since moved.
@@ -598,6 +650,90 @@ const App = {
     // The zoom carried by the geometry LineInfo cached is now stale, even
     // though the underlying grid did not change.
     LineInfo.invalidateCache();
+  },
+
+  /**
+   * Put the zoom on the preview: the transform that scales it, and the number
+   * itself as `--stage-zoom`.
+   *
+   * The custom property is for anything inside the host that must *not* scale
+   * with it — the column resize band, which has to stay the same size under the
+   * pointer at every zoom. Declaring that in CSS against a number the host
+   * carries costs nothing when the zoom changes; writing the size into each
+   * handle would put us back to rebuilding the layer on every step.
+   *
+   * The one place either is written, so a render and a zoom step cannot disagree
+   * about the scale the handles and `LineInfo` divide back out of their
+   * measurements.
+   */
+  paintZoom() {
+    const host = Util.qs('#preview-host');
+    if (!host) return;
+    host.style.transform = 'scale(' + App.zoom + ')';
+    host.style.setProperty('--stage-zoom', String(App.zoom));
+  },
+
+  /**
+   * Give the scaled preview a layout box the stage can scroll.
+   *
+   * The size is read off the host's own rect, which for a `scale` about the
+   * top-left corner *is* the drawn size, subpixels included — deriving it as
+   * `offsetWidth × zoom` would round the unscaled figure first and leave the
+   * box a fraction short of the table at some zooms.
+   *
+   * Safe to read while the box still holds its previous size: `.preview-host`
+   * is `width: max-content`, so its rect does not depend on the box's.
+   */
+  syncZoomBox() {
+    const host = Util.qs('#preview-host');
+    const box = Util.qs('#zoom-box');
+    if (!host || !box) return;
+    const rect = host.getBoundingClientRect();
+    box.style.width = rect.width + 'px';
+    box.style.height = rect.height + 'px';
+  },
+
+  /**
+   * The point of the table at the centre of the stage, in unscaled px from the
+   * preview's top-left corner.
+   *
+   * A zoom step that leaves the scroll offsets alone keeps you looking at the
+   * same *pixel* of the stage rather than the same *cell*, which on a table too
+   * wide to fit means every step slides the table sideways under you. That was
+   * survivable while a wide table could not be scrolled at all; now that
+   * scrolling is how you read one, it is the difference between zoom being
+   * usable and zoom losing your place.
+   */
+  stageAnchor() {
+    const scroll = Util.qs('#stage-scroll');
+    const box = Util.qs('#zoom-box');
+    if (!scroll || !box) return null;
+    const boxRect = box.getBoundingClientRect();
+    const scrollRect = scroll.getBoundingClientRect();
+    return {
+      x: (scrollRect.left + scroll.clientWidth / 2 - boxRect.left) / App.zoom,
+      y: (scrollRect.top + scroll.clientHeight / 2 - boxRect.top) / App.zoom
+    };
+  },
+
+  /**
+   * Scroll the stage so an anchor from `stageAnchor` is back at its centre.
+   *
+   * Written as a delta on the current offsets rather than an absolute position,
+   * because the box's own place in the scroll content moves with it — the auto
+   * margins that centre a table smaller than the stage give way as it grows.
+   * The browser clamps the result, so a table that fits simply stays centred.
+   */
+  scrollToAnchor(anchor) {
+    const scroll = Util.qs('#stage-scroll');
+    const box = Util.qs('#zoom-box');
+    if (!scroll || !box || !anchor) return;
+    const boxRect = box.getBoundingClientRect();
+    const scrollRect = scroll.getBoundingClientRect();
+    scroll.scrollLeft +=
+      boxRect.left + anchor.x * App.zoom - (scrollRect.left + scroll.clientWidth / 2);
+    scroll.scrollTop +=
+      boxRect.top + anchor.y * App.zoom - (scrollRect.top + scroll.clientHeight / 2);
   },
 
   /**
@@ -620,13 +756,23 @@ const App = {
     }
   },
 
+  /**
+   * Zoom so the whole sheet is on the stage.
+   *
+   * Measured on `#preview-host` — the sheet — and not on the `<table>` inside it.
+   * The sheet adds 32px of margin either side, so fitting the table left exactly
+   * that much overflowing at every zoom: 37px of horizontal scrolling
+   * immediately after pressing the button whose one job is to remove it. That
+   * was invisible while the overflow was unreachable, and is the one place
+   * making the stage scroll honestly showed up as a regression.
+   */
   zoomToFit() {
-    const table = Util.qs('#preview-host .gt-table');
+    const host = Util.qs('#preview-host');
     const scroll = Util.qs('#stage-scroll');
-    if (!table || !scroll) return;
+    if (!host || !scroll) return;
 
-    const available = scroll.clientWidth - 72;
-    const natural = table.getBoundingClientRect().width / App.zoom;
+    const available = scroll.clientWidth - 72;   // .stage-scroll's own padding
+    const natural = host.getBoundingClientRect().width / App.zoom;
     App.setZoom(natural > 0 ? Math.min(2, available / natural) : 1);
   },
 

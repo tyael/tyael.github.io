@@ -1004,6 +1004,17 @@ select {
   overflow: hidden;
 }
 
+/* The stage scrolls in both directions at every zoom. It did not: a table
+   wider than the stage could only be seen by zooming out, while one longer than
+   the stage scrolled fine — see `.zoom-box` for why the two axes behaved
+   differently.
+
+   Centred by the auto margins on `.zoom-box` rather than by `justify-content`.
+   An auto margin resolves to zero when the free space is negative, so content
+   too wide for the stage starts at the left padding edge and every column of it
+   is inside the scrollable area. Centring it instead put the leading columns
+   outside that area altogether: at 100% on a 24-column table the first 452px
+   were unreachable at any scroll position. */
 .stage-scroll {
   width: 100%;
   height: 100%;
@@ -1011,12 +1022,43 @@ select {
   padding: 36px;
   display: flex;
   align-items: flex-start;
-  justify-content: center;
 }
 
-.preview-host {
-  transform-origin: top center;
+/* A `transform` paints at the new size without changing the layout size, so the
+   scroll container sized itself to the *unscaled* preview: at 50% it offered
+   2585px of scrolling for 1256px of table and the rest was bare stage, and a
+   wide table overflowed further than the container could reach.
+
+   This box carries the scaled size as a real layout box — `App.syncZoomBox`
+   writes it from the host's own measured rect — with the host taken out of flow
+   over the top of it, so it contributes no layout size of its own and its
+   transformed box lands exactly on the box's bounds. What the stage can scroll
+   to is then exactly what is drawn, on both axes, at every zoom.
+
+   `flex: 0 0 auto` because a flex item shrinks by default, and a box shrunk
+   below the size it was given is the same wrong scroll area again. */
+.zoom-box {
+  position: relative;
   flex: 0 0 auto;
+  margin: 0 auto;
+}
+
+/* `top left`, not `top center`: the box above is positioned and sized as though
+   the scale grows from the host's top-left corner, and a centred origin would
+   push half the growth out to the left of it — back into overflow nothing can
+   scroll to.
+
+   `width: max-content` because an out-of-flow box is otherwise shrink-to-fit
+   against its containing block, which is the box whose width is derived from
+   this one: at any zoom below 100% the preview would be squeezed into the
+   smaller figure it had just produced. As a flex item it took its max-content
+   width already, so this is the same width it has always had. */
+.preview-host {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  transform-origin: top left;
 }
 
 /* Empty state */

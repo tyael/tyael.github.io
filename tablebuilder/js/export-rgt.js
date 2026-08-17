@@ -337,7 +337,13 @@ const ExportRgt = {
 
     /* ---- Options ---- */
 
-    const changed = OptionsSchema.diff(spec.options);
+    // Resolved, not raw. gt applies `row_group.*` to the group heading row only,
+    // so a row group shown as a column needs the value written into gt's own
+    // `stub_row_group.*` argument or the exported table loses a look the preview
+    // shows. The renderer resolves through the same function, which is what keeps
+    // the two from disagreeing.
+    const changed = OptionsSchema.diff(
+      OptionsSchema.withGroupColumnOverrides(spec.options));
     const optionArgs = Object.keys(changed).map((key) =>
       ExportRgt.optionName(key) + ' = ' + ExportRgt.optionValue(key, changed[key]));
 
