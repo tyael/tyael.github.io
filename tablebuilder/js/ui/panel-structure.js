@@ -328,10 +328,17 @@ const PanelStructure = {
         merge.target, (value) => Store.update((draft) => { draft.structure.merges[index].target = value; })),
         { hint: 'The surviving column. The others are hidden.' }));
 
+      // The pick order is what `{2}`, `{3}` and the two-sided uncertainty read,
+      // so the picker has to be able to say it.
       body.appendChild(Controls.field(null, Controls.columnChips('mg.cols.' + merge.id,
         columns.filter((c) => c.id !== merge.target), merge.columns,
-        (value) => Store.update((draft) => { draft.structure.merges[index].columns = value; })),
-        { wide: true }));
+        (value) => Store.update((draft) => { draft.structure.merges[index].columns = value; }),
+        { ordered: true }),
+        { wide: true, hint: merge.type === 'uncert'
+          ? 'With two, the first is the + side and the second the −. Click a chip off and on ' +
+            'again to move it to the end.'
+          : 'The numbers are the order you picked them in, which is the order they are read in ' +
+            'below. Click a chip off and on again to move it to the end.' }));
 
       if (merge.type === 'merge') {
         body.appendChild(Controls.field('Pattern', Controls.text('mg.pattern.' + merge.id,

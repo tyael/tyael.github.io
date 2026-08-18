@@ -72,8 +72,13 @@ const PanelReshape = {
           draft.reshape.idCols = value;
           PanelReshape.resync(draft);
         });
-      }),
-      Util.el('div.field-hint', { text: 'One output row per distinct combination of these.' })
+      }, { ordered: true }),
+      Util.el('div.field-hint', { text: 'One output row per distinct combination of these.' }),
+      Util.el('div.field-hint', {
+        text: 'The numbers are the order you picked them in, and it is the order they read ' +
+          'down the stub: with two or more, 1 becomes the row group and the last the row label. ' +
+          'Click a chip off and on again to move it to the end.'
+      })
     ], { key: 'reshape.id' }));
 
     panel.appendChild(Controls.section('Spread across columns', [
@@ -82,10 +87,14 @@ const PanelReshape = {
           draft.reshape.nameCols = value;
           PanelReshape.resync(draft);
         });
+      }, { ordered: true }),
+      Util.el('div.field-hint', {
+        text: 'Values here become column groups. Pick more than one to nest spanners.'
       }),
       Util.el('div.field-hint', {
-        text: 'Values here become column groups. Pick more than one to nest spanners — ' +
-          'the first listed becomes the outermost.'
+        text: 'The numbers are the order you picked them in, and it is the nesting: 1 is the ' +
+          'outermost group and the last sits on the column labels. Click a chip off and on ' +
+          'again to move it to the end.'
       })
     ], { key: 'reshape.name' }));
 
@@ -95,9 +104,10 @@ const PanelReshape = {
           draft.reshape.valueCols = value;
           PanelReshape.resync(draft);
         });
-      }),
+      }, { ordered: true }),
       Util.el('div.field-hint', {
-        text: 'With two or more, each group gets one column per value and the group becomes a spanner.'
+        text: 'With two or more, each group gets one column per value and the group becomes a ' +
+          'spanner. They sit in the order you picked them.'
       })
     ], { key: 'reshape.value' }));
 

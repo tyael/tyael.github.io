@@ -361,30 +361,47 @@ const Controls = {
 
   /**
    * A set of toggleable column chips.
+   *
+   * `opts.ordered` hands back the order they were clicked in and numbers each
+   * selected chip, for the callers where that order carries meaning: the
+   * pivot's `nameCols` runs outer to inner, and `idCols` decides which column
+   * becomes the row group and which the row label. Everywhere else the order
+   * says nothing, and the source order is the steadier thing to return.
+   *
+   * The chips themselves stay in source order in both modes — re-sorting them
+   * as they are picked would move the one under the pointer.
+   *
    * @param {Array} columns - [{id, label}]
    * @param {Array} selected - selected ids
    */
   columnChips(key, columns, selected, onChange, opts) {
     opts = opts || {};
-    const chosen = new Set(selected || []);
+    const picked = (selected || []).filter((id) => columns.some((c) => c.id === id));
+    const chosen = new Set(picked);
 
-    const chips = columns.map((col) => Util.el('span.chip' + (chosen.has(col.id) ? '.is-on' : ''), {
-      text: col.label || col.id,
-      title: col.id,
-      on: {
-        click: () => {
-          if (opts.single) {
-            onChange(chosen.has(col.id) ? [] : [col.id]);
-            return;
+    const chips = columns.map((col) => {
+      const on = chosen.has(col.id);
+      const rank = opts.ordered && on ? picked.indexOf(col.id) + 1 : 0;
+      const label = col.label || col.id;
+
+      return Util.el('span.chip' + (on ? '.is-on' : ''), {
+        title: col.id + (rank ? ' — ' + rank + ' of ' + picked.length : ''),
+        on: {
+          click: () => {
+            if (opts.single) {
+              onChange(on ? [] : [col.id]);
+              return;
+            }
+            const next = on
+              ? picked.filter((id) => id !== col.id)
+              : picked.concat([col.id]);
+            onChange(opts.ordered
+              ? next
+              : columns.filter((c) => next.indexOf(c.id) >= 0).map((c) => c.id));
           }
-          const next = new Set(chosen);
-          if (next.has(col.id)) next.delete(col.id);
-          else next.add(col.id);
-          // Preserve the source column order rather than click order.
-          onChange(columns.filter((c) => next.has(c.id)).map((c) => c.id));
         }
-      }
-    }));
+      }, rank ? [Util.el('span.chip-rank', { text: String(rank) }), label] : label);
+    });
 
     if (!chips.length) return Controls.note(opts.emptyText || 'no columns');
 

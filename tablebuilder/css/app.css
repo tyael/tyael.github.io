@@ -845,6 +845,21 @@ select {
   color: var(--accent-strong);
 }
 
+/* The pick order, where it means something — the pivot's nesting depth. */
+.chip-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 13px;
+  height: 13px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: 9px;
+  line-height: 1;
+  padding: 0 3px;
+}
+
 .chip-empty {
   font-style: italic;
   color: var(--text-dim);
