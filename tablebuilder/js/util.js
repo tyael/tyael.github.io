@@ -98,6 +98,14 @@ const Util = {
       .replace(/^_+|_+$/g, '') || 'x';
   },
 
+  /**
+   * `1 style rule`, `2 style rules`. English only, and only the -s case, which
+   * is every noun this app counts.
+   */
+  plural(n, noun) {
+    return n + ' ' + noun + (n === 1 ? '' : 's');
+  },
+
   /** Title-ish humanisation of a column id: `total_pop_2024` -> `Total pop 2024`. */
   humanise(str) {
     const s = String(str).replace(/[_.]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').trim();
@@ -125,15 +133,6 @@ const Util = {
     return JSON.parse(JSON.stringify(obj));
   },
 
-  /** Shallow equality over own enumerable keys. */
-  shallowEqual(a, b) {
-    if (a === b) return true;
-    if (!a || !b) return false;
-    const ka = Object.keys(a);
-    const kb = Object.keys(b);
-    if (ka.length !== kb.length) return false;
-    return ka.every((k) => a[k] === b[k]);
-  },
 
   /**
    * Unique values, order preserved.

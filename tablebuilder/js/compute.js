@@ -62,10 +62,39 @@ const Compute = {
     opts = opts || {};
     const limit = opts.limitRows !== false;
 
+    /*
+     * The skeleton is a *readable* model, not a bare `{ok: false}`.
+     *
+     * `run` returns this unchanged on its two failure paths — no data, and
+     * every column hidden — and `App.model` is whatever it last returned, so
+     * every view in the app can be holding one. Leaving `rows` and `cols` off
+     * it made "did this resolve" and "is there anything to read" two different
+     * questions, and six readers asked only the first: the inspector's colour
+     * source and value copier, and `Selection.rangeFrom` and `bodyColumn`,
+     * threw on `model.rows` or `model.cols` being undefined. A panel that
+     * throws leaves the rail blank with nothing on screen to say why.
+     *
+     * Empty arrays make every one of them correct without a guard, and `ok`
+     * and `error` still say the table did not resolve for anyone who needs to
+     * ask. This is the same instinct as a step going inert rather than being
+     * deleted: degrade to something that still answers.
+     */
     const model = {
       ok: false,
       error: null,
       warnings: [],
+      cols: [],
+      rows: [],
+      groups: [],
+      columns: [],
+      columnsById: {},
+      header: { show: false, totalRows: 0, lead: [], levels: [] },
+      footnotes: [],
+      sourceNotes: [],
+      title: '',
+      subtitle: '',
+      totalRows: 0,
+      truncated: false,
       options: spec.options,
       spec: spec
     };
@@ -75,48 +104,47 @@ const Compute = {
       return model;
     }
 
-    /* ---- 1. Working data (post-reshape) ---- */
+    /* ---- 1. The structural pipeline ---- */
 
-    const working = Reshape.derive(spec.source, spec.reshape);
-    model.warnings.push.apply(model.warnings, working.warnings);
-
-    // Cell corrections sit between the pivot and everything else: filtering,
-    // sorting, grouping, summaries, colour scales and `where` expressions all
-    // read `rows` below, so a corrected value is what every one of them sees.
-    // Applying them any later would leave the table sorting by a typo it no
-    // longer shows.
-    const corrected = Corrections.apply(working.rows, spec.corrections);
-    const rows = corrected.rows;
-    model.corrections = corrected.applied;
-    model.staleCorrections = corrected.stale;
-    if (corrected.stale.length) {
-      model.warnings.push(corrected.stale.length + ' cell correction(s) no longer match the ' +
-        'data they were made against, and were not applied.');
+    // Every structural operation, in the order the user put them in — see
+    // `pipeline.js`. This used to be five fixed stages hard-coded here, in
+    // whatever order the code was written in, with nothing on screen saying
+    // there was an order at all.
+    const shaped = Pipeline.run(spec.source, spec.pipeline);
+    model.warnings.push.apply(model.warnings, shaped.warnings);
+    // Per step: whether it did nothing, and anything it could not do. The
+    // Shape panel puts these on the step; the table-wide banner carries only
+    // what the reader of the table needs to know.
+    model.pipelineNotes = shaped.inert;
+    for (let i = 0; i < shaped.inert.length; i += 1) {
+      for (const note of shaped.inert[i].notes) {
+        const step = spec.pipeline[i];
+        const def = Pipeline.type(step && step.type);
+        model.warnings.push('Step ' + (i + 1) + ', ' +
+          (def ? def.label : 'unknown') + ', ' + note + '.');
+      }
     }
+    model.corrections = shaped.corrections;
+    model.staleCorrections = shaped.staleCorrections;
+    model.filteredOut = shaped.filteredOut;
+
+    const working = { columns: shaped.columns, rows: shaped.items.map((item) => item.row) };
+    // `rows` is the pipeline's data in source order, which is what a `where`
+    // expression naming a column is evaluated over and what `srcIndex` indexes
+    // into. `displayRows` is the same rows in the order they are drawn.
+    const rows = [];
+    for (const item of shaped.items) rows[item.srcIndex] = item.row;
+    for (let i = 0; i < rows.length; i += 1) if (!rows[i]) rows[i] = {};
 
     const columnsById = {};
     for (const col of working.columns) columnsById[col.id] = col;
     model.columns = working.columns;
     model.columnsById = columnsById;
 
-    /* ---- 2. Column merges ---- */
-
-    const merged = Compute.applyMerges(spec, working, columnsById);
-
-    /* ---- 3. Row order ---- */
-
-    let displayRows = rows.map((row, i) => ({ row: row, srcIndex: i }));
-
-    // Filter first: sorting rows that are about to be dropped is wasted work,
-    // and every count below should describe what is actually shown. `apply`
-    // does not renumber `srcIndex` — style rules and footnotes are pinned to
-    // it, so renumbering would move all of them to different rows.
-    const filtered = Filter.apply(displayRows, spec.structure.filter, columnsById);
-    displayRows = filtered.rows;
-    model.filteredOut = filtered.removed;
-    model.sourceRows = rows.length;
-
-    displayRows = Compute.sortRows(displayRows, spec.structure.sort, columnsById);
+    let displayRows = shaped.items;
+    // What the data stage started with, not what survived: the count under the
+    // preview says how many a filter is holding back.
+    model.sourceRows = shaped.sourceRows;
 
     model.totalRows = displayRows.length;
     model.truncated = false;
@@ -125,17 +153,37 @@ const Compute = {
       model.truncated = true;
     }
 
-    /* ---- 4. Grid columns ---- */
+    /* ---- 2. Column merges ---- */
+
+    // A plan, not a change to the data: `byTarget` says how a cell renders and
+    // `consumed` which columns stop being drawn. That is why a merge step can
+    // sit anywhere in the table stage without disturbing the filter or sort.
+    const merged = Compute.applyMerges(shaped.merges, columnsById);
+
+    /* ---- 3. Grid columns ---- */
 
     const st = spec.structure;
-    const stubColId = st.rownameCol && columnsById[st.rownameCol] ? st.rownameCol : null;
-    const groupColId = st.groupnameCol && columnsById[st.groupnameCol] ? st.groupnameCol : null;
+    model.spanners = shaped.spanners;
+    model.groupOrder = shaped.groupOrder;
+    model.merges = shaped.merges;
+    model.summaries = shaped.summaries;
+    model.stubCol = shaped.stubCol;
+    model.groupCol = shaped.groupCol;
+    const stubColId = shaped.stubCol && columnsById[shaped.stubCol] ? shaped.stubCol : null;
+    const groupColId = shaped.groupCol && columnsById[shaped.groupCol] ? shaped.groupCol : null;
     const groupAsColumn = groupColId && spec.options['row_group.as_column'];
 
+    // **`columnOrder` is a preference over what the pipeline produced, not the
+    // list of what exists.** It used to be the list, which meant every change
+    // to the column set had to write it back — `PanelReshape.resync` existed to
+    // do exactly that, and a pipeline step that changed columns without
+    // resyncing would have emptied the table. Ordering by preference and
+    // appending the rest is the same result when they agree and survivable when
+    // they do not.
     const hidden = new Set(st.hidden);
-    const bodyColIds = st.columnOrder.filter((id) =>
-      columnsById[id] && !hidden.has(id) && id !== stubColId && id !== groupColId &&
-      !merged.consumed.has(id));
+    const ordered = Spec.orderColumns(st.columnOrder, working.columns.map((col) => col.id));
+    const bodyColIds = ordered.filter((id) =>
+      !hidden.has(id) && id !== stubColId && id !== groupColId && !merged.consumed.has(id));
 
     const cols = [];
     if (groupAsColumn) {
@@ -173,6 +221,9 @@ const Compute = {
     /* ---- 5. Formatting and colouring plans ---- */
 
     const formatPlan = Compute.buildFormatPlan(spec, columnsById);
+    // For `export-rgt.js`: an unset summary format follows the column being
+    // totalled, and this is the one place that resolved which format that is.
+    model.formatPlan = formatPlan;
     // Over the rows that survived the filter, not the whole source: a scale
     // fitted to rows nobody can see leaves the visible ones bunched at one end
     // of it. Summaries do the same by construction, since they are built from
@@ -184,7 +235,13 @@ const Compute = {
 
     const compiled = StyleRules.compile(spec.styleRules, {
       rows: rows,
-      columnsById: columnsById
+      columnsById: columnsById,
+      // For a `where` expression that names a neighbouring cell: the rows in
+      // the order they are drawn, and the body columns in the order they are
+      // drawn. Both are needed because "above" and "left" are about the page,
+      // not about the file.
+      sequence: displayRows,
+      bodyColumns: Compute.bodyColumnIds(model)
     });
     const compiledRules = compiled.rules;
     // Comes back from this compile, so it cannot describe a rule that is no
@@ -216,6 +273,60 @@ const Compute = {
     };
 
     model.rows = Compute.buildBody(displayRows, ctx);
+
+    // The hover preview in the Style rules panel compiles a rule on its own, outside
+    // a render, and a `where` expression naming a neighbouring cell needs the
+    // same sequence this render used or the outline would not match the paint.
+    model.rowSequence = displayRows;
+
+    // A footnote whose mark reaches no cell still prints in the footer, so the
+    // reader is left hunting the table for a “1” that is not there. Nothing
+    // said so, and every route to it is ordinary: delete the column group a
+    // note was attached to, hide the column, restructure a pivot so the group
+    // it named no longer exists, or add a note with nothing selected.
+    //
+    // Asked of the built model rather than of the spec, because "did this
+    // anchor find a cell" is only answerable once the cells exist — and asking
+    // the spec separately would be a second producer of the location matching
+    // `marksFor` has just done.
+    const placed = new Set();
+    const collect = (cell) => {
+      for (const mark of (cell && cell.marks) || []) placed.add(mark);
+    };
+    for (const level of model.header.levels) level.cells.forEach(collect);
+    (model.header.lead || []).forEach(collect);
+    for (const row of model.rows) {
+      collect(row);
+      (row.cells || []).forEach(collect);
+    }
+
+    const unplaced = model.footnotes.filter((note) => !placed.has(note.mark));
+    if (unplaced.length) {
+      model.warnings.push(unplaced.length + ' footnote(s) print a mark the table does not carry — ' +
+        unplaced.map((note) => '“' + Util.truncate(Markup.toPlain(note.text), 28) + '”').join(', ') +
+        '. Select a cell and re-attach them, or move them to Source notes.');
+    }
+
+    // What each colour rule resolved to, for `export-rgt.js`. A summary, not
+    // the plan: the plan holds the scale functions and would let a renderer
+    // reach behind the model, the way `model.styleRules` carries `{id, label}`
+    // and not the spec's rules.
+    model.colorScales = colorPlan.map((entry) => ({
+      id: entry.id,
+      shared: entry.shared,
+      domains: entry.domains,
+      // The categorical levels in the order the palette was mapped onto them,
+      // and the colour each ended up with. Data, not the scale function — gt
+      // maps `palette[i]` onto `levels[i]` positionally, so the exporter needs
+      // the order this step chose and must not choose its own.
+      levels: entry.levels || null,
+      levelColors: entry.levels && entry.levelColorOf
+        ? entry.levels.reduce((out, level) => {
+          out[level] = entry.levelColorOf(level);
+          return out;
+        }, {})
+        : null
+    }));
 
     /* ---- 10. Header/footer text ---- */
 
@@ -265,11 +376,11 @@ const Compute = {
    * Merges produce a text value for the target column and mark the other
    * columns as consumed so they drop out of the display.
    */
-  applyMerges(spec, working, columnsById) {
+  applyMerges(merges, columnsById) {
     const consumed = new Set();
     const byTarget = {};
 
-    for (const merge of spec.structure.merges) {
+    for (const merge of merges || []) {
       if (!columnsById[merge.target]) continue;
       const others = (merge.columns || []).filter((id) => id !== merge.target && columnsById[id]);
       if (!others.length) continue;
@@ -336,14 +447,30 @@ const Compute = {
           else if (nb === null) return -1;
           else cmp = na - nb;
         } else {
-          const sa = String(av === null || av === undefined ? '' : av);
-          const sb = String(bv === null || bv === undefined ? '' : bv);
-          cmp = sa.localeCompare(sb, undefined, { numeric: true, sensitivity: 'base' });
+          // Missing last here too, whichever direction is asked for — the
+          // numeric branch above has always said so and this one mapped a
+          // blank to '', which sorts first ascending. Two column types, two
+          // answers to the same question, and `dplyr::arrange()` gives the
+          // numeric one, so the exported table disagreed with the preview
+          // exactly where the preview disagreed with itself.
+          const ma = Util.isMissing(av);
+          const mb = Util.isMissing(bv);
+          if (ma && mb) cmp = 0;
+          else if (ma) return 1;
+          else if (mb) return -1;
+          else cmp = String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' });
         }
 
         if (cmp !== 0) return key.dir === 'desc' ? -cmp : cmp;
       }
-      return a.srcIndex - b.srcIndex;
+      // **Stable over the incoming order, not over `srcIndex`.** Those are the
+      // same thing for one sort step, because the input is in source order —
+      // and they part company the moment there are two. Breaking ties by
+      // `srcIndex` throws the earlier sort away, while `dplyr::arrange()` is
+      // stable and keeps it, so a second sort step meant one thing on screen
+      // and another in the exported table. `Array.prototype.sort` has been
+      // stable since ES2019, so returning 0 is the whole of it.
+      return 0;
     });
   },
 
@@ -352,29 +479,28 @@ const Compute = {
      ================================================================ */
 
   /**
-   * Resolve which formatter applies to each column, and any row-specific
-   * overrides. Later rules in `spec.format` win.
-   * @returns {Object} colId -> {def, rowOverrides: Map(srcIndex -> def)}
+   * Resolve which formatter applies to each column. Later rules in
+   * `spec.format` win.
+   *
+   * **A number format applies to every row of its columns**, as a colour rule
+   * does. Both used to carry a half-built row scope: `rule.rows` with
+   * `mode: 'index'` filtered the preview, no control in either panel could set
+   * it, and neither exporter emitted it — so the only way to reach it was to
+   * hand-edit a saved project, and doing so produced a table whose R printed
+   * different values. gt has `rows =` on `data_color()` and on the `fmt_*`
+   * family if this is ever wanted for real; it needs a control and an emitted
+   * argument, not a resurrected branch.
+   *
+   * @returns {Object} colId -> {type, opts}
    */
   buildFormatPlan(spec, columnsById) {
     const plan = {};
 
     for (const rule of spec.format) {
-      if (rule.enabled === false) continue;
-      const columns = (rule.columns || []).filter((id) => columnsById[id]);
+      if (!Spec.isEnabled(rule)) continue;
       const entry = { type: rule.type, opts: Formatters.resolveOpts(rule.type, rule.opts) };
-
-      for (const colId of columns) {
-        if (!plan[colId]) plan[colId] = { def: null, rowOverrides: null };
-        const targetsAllRows = !rule.rows || rule.rows.mode === 'all';
-
-        if (targetsAllRows) {
-          plan[colId].def = entry;
-        } else {
-          if (!plan[colId].rowOverrides) plan[colId].rowOverrides = new Map();
-          const indices = rule.rows.mode === 'index' ? rule.rows.indices : [];
-          for (const index of indices) plan[colId].rowOverrides.set(index, entry);
-        }
+      for (const colId of (rule.columns || []).filter((id) => columnsById[id])) {
+        plan[colId] = entry;
       }
     }
 
@@ -382,7 +508,7 @@ const Compute = {
   },
 
   /** Format one raw value for a cell. Returns {text, isMarkup}. */
-  formatValue(rawValue, colId, srcIndex, ctx) {
+  formatValue(rawValue, colId, ctx) {
     const spec = ctx.spec;
 
     if (Util.isMissing(rawValue)) {
@@ -390,11 +516,7 @@ const Compute = {
       return { text: '', isMarkup: false, missing: true };
     }
 
-    const entry = ctx.formatPlan[colId];
-    let def = entry ? entry.def : null;
-    if (entry && entry.rowOverrides && entry.rowOverrides.has(srcIndex)) {
-      def = entry.rowOverrides.get(srcIndex);
-    }
+    const def = ctx.formatPlan[colId] || null;
 
     if (spec.subs.zero.enabled && Util.toNumber(rawValue) === 0) {
       return { text: spec.subs.zero.text, isMarkup: true, zero: true };
@@ -424,52 +546,105 @@ const Compute = {
      ================================================================ */
 
   /**
+   * The body columns, in the order they are drawn.
+   *
+   * What `left()` and `right()` count along. The stub and the row-group column
+   * are not body cells, so they are not among them — a rule reaching left from
+   * the first data column finds nothing rather than finding the row label.
+   */
+  bodyColumnIds(model) {
+    return (model.cols || []).filter((col) => col.kind === 'body').map((col) => col.colId);
+  },
+
+  /**
    * Fit one colour scale per data_color rule, over the values it covers.
-   * @returns {Array} [{columns:Set, scale, applyTo, autocolorText, ...}]
+   *
+   * A rule applies to every row of its columns — see the note on
+   * `buildFormatPlan` for the row scope both of these used to half-carry.
+   *
+   * @returns {Array} [{columns:Set, scales, domains, applyTo, autocolorText, ...}]
    */
   buildColorPlan(spec, working, columnsById) {
     const plan = [];
 
     for (const rule of spec.dataColor) {
-      if (rule.enabled === false) continue;
+      if (!Spec.isEnabled(rule)) continue;
       const columns = (rule.columns || []).filter((id) => columnsById[id]);
       if (!columns.length) continue;
 
       // A shared domain fits one scale across every listed column; otherwise
       // each column gets its own, which is usually what you want when the
       // columns are in different units.
+      // Which columns supply the values, as against which get painted. They
+      // are the same list unless the rule says otherwise — gt's
+      // `target_columns` seen from the other end.
+      const valueColumns = Spec.colorValueColumns(rule).filter((id) => columnsById[id]);
+      if (!valueColumns.length) continue;
+      const paintedBy = {};
+      for (let i = 0; i < columns.length; i += 1) {
+        paintedBy[columns[i]] = valueColumns[Math.min(i, valueColumns.length - 1)];
+      }
+
       const buildFor = (ids) => {
         const values = [];
         for (const row of working.rows) {
           for (const id of ids) values.push(row[id]);
         }
         return Palettes.scale({
-          colors: Palettes.byName(rule.palette || 'Blues'),
-          method: rule.method || 'numeric',
+          colors: Spec.colorRamp(rule),
+          method: Spec.colorMethod(rule),
           values: values,
           domain: rule.domain && rule.domain.length === 2 ? rule.domain : null,
-          bins: rule.bins,
           reverse: !!rule.reverse,
-          midpoint: rule.midpoint
+          midpoint: rule.midpoint,
+          levelColors: rule.levelColors || {},
+          naColor: rule.naColor || null
         });
       };
 
       const scales = {};
       if (rule.sharedDomain !== false) {
-        const shared = buildFor(columns);
+        const shared = buildFor(valueColumns);
         for (const id of columns) scales[id] = shared;
       } else {
-        for (const id of columns) scales[id] = buildFor([id]);
+        for (const id of columns) scales[id] = buildFor([paintedBy[id]]);
       }
+
+      // The range each scale was actually fitted over — after a shared domain
+      // has widened it across several columns, after an explicit domain, and
+      // after a midpoint has made it symmetric. `export-rgt.js` needs exactly
+      // this number and must not re-derive it: gt fits its own domain per
+      // column by default, so a scale the preview shared across two columns
+      // reaches R as two different scales unless the number is written down.
+      // Recorded where it is decided, like the rule id on a border.
+      const domains = {};
+      for (const id of columns) {
+        const breaks = scales[id].breaks;
+        domains[id] = breaks && breaks.length ? [breaks[0], breaks[breaks.length - 1]] : null;
+      }
+
+      // The levels each scale actually found, in the order the palette was
+      // mapped onto them. `export-rgt.js` needs exactly this order to emit
+      // `levels =` beside a matching `palette =` — gt maps the two
+      // positionally, so re-deriving the order there would be a second
+      // producer of the thing that decides which category is which colour.
+      const levels = scales[columns[0]] && scales[columns[0]].levels;
 
       plan.push({
         id: rule.id,
         columns: new Set(columns),
+        columnOrder: columns,
+        valueColumns: valueColumns,
+        paintedBy: paintedBy,
         scales: scales,
+        domains: domains,
+        levels: levels && levels.length ? levels.slice() : null,
+        levelColorOf: scales[columns[0]] && scales[columns[0]].colorOf,
+        shared: rule.sharedDomain !== false,
         applyTo: rule.applyTo || 'fill',
         autocolorText: rule.autocolorText !== false,
-        alpha: rule.alpha === undefined ? 1 : rule.alpha,
-        rows: rule.rows && rule.rows.mode === 'index' ? new Set(rule.rows.indices) : null
+        contrast: Spec.colorContrast(rule, spec.options),
+        alpha: rule.alpha === undefined ? 1 : rule.alpha
       });
     }
 
@@ -477,28 +652,38 @@ const Compute = {
   },
 
   /** The colour contribution for one cell, or null. */
-  colorFor(rawValue, colId, srcIndex, ctx) {
+  colorFor(rawValue, colId, srcIndex, ctx, row) {
     let out = null;
 
     for (const entry of ctx.colorPlan) {
       if (!entry.columns.has(colId)) continue;
-      if (entry.rows && !entry.rows.has(srcIndex)) continue;
 
-      const color = entry.scales[colId].of(rawValue);
+      // The value that drives the colour is not always the value in the cell:
+      // a rule can paint one column from another's numbers.
+      const from = entry.paintedBy[colId];
+      const driving = (from === colId || !row) ? rawValue : row[from];
+      const color = entry.scales[colId].of(driving);
       if (!color) continue;
 
       const shaded = entry.alpha < 1 ? Palettes.withAlpha(color, entry.alpha) : color;
 
+      // Which rule won, recorded where it wins — the same reasoning that puts
+      // `ruleId` on a border in `StyleRules.merge`, and it costs the same
+      // nothing: the object is already being allocated. Re-matching the plan
+      // when something asks would make a second producer of a fact this loop
+      // has already decided, which is the fault this codebase keeps paying for.
+      //
+      // Per property, not per rule, because later rules win per property: with
+      // a fill rule under a text-colour rule, the two halves of one cell's
+      // colour come from two different rules.
       if (entry.applyTo === 'text') {
-        out = Object.assign({}, out, { color: shaded });
+        out = Object.assign({}, out, { color: shaded, colorRule: entry.id });
       } else {
-        const next = { fill: shaded };
+        const next = { fill: shaded, fillRule: entry.id };
         if (entry.autocolorText) {
           next.color = Palettes.readableOn(
-            shaded,
-            ctx.spec.options['table.font.color'],
-            ctx.spec.options['table.font.color.light']
-          );
+            shaded, entry.contrast.dark, entry.contrast.light, entry.contrast.algo);
+          next.colorRule = entry.id;
         }
         out = Object.assign({}, out, next);
       }
@@ -612,12 +797,6 @@ const Compute = {
     return index[Compute.locationKey(loc)] || [];
   },
 
-  /** Render a mark list into this app's markup, honouring the footnote spec. */
-  markupForMarks(marks, spec) {
-    if (!marks.length) return '';
-    const flags = spec.options['footnotes.spec_ref'] || '^i';
-    return marks.map((mark) => Markup.applyFootnoteSpec(mark, flags)).join(',');
-  },
 
   /* ================================================================
      Header
@@ -635,7 +814,7 @@ const Compute = {
   buildHeader(spec, model, rules, footnoteIndex) {
     const cols = model.cols;
     const bodyCols = cols.filter((c) => c.kind === 'body');
-    const spanners = (spec.structure.spanners || []).filter((sp) => sp.columns.length);
+    const spanners = (model.spanners || []).filter((sp) => sp.columns.length);
 
     // Body columns sit to the right of the stub and group columns. Every header
     // cell records the grid column it truly occupies, because the label row
@@ -646,13 +825,27 @@ const Compute = {
     const maxLevel = spanners.reduce((max, sp) => Math.max(max, sp.level || 1), 0);
     const totalRows = maxLevel + 1;
 
-    // colId -> level -> spanner
+    // colId -> level -> spanner. Two column groups can claim one column at one
+    // level, and the later one silently took it — no mark on screen, nothing in
+    // the panel, and R that gt rejects outright, since `tab_spanner()` refuses
+    // to overwrite a spanner unless it is told to. Trivially reachable: the
+    // Shape panel lets any group name any columns at any level.
     const at = {};
+    const overlaps = [];
     for (const sp of spanners) {
       for (const colId of sp.columns) {
         if (!at[colId]) at[colId] = {};
-        at[colId][sp.level || 1] = sp;
+        const level = sp.level || 1;
+        const held = at[colId][level];
+        if (held && held !== sp) overlaps.push([held.label, sp.label]);
+        at[colId][level] = sp;
       }
+    }
+    for (const pair of Util.unique(overlaps.map((p) => p.join('\u0001')))) {
+      const pair2 = pair.split('\u0001');
+      model.warnings.push('Column groups “' + pair2[0] + '” and “' + pair2[1] +
+        '” cover the same column at the same level — “' + pair2[1] + '” wins. ' +
+        'Move one to another level, or give it different columns.');
     }
 
     const emitted = new Set();
@@ -712,6 +905,23 @@ const Compute = {
           emitted.add(col.colId);
           i += 1;
         }
+      }
+
+      // One group drawn as two cells means its columns are not next to each
+      // other. The preview can only draw it in pieces; gt moves the columns
+      // together instead (`tab_spanner(gather = TRUE)`), so this is also the
+      // one arrangement where the exported table is laid out differently from
+      // the one on screen.
+      const drawn = {};
+      for (const cell of cells) {
+        if (cell.kind === 'spanner') drawn[cell.id] = (drawn[cell.id] || 0) + 1;
+      }
+      for (const id in drawn) {
+        if (drawn[id] < 2) continue;
+        const sp = spanners.find((x) => x.id === id);
+        model.warnings.push('Column group “' + (sp ? sp.label : id) + '” covers columns that are ' +
+          'not next to each other, so it is drawn in ' + drawn[id] + ' pieces. ' +
+          'The R export moves them together instead. Reorder the columns to match.');
       }
 
       levels.push({ level: level, cells: cells });
@@ -816,7 +1026,7 @@ const Compute = {
         byLabel.get(label).push(item);
       }
 
-      const order = spec.structure.rowGroupOrder || [];
+      const order = model.groupOrder || [];
       const seen = Array.from(byLabel.keys());
       const ordered = order.filter((label) => byLabel.has(label))
         .concat(seen.filter((label) => order.indexOf(label) < 0));
@@ -846,20 +1056,31 @@ const Compute = {
         });
       }
 
+      let labelCell = null;
       group.items.forEach((item, indexInGroup) => {
-        out.push(Compute.buildDataRow(item, group, indexInGroup, stripeIndex, ctx));
+        const dataRow = Compute.buildDataRow(item, group, indexInGroup, stripeIndex, ctx);
+        if (indexInGroup === 0) labelCell = dataRow.cells.find((c) => c.kind === 'group-col');
+        out.push(dataRow);
         stripeIndex += 1;
       });
 
       // Group summaries.
-      for (const summary of spec.summaries.groups) {
+      let summaryCount = 0;
+      for (const summary of model.summaries.groups) {
         const rows = Compute.summaryRows(summary, group.items, 'summary', ctx, group);
         out.push.apply(out, rows);
+        summaryCount += rows.length;
       }
+
+      // A group's summary rows are part of its block — `edges.js` already draws
+      // the group's top and bottom border around them, keyed on `groupId` — so
+      // with `row_group.as_column` the label spans down over them. It cannot be
+      // counted in `buildDataRow`, which does not know what follows the group.
+      if (labelCell && labelCell.rowspan) labelCell.rowspan += summaryCount;
     }
 
     // Grand summaries, over every displayed row.
-    for (const summary of spec.summaries.grand) {
+    for (const summary of model.summaries.grand) {
       const rows = Compute.summaryRows(summary, displayRows, 'grand_summary', ctx, null);
       out.push.apply(out, rows);
     }
@@ -875,7 +1096,7 @@ const Compute = {
     const srcIndex = item.srcIndex;
     const cells = [];
 
-    const textOf = (colId) => Compute.formatValue(row[colId], colId, srcIndex, ctx).text;
+    const textOf = (colId) => Compute.formatValue(row[colId], colId, ctx).text;
 
     for (const col of model.cols) {
       if (col.kind === 'group') {
@@ -902,10 +1123,12 @@ const Compute = {
       if (mergeEntry) {
         formatted = { text: Compute.mergeText(mergeEntry, textOf), isMarkup: true };
       } else {
-        formatted = Compute.formatValue(row[col.colId], col.colId, srcIndex, ctx);
+        formatted = Compute.formatValue(row[col.colId], col.colId, ctx);
       }
 
-      const color = col.kind === 'body' ? Compute.colorFor(row[col.colId], col.colId, srcIndex, ctx) : null;
+      const color = col.kind === 'body'
+        ? Compute.colorFor(row[col.colId], col.colId, srcIndex, ctx, row)
+        : null;
 
       cells.push({
         kind: col.kind === 'stub' ? 'stub' : 'body',
@@ -915,7 +1138,12 @@ const Compute = {
         missing: !!formatted.missing,
         isMarkup: formatted.isMarkup,
         align: col.align,
-        indent: col.kind === 'stub' ? (spec.structure.stubIndent[srcIndex] || 0) : 0,
+        // Clamped to gt's own range: `tab_stub_indent()` takes 0 to 5 and
+        // errors outside it, so a preview that went further would draw a table
+        // that cannot be exported.
+        indent: col.kind === 'stub'
+          ? Util.clamp(Math.round((spec.structure.stubIndent || {})[srcIndex] || 0), 0, 5)
+          : 0,
         style: StyleRules.resolve(ctx.rules, loc),
         color: color,
         marks: Compute.marksFor(ctx.footnoteIndex, loc)
@@ -966,7 +1194,19 @@ const Compute = {
 
       for (const col of model.cols) {
         if (col.kind === 'group') {
-          cells.push({ kind: 'group-col', colId: col.colId, text: null, rowspan: 0, style: null, marks: [] });
+          // A group summary sits inside its group's block, so the label above
+          // it spans down over this slot and the cell is absorbed. A grand
+          // summary belongs to no group and nothing spans over it, so it takes
+          // a blank cell of its own — a row one cell short does not leave a
+          // gap, it draws every value one column to the left.
+          cells.push({
+            kind: 'group-col',
+            colId: col.colId,
+            text: null,
+            rowspan: group ? 0 : 1,
+            style: null,
+            marks: []
+          });
           continue;
         }
 
@@ -995,8 +1235,16 @@ const Compute = {
             .filter((n) => n !== null);
           if (nums.length) {
             raw = def.fn(nums);
-            const formatType = summary.format || 'number';
-            const formatOpts = summary.formatOpts || { decimals: fnId === 'n' ? 0 : 2 };
+            // **Unset means "as the column is formatted".** A total showing
+            // 11,654,700.00 beneath a column of 4,182,000 is in a different
+            // unit from the thing it totals; two decimals was only ever a
+            // guess at what a number wants. A count is the exception — it is a
+            // number of rows, not a quantity in the column's units.
+            const columnFormat = ctx.formatPlan[col.colId];
+            const inherit = fnId !== 'n' && !summary.format && columnFormat;
+            const formatType = summary.format || (inherit ? columnFormat.type : 'number');
+            const formatOpts = summary.formatOpts ||
+              (inherit ? columnFormat.opts : { decimals: fnId === 'n' ? 0 : 2 });
             const formatted = Formatters.apply(formatType, raw, formatOpts, {});
             text = formatted === null ? String(raw) : formatted;
           }

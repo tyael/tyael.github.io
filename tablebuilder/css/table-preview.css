@@ -37,6 +37,37 @@
   background-position: 0 0, 8px 8px;
 }
 
+/* With the canvas filling the stage there is no sheet, only a table sitting on
+   the surface. The padding stays, because the table still wants air around it,
+   and it is transparent so the surface runs right up to the table's own edge. */
+.paper.is-flat {
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* The same three surfaces, painted on the stage instead of the sheet. They live
+   here rather than in app.css because they *are* the preview canvas — the same
+   three answers to "what is behind this table", drawn at a different size. The
+   stage is outside the zoom transform, so these do not scale, which is the
+   whole reason the fill is not just a bigger sheet. */
+.stage-canvas.surface-light {
+  background: #ffffff;
+}
+
+.stage-canvas.surface-dark {
+  background: #10151c;
+}
+
+.stage-canvas.surface-checker {
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(45deg, #d9dde3 25%, transparent 25%, transparent 75%, #d9dde3 75%),
+    linear-gradient(45deg, #d9dde3 25%, transparent 25%, transparent 75%, #d9dde3 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+
 /* ============================================
    Selection affordances (editor only)
 
@@ -136,7 +167,10 @@
   display: inline-block;
 }
 
-.paper.surface-dark .preview-notice {
+/* The dark surface can be the sheet's or the stage's, and the notice has to
+   read on either. */
+.paper.surface-dark .preview-notice,
+.stage-canvas.surface-dark .preview-notice {
   color: #e0c37a;
   background: rgba(224, 163, 62, 0.12);
   border-color: rgba(224, 163, 62, 0.4);

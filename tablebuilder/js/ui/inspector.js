@@ -8,7 +8,7 @@
  * who wants that granularity is better served exporting to R and working in
  * RStudio. What this offers instead is the table options for the part you
  * clicked — click a column heading, adjust column headings — while anything
- * conditional or genuinely per-cell is a rule in the Style panel, which is
+ * conditional or genuinely per-cell is a rule in the Style rules panel, which is
  * what `tab_style()` carries into the export.
  */
 
@@ -39,7 +39,7 @@ const Inspector = {
 
     // Hand-styling one cell is not something this editor does: the way to
     // change how a table looks is the defaults for the part you clicked, and
-    // anything conditional or per-cell is a rule in the Style panel, which is
+    // anything conditional or per-cell is a rule in the Style rules panel, which is
     // what survives the export to R. So a selection gets what it is, the
     // actions that act on it, and the defaults that govern it.
     if (items.length) {
@@ -47,6 +47,12 @@ const Inspector = {
 
       const value = Inspector.valueEditor(spec, items);
       if (value) host.appendChild(value);
+
+      const indent = Inspector.indentEditor(spec, items);
+      if (indent) host.appendChild(indent);
+
+      const colour = Inspector.colorSource(spec, items);
+      if (colour) host.appendChild(colour);
 
       const quick = Inspector.quickScope(spec, items);
       if (quick) host.appendChild(quick);
@@ -109,7 +115,8 @@ const Inspector = {
     const raw = row[colId] === null || row[colId] === undefined ? '' : String(row[colId]);
     const title = Spec.columnTitle(spec, column);
     const key = colId + '.' + item.srcIndex;
-    const correction = Corrections.find(spec.corrections, item.srcIndex, colId);
+    const step = Pipeline.find(spec, 'correct');
+    const correction = Corrections.find((step && step.edits) || [], item.srcIndex, colId);
 
     const nodes = [Controls.field('Value',
       Controls.text('cell.value.' + key, raw, (next) => {
@@ -191,7 +198,7 @@ const Inspector = {
    *
    * **This creates the rule and leaves.** The styling happens in the Style
    * panel, which is the decision recorded on 2026-08-13: the Inspector names
-   * what is selected and the Style panel paints. What was missing was a way to
+   * what is selected and the Style rules panel paints. What was missing was a way to
    * say *what a rule should cover* without going and building the location by
    * hand, which is the slow part.
    *
@@ -259,7 +266,7 @@ const Inspector = {
       }, { block: true }));
       nodes.push(Util.el('div.field-hint', {
         text: 'A rule that follows the data: matches ' + hits + ' row' + (hits === 1 ? '' : 's') +
-          ' now, and whatever matches after the next import. Edit the expression in the Style panel.'
+          ' now, and whatever matches after the next import. Edit the expression under Style rules.'
       }));
 
       const stub = rowsById[item.srcIndex] && rowsById[item.srcIndex].cells[0];
@@ -282,7 +289,7 @@ const Inspector = {
    * The defaults that actually govern whatever is selected: the column-label
    * options behind a column heading, the body options behind a body cell.
    *
-   * Basic rows only. This is the quick-adjust surface and the Options panel is
+   * Basic rows only. This is the quick-adjust surface and the Table defaults panel is
    * the reference one, so the link at the bottom is how you reach the rest.
    * Rendering the whole group put 23 fields behind a column heading — twelve of
    * them border sub-properties — in the narrower of the two rails.
@@ -341,6 +348,115 @@ const Inspector = {
         Controls.button('Copy values', () => Inspector.copyValues(items), { kind: 'ghost' })
       ])
     ], { key: 'insp.selected' });
+  },
+
+  /**
+   * How far a row label is indented, for the selected rows.
+   *
+   * `structure.stubIndent` and the `stub.indent_length` option have both been
+   * in the schema since the first commit and **nothing ever wrote the indent**
+   * — an option in Table defaults governing a step size for an indent no
+   * control could set, and a value `compute.js`, `render-html.js` and
+   * `export-latex.js` all read and nobody produced. This is what makes it
+   * reachable.
+   *
+   * Capped at gt's own limit: `tab_stub_indent()` takes a whole number between
+   * 0 and 5 and errors outside it, so a preview that went further would be a
+   * table that cannot be exported.
+   */
+  MAX_INDENT: 5,
+
+  indentEditor(spec, items) {
+    const rows = Util.unique(items
+      .filter((item) => item.part === 'stub')
+      .map((item) => item.srcIndex)
+      .filter((i) => i !== undefined && i !== null));
+    if (!rows.length) return null;
+
+    const current = spec.structure.stubIndent || {};
+    const levels = Util.unique(rows.map((i) => current[i] || 0));
+    const shown = levels.length === 1 ? levels[0] : 0;
+
+    const set = (value) => Store.update((draft) => {
+      const next = Util.clamp(Math.round(value), 0, Inspector.MAX_INDENT);
+      if (!draft.structure.stubIndent) draft.structure.stubIndent = {};
+      for (const i of rows) {
+        // Zero is the default, so it is an absence rather than a value — the
+        // same instinct as `PanelStyle.applyProperty` deleting a key for
+        // `inherit` instead of writing a neutral one over it.
+        if (next) draft.structure.stubIndent[i] = next;
+        else delete draft.structure.stubIndent[i];
+      }
+    }, { label: 'Indent row labels' });
+
+    return Controls.section('Row label', [
+      Controls.field('Indent', Controls.number('insp.indent', shown, set,
+        { min: 0, max: Inspector.MAX_INDENT, step: 1 }),
+      { hint: rows.length === 1
+        ? 'Steps of the width set by Stub › Indent step. gt allows 0 to 5.'
+        : 'Applies to all ' + rows.length + ' selected rows. gt allows 0 to 5.' }),
+      levels.length > 1
+        ? Util.el('div.field-hint', { text: 'The selected rows are indented differently; ' +
+          'setting this puts them all at the same level.' })
+        : null
+    ].filter(Boolean), { key: 'insp.indent' });
+  },
+
+  /**
+   * Which colour rule painted the selected cell, when one did.
+   *
+   * A border can be traced to the rule that drew it — the line card has said so
+   * since `hSrc`/`vSrc` — and a fill could not, on the mechanism where overlap
+   * is likeliest, since colour rules stack and the last one wins per property.
+   * `Compute.colorFor` stamps the winner, so this reads it rather than
+   * re-matching the plan.
+   *
+   * The fill and the text colour can come from different rules, so both are
+   * named when they differ.
+   */
+  colorSource(spec, items) {
+    // `App.model` is whatever `Compute.run` last returned, and that can be a
+    // failed model. A failed model is readable now — empty `rows` and `cols`
+    // rather than none — so this no longer has to ask to avoid throwing; it
+    // asks because a colour on a table that did not resolve is not a fact
+    // worth reporting.
+    if (items.length !== 1 || !App.model || !App.model.ok) return null;
+    const item = items[0];
+    if (item.part !== 'body' || !item.colId || item.srcIndex === undefined) return null;
+
+    const row = App.model.rows.find((r) => r.kind === 'data' && r.srcIndex === item.srcIndex);
+    const cell = row && row.cells.find((c) => c.colId === item.colId);
+    if (!cell || !cell.color) return null;
+
+    const byId = {};
+    for (const rule of spec.dataColor) byId[rule.id] = rule;
+
+    const swatch = (value) => Util.el('span.swatch', {
+      title: value, style: { background: value }
+    });
+
+    const fields = [];
+    const seen = [];
+    const add = (label, value, ruleId) => {
+      const rule = byId[ruleId];
+      const name = rule ? Spec.colorRuleTitle(rule) : null;
+      fields.push(Controls.field(label, Util.el('span.wrap-any', null, [
+        swatch(value),
+        Util.el('span.mono.dim', { text: ' ' + value }),
+        name ? Util.el('span.dim', { text: ' — ' + name }) : null
+      ].filter(Boolean))));
+      if (name && seen.indexOf(name) < 0) seen.push(name);
+    };
+
+    if (cell.color.fill) add('Fill', cell.color.fill, cell.color.fillRule);
+    if (cell.color.color) add('Text', cell.color.color, cell.color.colorRule);
+    if (!fields.length) return null;
+
+    fields.push(Controls.actions([
+      Controls.button('Edit colour rule', () => App.goToPanel('color', 'color.rules'), { kind: 'ghost' })
+    ]));
+
+    return Controls.section('Colour by value', fields, { key: 'insp.colour' });
   },
 
   /** Copy the raw values of the selected body cells to the clipboard, TSV. */
@@ -422,7 +538,7 @@ const Inspector = {
       Controls.field('Stripe rows', Controls.checkbox('td.stripe',
         spec.options['row.striping.include_table_body'],
         set('row.striping.include_table_body'))),
-      Util.el('div.field-hint', { text: 'The full set lives under Options.' })
+      Util.el('div.field-hint', { text: 'The full set lives under Table defaults.' })
     ], { key: 'td.rules' }));
 
     return wrap;

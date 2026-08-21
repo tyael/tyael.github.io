@@ -47,11 +47,10 @@ const History = {
     { path: 'parts.footnotes', label: 'footnote', list: true },
     { path: 'parts.sourceNotes', label: 'source note', list: true },
 
-    { path: 'structure.rownameCol', label: 'Row labels' },
-    { path: 'structure.groupnameCol', label: 'Row groups' },
-    { path: 'structure.sort', label: 'sort key', list: true },
-    { path: 'structure.spanners', label: 'column group', list: true },
-    { path: 'structure.merges', label: 'column merge', list: true },
+    // Above the structural block: a pipeline edit may also touch the aesthetic
+    // keys, and these are first-match-wins. `describeStep` names which step,
+    // so this label is only the fallback for a reorder.
+    { path: 'pipeline', label: 'step', list: true },
     { path: 'structure.hidden', label: 'Shown columns' },
     { path: 'structure.columnOrder', label: 'Column order' },
     { path: 'structure.labels', label: 'Column label' },
@@ -61,14 +60,8 @@ const History = {
     { path: 'format', label: 'number format', list: true },
     { path: 'dataColor', label: 'colour rule', list: true },
     { path: 'styleRules', label: 'style rule', list: true },
-    { path: 'summaries', label: 'Totals' },
     { path: 'subs', label: 'Missing and zero values' },
-    { path: 'reshape', label: 'Reshape' },
     { path: 'fonts', label: 'font', list: true },
-    // Editing a cell passes its own label ("Edit Manufacturer"), which a diff
-    // cannot reach — the column is an id inside the entry, not a path. This
-    // catches the removals, which have nowhere else to name themselves.
-    { path: 'corrections', label: 'cell correction', list: true },
     { path: 'source', label: 'Data' }
   ],
 
@@ -89,6 +82,11 @@ const History = {
       const after = History.at(next, rule.path);
       if (History.same(before, after)) continue;
 
+      if (rule.path === 'pipeline') {
+        const step = History.describeStep(before, after);
+        if (step) return step;
+      }
+
       if (rule.list && Array.isArray(before) && Array.isArray(after)) {
         if (after.length > before.length) return 'Add ' + rule.label;
         if (after.length < before.length) return 'Remove ' + rule.label;
@@ -101,7 +99,45 @@ const History = {
   },
 
   /**
-   * Name an options change, in the words the Options panel uses.
+   * Name a pipeline change by the step that changed, not by the list.
+   *
+   * Nine step types share one path, so without this every structural edit in
+   * the app reads "Edit step". The name comes from the type's own `label`, so
+   * the history menu and the Shape panel cannot call the same step two
+   * different things.
+   *
+   * This is what the `summaries` and `corrections` rules used to do. Both were
+   * folded into the pipeline and neither was removed with the fold, so both
+   * were reading a key `Spec.migratePipeline` deletes — `History.at` returned
+   * `undefined` on either side of every diff and the rules never fired again.
+   *
+   * @returns {string|null} null when the list changed but no step did, which
+   *   is a reorder — the caller's own label covers it.
+   */
+  describeStep(before, after) {
+    const from = Array.isArray(before) ? before : [];
+    const to = Array.isArray(after) ? after : [];
+    const name = (step) => {
+      const def = Pipeline.type(step.type);
+      return def ? def.label : 'step';
+    };
+
+    const fromIds = new Set(from.map((step) => step.id));
+    const toIds = new Set(to.map((step) => step.id));
+
+    const added = to.find((step) => !fromIds.has(step.id));
+    if (added) return 'Add step: ' + name(added);
+    const removed = from.find((step) => !toIds.has(step.id));
+    if (removed) return 'Remove step: ' + name(removed);
+
+    const byId = {};
+    for (const step of from) byId[step.id] = step;
+    const edited = to.find((step) => !History.same(byId[step.id], step));
+    return edited ? 'Edit step: ' + name(edited) : null;
+  },
+
+  /**
+   * Name an options change, in the words the Table defaults panel uses.
    *
    * One changed key is named exactly — "Body › Horizontal lines". More than
    * one is a bulk write (a theme, a reset), and naming the first would be

@@ -15,17 +15,44 @@
 
 const Reshape = {
 
+  /**
+   * The most columns a pivot may produce before it refuses to run.
+   *
+   * A pivot spreads one column's *distinct values* across new columns, so a
+   * `names_from` on something high-cardinality — a free-text field, an id, a
+   * timestamp — asks for one column per row. On a 2,000-row file that is
+   * millions of cells, and building them does not fail slowly: it takes the
+   * browser tab down, unsaved work with it. Worse, the autosave may already
+   * have stored the spec that did it, so reloading loads the same table and
+   * kills the tab again.
+   *
+   * 400 is far past any table anyone publishes and still well inside what the
+   * renderer copes with — the widest fixture in the suite is 150. Above it the
+   * pivot goes inert with a note saying what it tried to make, which is the
+   * same thing a step naming a missing column does.
+   */
+  MAX_DERIVED_COLUMNS: 400,
+
   /** Aggregations offered when several rows collapse into one cell. */
+  /**
+   * How to combine rows that land in the same cell.
+   *
+   * **`value`, not `id`.** `Controls.select` reads `option.value`, so with `id`
+   * every `<option>` was built with `value="undefined"`: the select matched
+   * nothing, rendered blank, and wrote the string `"undefined"` when touched —
+   * which `aggregator` does not recognise, so it silently fell back to *first*.
+   * The control has never worked, in this panel or the Reshape one before it.
+   */
   AGGREGATES: [
-    { id: 'first', label: 'First' },
-    { id: 'last', label: 'Last' },
-    { id: 'sum', label: 'Sum' },
-    { id: 'mean', label: 'Mean' },
-    { id: 'median', label: 'Median' },
-    { id: 'min', label: 'Min' },
-    { id: 'max', label: 'Max' },
-    { id: 'count', label: 'Count' },
-    { id: 'concat', label: 'Join with ", "' }
+    { value: 'first', label: 'First' },
+    { value: 'last', label: 'Last' },
+    { value: 'sum', label: 'Sum' },
+    { value: 'mean', label: 'Mean' },
+    { value: 'median', label: 'Median' },
+    { value: 'min', label: 'Min' },
+    { value: 'max', label: 'Max' },
+    { value: 'count', label: 'Count' },
+    { value: 'concat', label: 'Join with ", "' }
   ],
 
   _cache: { key: null, value: null },
@@ -107,6 +134,20 @@ const Reshape = {
       }
     }
     nameTuples.sort(Reshape._tupleComparator);
+
+    // Checked here, between working out the column set and building the cells:
+    // the tuples are cheap to count and the cells are what would not fit.
+    const wouldBe = nameTuples.length * Math.max(1, valueCols.length);
+    if (wouldBe > Reshape.MAX_DERIVED_COLUMNS) {
+      return {
+        columns: source.columns,
+        rows: source.rows,
+        spanners: [],
+        pivoted: false,
+        tooWide: wouldBe,
+        warnings: []
+      };
+    }
 
     const multiValue = valueCols.length > 1;
     const columns = [];
@@ -194,6 +235,7 @@ const Reshape = {
    */
   buildSpanners(nameCols, derivedInfo, multiValue, sep) {
     const spanners = [];
+    const taken = new Set();
     // With a single name column and a single value column the tuple value is
     // already the column label, so there is nothing left to span.
     const deepest = multiValue ? nameCols.length : nameCols.length - 1;
@@ -205,22 +247,50 @@ const Reshape = {
       for (const info of derivedInfo) {
         const prefix = info.tuple.slice(0, depth);
         const key = prefix.join('\\u0001');
-        if (!groups.has(key)) groups.set(key, { label: prefix[prefix.length - 1], columns: [] });
+        if (!groups.has(key)) groups.set(key, { key: key, label: prefix[prefix.length - 1], columns: [] });
         groups.get(key).columns.push(info.colId);
       }
 
       for (const group of groups.values()) {
         if (group.columns.length < 1) continue;
         spanners.push({
-          id: Util.uid('sp'),
+          // **Stable, derived from the group the spanner is**, never
+          // `Util.uid`. Every click in the Reshape panel re-derives these, and
+          // a fresh random id each time orphaned every style rule and every
+          // footnote anchored to a spanner — silently, since the rule stays in
+          // the list and the footnote still prints in the footer. The id is
+          // what those anchors are, so it has to be a property of the group
+          // rather than of the moment it was built.
+          id: Reshape.spannerId(level, group.key, taken),
           label: group.label,
           columns: group.columns,
-          level: level
+          level: level,
+          // Whose spanner this is. The pivot owns these and replaces them when
+          // it is re-derived; anything without the flag is the user's and is
+          // left alone — the same split `fromTheme` makes for style rules.
+          fromPivot: true
         });
       }
     }
 
     return spanners;
+  },
+
+  /**
+   * A stable id for one pivot spanner: its level and the tuple prefix it is.
+   *
+   * Slugged so a saved project stays readable, and de-duplicated against what
+   * has already been issued because two different prefixes can slug alike
+   * ("Q 1" and "Q-1"). `taken` is carried across the whole build so the
+   * de-duplication is deterministic in emission order.
+   */
+  spannerId(level, key, taken) {
+    const base = 'sp_' + level + '_' + (Util.slug(key.split('\u0001').join('_')) || 'x');
+    let id = base;
+    let n = 2;
+    while (taken.has(id)) { id = base + '_' + n; n += 1; }
+    taken.add(id);
+    return id;
   },
 
   /** Sort tuples numerically where both sides are numbers, else lexically. */

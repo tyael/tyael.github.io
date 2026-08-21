@@ -1,7 +1,7 @@
 /**
  * ui/panel-style.js
  *
- * The Style panel: the ordered list of `tab_style()` rules.
+ * The Style rules panel: the ordered list of `tab_style()` rules.
  *
  * Styling a cell from the inspector appends a rule here rather than baking a
  * value into the cell, so every appearance decision stays visible, editable,
@@ -11,7 +11,7 @@
 const PanelStyle = {
 
   id: 'style',
-  label: 'Style',
+  label: 'Style rules',
   hint: 'Style rules aimed at cells you select',
 
   render(spec) {
@@ -50,7 +50,18 @@ const PanelStyle = {
       collapsible: true,
       title: (rule) => rule.label || 'Style rule',
       subtitle: (rule) => StyleRules.describe(rule, byId),
-      enabled: (rule) => rule.enabled !== false,
+      // A theme's rules and hand-written ones sat in one list looking
+      // identical, and only one kind survives a change of theme. Without this
+      // the list is eight rules, seven of which vanish on the next theme with
+      // nothing having said they would — and an edit to one of them is thrown
+      // away by an action taken somewhere else entirely.
+      badge: (rule) => (rule.fromTheme ? {
+        text: Themes.label(rule.fromTheme),
+        title: 'This rule comes from the ' + Themes.label(rule.fromTheme) +
+          ' theme. Changing theme replaces it, and any edit to it goes with it — ' +
+          'copy it into a rule of your own to keep it.'
+      } : null),
+      enabled: (rule) => Spec.isEnabled(rule),
       onToggle: (rule, index, on) => Store.update((draft) => { draft.styleRules[index].enabled = on; }),
       onRemove: (rule, index) => Store.update((draft) => { draft.styleRules.splice(index, 1); }),
       onReorder: (from, to) => Store.update((draft) => {
@@ -210,13 +221,27 @@ const PanelStyle = {
         text: 'In scope (' + columns.length + ' column' + (columns.length === 1 ? '' : 's') + ')'
       }),
       Util.el('div.chip-set.scope-chips', null, chips),
-      // Outside the scrolling area: these two are always in scope, so they
-      // should not be something you have to scroll a long column list to find.
+      // Outside the scrolling area: these are always in scope, so they should
+      // not be something you have to scroll a long column list to find.
       Util.el('div.scope-foot', null, [
         Util.el('span.scope-foot-label', { text: 'also' }),
         chip('row', 'The 0-based index of the row', 'num'),
         chip('n', 'The number of rows', 'num')
-      ])
+      ]),
+      Util.el('div.scope-foot', null, [
+        Util.el('span.scope-foot-label', { text: 'nearby' }),
+        chip('self()', 'The value in this cell', 'cell'),
+        chip('above()', 'The cell one row up, in this column. above(2) for two up.', 'cell'),
+        chip('below()', 'The cell one row down, in this column. below(2) for two down.', 'cell'),
+        chip('left()', 'The cell one body column to the left, in this row. left(2) for two.', 'cell'),
+        chip('right()', 'The cell one body column to the right, in this row. right(2) for two.', 'cell')
+      ]),
+      Util.el('div.field-hint', {
+        text: 'Nearby cells are relative to the cell being styled, so left() means ' +
+          '“my left-hand neighbour” whichever column the rule covers. Rows count in the ' +
+          'order the table is sorted; columns count across the body only. Off the edge ' +
+          'of the table is not a match.'
+      })
     ]);
   },
 
@@ -302,7 +327,7 @@ const PanelStyle = {
     }
 
     if (part.spanners) {
-      const spanners = Store.get().structure.spanners;
+      const spanners = (App.model && App.model.spanners) || [];
       if (spanners.length) {
         nodes.push(Util.el('div.mini-label', { text: 'Column groups (blank = all)' }));
         nodes.push(Controls.columnChips('loc.spanners.' + rule.id + '.' + locIndex,
@@ -440,7 +465,7 @@ const PanelStyle = {
         shown.color || '#000000', (value) => write({ color: value }))),
 
       Util.el('div.field-hint', {
-        text: 'Borders set here beat the table-wide borders and lines under Options. ' +
+        text: 'Borders set here beat the table-wide borders and lines under Table defaults. ' +
           '“inherit” leaves them alone; “none” takes the line off these cells.'
       })
     ], { key: keyPrefix + '.borders' });

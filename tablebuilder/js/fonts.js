@@ -330,11 +330,6 @@ const Fonts = {
     return Fonts.FALLBACKS[1].stack;
   },
 
-  /** Which fallback family a stack is using, for round-tripping the UI. */
-  fallbackKindOf(stack) {
-    const found = Fonts.FALLBACKS.find((f) => String(stack).indexOf(f.stack) >= 0);
-    return found ? found.id : null;
-  },
 
   /** Quote a family name for CSS when it needs it. */
   quote(family) {

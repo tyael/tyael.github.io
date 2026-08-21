@@ -44,7 +44,7 @@ const PanelData = {
 
     /* ---- Look ---- */
 
-    panel.appendChild(Controls.section('Look', [
+    panel.appendChild(Controls.section('Themes', [
       Util.el('div.field-hint', {
         text: 'A starting point you can keep editing. Applying one replaces any option changes you have made.'
       }),
@@ -83,7 +83,10 @@ const PanelData = {
       ])
     ]));
 
-    panel.appendChild(Controls.section('Columns (' + source.columns.length + ')',
+    // "In the file", because the Columns tab counts the pipeline's columns and
+    // a pivot makes those two numbers differ — five here and eight there, both
+    // right, and nothing said why.
+    panel.appendChild(Controls.section('Columns in the file (' + source.columns.length + ')',
       [Util.el('div.item-list', null, typeRows)],
       { key: 'data.columns', collapsed: true }));
 
@@ -104,7 +107,7 @@ const PanelData = {
    * surface where it can be read and retired.
    */
   corrections(spec) {
-    const list = spec.corrections || [];
+    const list = (Pipeline.find(spec, 'correct') || {}).edits || [];
     if (!list.length) return null;
 
     const model = App.model;
@@ -123,7 +126,7 @@ const PanelData = {
         }),
         Controls.button('Remove', () => Store.update((draft) => {
           Corrections.remove(draft, correction.id);
-        }), { kind: 'ghost' })
+        }, { label: 'Remove correction' }), { kind: 'ghost' })
       ];
 
       return Util.el('div.item', null, [

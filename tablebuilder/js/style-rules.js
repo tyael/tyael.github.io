@@ -75,7 +75,7 @@ const StyleRules = {
    * How a column is written inside a row expression.
    *
    * **The one place that decides.** `evalRowExpr` builds the scope, `seedExpr`
-   * writes an expression into a new rule, and the Style panel lists what is
+   * writes an expression into a new rule, and the Style rules panel lists what is
    * available — three producers of the same fact, and the panel's copy was
    * missing the reserved-word half. So a column called `n` was advertised as
    * being in scope by name when typing `n` actually gives you the row count.
@@ -90,7 +90,41 @@ const StyleRules = {
   RESERVED: ['var', 'let', 'const', 'if', 'else', 'for', 'while', 'do', 'function',
     'return', 'new', 'this', 'typeof', 'instanceof', 'in', 'of', 'class', 'null',
     'true', 'false', 'undefined', 'NaN', 'Infinity', 'v', 'row', 'n', 'Math', 'String',
-    'Number', 'Boolean', 'Array', 'Object', 'Date', 'RegExp', 'JSON'],
+    'Number', 'Boolean', 'Array', 'Object', 'Date', 'RegExp', 'JSON',
+    // The neighbouring-cell helpers below. A column called `left` stays
+    // reachable as `v['left']`, the same way a column called `n` does.
+    'self', 'above', 'below', 'left', 'right'],
+
+  /**
+   * Reaching a cell other than the one being tested.
+   *
+   * `self()`, `above(k)`, `below(k)`, `left(k)` and `right(k)` are all relative
+   * to **the cell the rule would style**, so `left() > 5` means "this cell's
+   * left-hand neighbour is over 5" whichever column the rule covers. `k`
+   * defaults to 1. Out of range — the top row, the first body column — is
+   * `undefined`, so every comparison against it is false and the cell is not
+   * selected. That is what `dplyr::lag()` does with the `NA` it produces at the
+   * same boundary, and gt drops an `NA` row from a `rows =` predicate, so the
+   * two agree without either being told about the other.
+   *
+   * Above and below are the **displayed** order — after the filter and the
+   * sort, which is the order `dplyr::arrange()` puts the exported data in.
+   * Left and right are the **body** columns in their displayed order; the stub
+   * and the row-group column are not body cells and are not counted.
+   */
+  CELL_REFS: ['self', 'above', 'below', 'left', 'right'],
+
+  /**
+   * Does this expression reach for a neighbouring cell?
+   *
+   * It decides how the expression is evaluated, and the difference is not free:
+   * a plain expression is a fact about a row and is evaluated once per row,
+   * while one naming a neighbour is a fact about a *cell* and has to be
+   * evaluated once per column as well.
+   */
+  usesCellRefs(expr) {
+    return new RegExp('\\b(' + StyleRules.CELL_REFS.join('|') + ')\\s*\\(').test(String(expr));
+  },
 
   /* ---------- Construction ---------- */
 
@@ -187,7 +221,7 @@ const StyleRules = {
     let error = null;
 
     for (const rule of rules) {
-      if (!rule.enabled || StyleRules.isEmptyStyle(rule.style)) continue;
+      if (!Spec.isEnabled(rule) || StyleRules.isEmptyStyle(rule.style)) continue;
 
       const locations = rule.locations.map((loc) => {
         const columns = loc.columns && loc.columns.length ? new Set(loc.columns) : null;
@@ -195,11 +229,17 @@ const StyleRules = {
         const spanners = loc.spanners && loc.spanners.length ? new Set(loc.spanners) : null;
 
         let rowSet = null;
+        let rowsByCol = null;
         if (loc.rows && loc.rows.mode === 'index' && loc.rows.indices.length) {
           rowSet = new Set(loc.rows.indices);
         } else if (loc.rows && loc.rows.mode === 'expr' && loc.rows.expr) {
-          const result = StyleRules.evalRowExpr(loc.rows.expr, ctx);
+          // An expression naming a neighbouring cell is evaluated per column,
+          // so it needs to know which columns this location covers — blank
+          // means every body column, as it does everywhere else.
+          const result = StyleRules.evalRowExpr(loc.rows.expr,
+            Object.assign({}, ctx, { targetColumns: loc.columns || [] }));
           rowSet = result.rows;
+          rowsByCol = result.rowsByCol || null;
           // The first failure is the one reported; naming the rule is what
           // makes the warning actionable when several are in play.
           if (result.error && !error) {
@@ -212,7 +252,8 @@ const StyleRules = {
           columns: columns,
           groups: groups,
           spanners: spanners,
-          rows: rowSet
+          rows: rowSet,
+          rowsByCol: rowsByCol
         };
       });
 
@@ -234,7 +275,18 @@ const StyleRules = {
    * Pure: the failure comes back with the result rather than being left
    * somewhere for a later caller to find. See `compile`.
    *
-   * @returns {{rows: Set, error: ?string}}
+   * **Two shapes come back.** A plain expression is a fact about a row, so it
+   * returns `rows` — one set of source indices for the whole location. One
+   * naming a neighbouring cell (`above()`, `left()`, …) is a fact about a
+   * *cell*: the same expression is true in one column and false in the next, so
+   * it returns `rowsByCol`, a set per column. `resolve` reads whichever it got.
+   *
+   * @param {Object} ctx {rows, columnsById} for the plain case; also
+   *   {sequence, bodyColumns, targetColumns} when neighbours are in play —
+   *   `sequence` is `[{row, srcIndex}]` in displayed order, `bodyColumns` the
+   *   body column ids in displayed order, `targetColumns` the ones this
+   *   location covers.
+   * @returns {{rows: ?Set, rowsByCol: ?Object, error: ?string}}
    */
   evalRowExpr(expr, ctx) {
     const rows = (ctx && ctx.rows) || [];
@@ -249,7 +301,7 @@ const StyleRules = {
     let fn;
     try {
       // eslint-disable-next-line no-new-func
-      fn = new Function('v', 'row', 'n',
+      fn = new Function('v', 'row', 'n', 'self', 'above', 'below', 'left', 'right',
         (columnIds.length ? 'var ' + columnIds.map((id) => id + ' = v.' + id).join(', ') + ';' : '') +
         'return (' + expr + ');');
     } catch (err) {
@@ -259,21 +311,73 @@ const StyleRules = {
     // Values are handed over pre-coerced: numeric columns as numbers so that
     // `>` behaves, everything else as its string.
     const allIds = Object.keys(ctx.columnsById);
-    for (let i = 0; i < rows.length; i += 1) {
+    const valueOf = (rowData, id) => {
+      if (!rowData || !ctx.columnsById[id]) return undefined;
+      const raw = rowData[id];
+      return ctx.columnsById[id].type === 'number' ? Util.toNumber(raw) : raw;
+    };
+    const scopeFor = (rowData) => {
       const scope = {};
-      for (const id of allIds) {
-        const raw = rows[i][id];
-        const col = ctx.columnsById[id];
-        scope[id] = col && col.type === 'number' ? Util.toNumber(raw) : raw;
+      for (const id of allIds) scope[id] = valueOf(rowData, id);
+      return scope;
+    };
+    const none = () => undefined;
+
+    if (!StyleRules.usesCellRefs(expr)) {
+      for (let i = 0; i < rows.length; i += 1) {
+        try {
+          if (fn(scopeFor(rows[i]), i, rows.length, none, none, none, none, none)) set.add(i);
+        } catch (err) {
+          return { rows: set, error: 'Evaluation error: ' + err.message };
+        }
       }
-      try {
-        if (fn(scope, i, rows.length)) set.add(i);
-      } catch (err) {
-        return { rows: set, error: 'Evaluation error: ' + err.message };
-      }
+      return { rows: set, error: null };
     }
 
-    return { rows: set, error: null };
+    /* ---- Per cell, because the answer depends on which column is asked ---- */
+
+    // The displayed sequence, not the source order: "the row above" is the one
+    // above it on the page, and `dplyr::arrange()` puts the exported data in
+    // that same order so the R agrees. A row the filter removed is not in the
+    // sequence and so is neither tested nor available as a neighbour, which is
+    // right — it is not on the page to be next to anything.
+    const sequence = (ctx.sequence || rows.map((row, i) => ({ row: row, srcIndex: i })));
+    const bodyColumns = ctx.bodyColumns || allIds;
+    const targets = (ctx.targetColumns && ctx.targetColumns.length) ? ctx.targetColumns : bodyColumns;
+
+    const rowsByCol = {};
+    for (const colId of targets) {
+      const columnIndex = bodyColumns.indexOf(colId);
+      const hits = new Set();
+
+      for (let p = 0; p < sequence.length; p += 1) {
+        const at = (offset) => (sequence[p + offset] ? sequence[p + offset].row : null);
+        const sideways = (offset) => {
+          if (columnIndex < 0) return undefined;
+          const neighbour = bodyColumns[columnIndex + offset];
+          return neighbour === undefined ? undefined : valueOf(sequence[p].row, neighbour);
+        };
+        const step = (k) => (k === undefined ? 1 : Math.trunc(Number(k)));
+
+        try {
+          const hit = fn(
+            scopeFor(sequence[p].row), sequence[p].srcIndex, sequence.length,
+            () => valueOf(sequence[p].row, colId),
+            (k) => valueOf(at(-step(k)), colId),
+            (k) => valueOf(at(step(k)), colId),
+            (k) => sideways(-step(k)),
+            (k) => sideways(step(k))
+          );
+          if (hit) hits.add(sequence[p].srcIndex);
+        } catch (err) {
+          return { rows: set, rowsByCol: null, error: 'Evaluation error: ' + err.message };
+        }
+      }
+
+      rowsByCol[colId] = hits;
+    }
+
+    return { rows: null, rowsByCol: rowsByCol, error: null };
   },
 
   /* ---------- Matching ---------- */
@@ -293,7 +397,12 @@ const StyleRules = {
       for (const loc of rule.locations) {
         if (loc.part !== target.part) continue;
         if (loc.columns && (!target.colId || !loc.columns.has(target.colId))) continue;
-        if (loc.rows && (target.srcIndex === undefined || !loc.rows.has(target.srcIndex))) continue;
+        // A per-column row set: the expression named a neighbouring cell, so
+        // whether it holds depends on which column is being asked about.
+        if (loc.rowsByCol) {
+          const set = loc.rowsByCol[target.colId];
+          if (!set || target.srcIndex === undefined || !set.has(target.srcIndex)) continue;
+        } else if (loc.rows && (target.srcIndex === undefined || !loc.rows.has(target.srcIndex))) continue;
         if (loc.groups && (!target.groupId || !loc.groups.has(target.groupId))) continue;
         if (loc.spanners && (!target.spannerId || !loc.spanners.has(target.spannerId))) continue;
         hit = true;

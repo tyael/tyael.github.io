@@ -32,39 +32,25 @@ const Spec = {
         rows: []       // [{colId: value}]
       },
 
-      /* Per-cell value fixes, applied over the working rows. Sparse, and each
-         guarded by the value it was written against — see corrections.js. The
-         source above stays the file as imported. */
-      corrections: [],   // [{id, srcIndex, colId, from, to}]
+      /* The structural pipeline: an ordered list of steps turning the file
+         above into the table the aesthetic layer decorates. See pipeline.js
+         for the step types and why the two stages cannot interleave. This
+         replaced `spec.reshape` and the structural half of `spec.structure`,
+         where the same operations sat with their order baked invisibly into
+         `Compute.run`. */
+      pipeline: [],      // [{id, type, enabled, ...params}]
 
-      /* Optional long -> wide reshape applied before anything else. */
-      reshape: {
-        mode: 'none',      // 'none' | 'pivot'
-        idCols: [],        // columns that identify a row
-        nameCols: [],      // columns whose values become column groups (outer -> inner)
-        valueCols: [],     // columns holding the values
-        aggregate: 'first',// how to combine collisions
-        nameSep: ' > '     // joins nameCols into a column id
-      },
-
-      /* Table shape. */
+      /* How the table looks, column by column. Everything here is display
+         only: a hidden column is still in the data, so a `where` expression
+         and gt's own `rows =` predicate both still reach its values. To take
+         a column out of the data, use a `remove` step. */
       structure: {
-        rownameCol: null,       // gt rowname_col — becomes the stub
-        groupnameCol: null,     // gt groupname_col — becomes row groups
         columnOrder: [],        // ids, in display order (cols_move)
         hidden: [],             // ids hidden from display (cols_hide)
         labels: {},             // id -> label (cols_label)
         align: {},              // id -> 'left'|'center'|'right'|'auto'
         widths: {},             // id -> CSS length (cols_width)
-        spanners: [],           // [{id, label, columns:[colId], level:1}]
-        rowGroupOrder: [],      // group labels, in display order
-        stubIndent: {},         // rowIndex -> indent steps
-        merges: [],             // [{id, type, target, columns, pattern, sep}]
-        sort: [],               // [{col, dir:'asc'|'desc'}]
-        filter: {               // which rows appear at all — see filter.js
-          match: 'all',         // 'all' | 'any'
-          conditions: []        // [{id, col, op, value, value2}]
-        }
+        stubIndent: {}          // rowIndex -> indent steps
       },
 
       /* Header/footer text parts. */
@@ -96,10 +82,6 @@ const Spec = {
       dataColor: [],       // [{id, columns, method, palette, ...}]
 
       /* Aggregated rows. */
-      summaries: {
-        groups: [],        // [{id, fns, columns, labels, formatId}]
-        grand: []          // [{id, fn, columns, label}]
-      },
 
       /* Presentation rules, applied in order. */
       styleRules: [],      // [{id, enabled, label, locations, style}]
@@ -131,7 +113,7 @@ const Spec = {
   fromSource(source) {
     const spec = Spec.create();
     spec.source = source;
-    Spec.adoptColumns(spec, source.columns);
+    Spec.adoptColumns(spec);
     spec.meta.name = (source.filename || 'table').replace(/\.[^.]+$/, '');
     return spec;
   },
@@ -235,18 +217,25 @@ const Spec = {
    * settings whose column still exists. Used on import and after a reshape.
    */
   adoptColumns(spec, columns) {
+    // **The pipeline's columns, not the file's.** These are aesthetic settings
+    // keyed by column id, and the ids a pivot produces are not in the source —
+    // so pruning against the file dropped the width, alignment and hidden flag
+    // of every derived column on reimport, while the column itself came
+    // straight back.
+    columns = columns || Pipeline.run(spec.source, spec.pipeline).columns;
     const ids = columns.map((c) => c.id);
     const known = new Set(ids);
     const st = spec.structure;
 
     // Keep the existing order for surviving columns, append anything new.
+    // `compute.js` treats this as a *preference* rather than the list of what
+    // exists, so it does not have to be exhaustive or current — this only
+    // keeps the file from accumulating ids for columns nobody will see again.
     const kept = st.columnOrder.filter((id) => known.has(id));
     for (const id of ids) if (!kept.includes(id)) kept.push(id);
     st.columnOrder = kept;
 
     st.hidden = st.hidden.filter((id) => known.has(id));
-    if (st.rownameCol && !known.has(st.rownameCol)) st.rownameCol = null;
-    if (st.groupnameCol && !known.has(st.groupnameCol)) st.groupnameCol = null;
 
     for (const key of ['labels', 'align', 'widths']) {
       const next = {};
@@ -260,23 +249,15 @@ const Spec = {
       if (st.align[col.id] === undefined) st.align[col.id] = 'auto';
     }
 
-    st.spanners = st.spanners
-      .map((sp) => Object.assign({}, sp, { columns: sp.columns.filter((id) => known.has(id)) }))
-      .filter((sp) => sp.columns.length > 0);
-
-    st.sort = st.sort.filter((s) => known.has(s.col));
     spec.format = spec.format.filter((f) => f.columns.some((id) => known.has(id)));
     spec.dataColor = spec.dataColor.filter((d) => d.columns.some((id) => known.has(id)));
 
-    // A correction naming a column that no longer exists can never apply and
-    // can never be explained. One naming a column that *does* still exist is
-    // kept: its `from` guard decides whether it still means anything, which is
-    // a question only the new data can answer.
-    if (Array.isArray(spec.corrections)) {
-      spec.corrections = spec.corrections.filter((c) => c && known.has(c.colId));
-    }
-
-    return spec;
+    // **Nothing structural is pruned here any more.** A step naming a column
+    // the data no longer has is not damage to repair — it is a step waiting
+    // for data that fits it, which is the ordinary state of a pipeline whose
+    // earlier steps have just been reordered. `Pipeline.run` reports each one
+    // as inert, on the step itself, and it comes back to life if the column
+    // does. That is a better answer than deleting the user's work on import.
   },
 
   /* ================================================================
@@ -339,17 +320,36 @@ const Spec = {
     const out = Object.assign({}, base, obj);
 
     // Merge one level deep for the structured sections.
-    for (const key of ['source', 'reshape', 'structure', 'parts', 'subs', 'summaries', 'meta']) {
+    for (const key of ['source', 'structure', 'parts', 'subs', 'meta']) {
       out[key] = Object.assign({}, base[key], obj[key] || {});
     }
+
+    Spec.migratePipeline(out, obj);
     // Options: unknown keys are dropped, missing keys take their default.
     out.options = Object.assign({}, base.options, obj.options || {});
 
-    for (const key of ['format', 'dataColor', 'styleRules', 'fonts', 'corrections']) {
+    for (const key of ['format', 'dataColor', 'styleRules', 'fonts', 'pipeline']) {
       if (!Array.isArray(out[key])) out[key] = [];
     }
-    if (!Array.isArray(out.summaries.groups)) out.summaries.groups = [];
-    if (!Array.isArray(out.summaries.grand)) out.summaries.grand = [];
+
+    /*
+     * Colour rules used to offer equal bins and quantiles as well. Both are
+     * statements about a particular set of rows rather than about the values,
+     * and the tables that want one are better served by
+     * `data_color(method = "bin")` in the exported R than by a control most
+     * tables never touch.
+     *
+     * A rule saved with either becomes continuous rather than being left
+     * holding a method the picker cannot show — a select with no matching
+     * option renders blank and writes whatever is chosen next, which is the
+     * trap the `inherit` work was about. **This changes how such a project
+     * draws**, and it is the one part of a removal that cannot be undone by
+     * preference: a binned scale becomes a smooth one over the same domain.
+     */
+    for (const rule of out.dataColor) {
+      if (rule.method === 'bin' || rule.method === 'quantile') rule.method = 'numeric';
+      delete rule.bins;
+    }
     if (!Array.isArray(out.parts.sourceNotes)) out.parts.sourceNotes = [];
     if (!Array.isArray(out.parts.footnotes)) out.parts.footnotes = [];
 
@@ -366,9 +366,254 @@ const Spec = {
     return out;
   },
 
+  /**
+   * Turn a pre-pipeline spec into `spec.pipeline`, and drop what it came from.
+   *
+   * **The canonical order is chosen to reproduce the old render exactly**, not
+   * because it is the only sensible one: `Compute.run` applied the pivot, then
+   * corrections, then the filter, then the sort, and drew the stub, groups,
+   * merges and spanners from whatever `spec.structure` held. A project that
+   * opens after this must look the same as it did before it, which is the
+   * whole test of this function.
+   *
+   * Merges can sit anywhere in the table stage: `Compute.applyMerges` builds a
+   * *plan* rather than changing the data, so they never affected the filter or
+   * the sort and their position among the gt verbs is free.
+   *
+   * The old keys are removed rather than left as dead weight. Two shapes in one
+   * file is two producers of every structural fact, and a build that predates
+   * this would open such a file and silently ignore the half that matters.
+   */
+  migratePipeline(out, obj) {
+    if (Array.isArray(obj.pipeline)) return;      // already migrated
+    const steps = [];
+    const legacyStructure = (obj && obj.structure) || {};
+    const push = (type, params) => {
+      const step = Pipeline.create(type);
+      if (step) steps.push(Object.assign(step, params));
+    };
+
+    /* ---- The data stage, in the order `Compute.run` used to apply it ---- */
+
+    const reshape = obj && obj.reshape;
+    if (reshape && reshape.mode === 'pivot') {
+      push('pivot', {
+        idCols: reshape.idCols || [],
+        nameCols: reshape.nameCols || [],
+        valueCols: reshape.valueCols || [],
+        aggregate: reshape.aggregate || 'first',
+        nameSep: reshape.nameSep || ' > '
+      });
+    }
+    if (Array.isArray(obj.corrections) && obj.corrections.length) {
+      push('correct', { edits: obj.corrections });
+    }
+    const filter = legacyStructure.filter;
+    if (filter && Array.isArray(filter.conditions) && filter.conditions.length) {
+      push('filter', { match: filter.match || 'all', conditions: filter.conditions });
+    }
+    if (Array.isArray(legacyStructure.sort) && legacyStructure.sort.length) {
+      push('sort', { keys: legacyStructure.sort });
+    }
+
+    /* ---- The table stage ---- */
+
+    if (legacyStructure.rownameCol) push('stub', { col: legacyStructure.rownameCol });
+    if (legacyStructure.groupnameCol) {
+      push('groups', {
+        col: legacyStructure.groupnameCol,
+        order: legacyStructure.rowGroupOrder || []
+      });
+    }
+    for (const scope of ['groups', 'grand']) {
+      for (const summary of ((obj.summaries || {})[scope]) || []) {
+        push('summary', Object.assign({ scope: scope }, summary));
+      }
+    }
+    for (const merge of legacyStructure.merges || []) {
+      // `type` was the merge's kind and is now the step's, so it moves aside.
+      push('merge', { mergeType: merge.type || 'merge', target: merge.target,
+        columns: merge.columns || [], pattern: merge.pattern, sep: merge.sep });
+    }
+    // Ascending by level, so the innermost is written first — the order
+    // `export-rgt.js` has always sorted them into before emitting.
+    const spanners = (legacyStructure.spanners || []).slice()
+      .sort((a, b) => (a.level || 1) - (b.level || 1));
+    for (const spanner of spanners) push('spanner', spanner);
+
+    out.pipeline = steps;
+
+    // What they were built from is gone. `structure` keeps only the aesthetic
+    // half; the rest were read above and have no second home.
+    delete out.reshape;
+    delete out.corrections;
+    delete out.summaries;
+    for (const key of ['rownameCol', 'groupnameCol', 'spanners', 'rowGroupOrder',
+      'merges', 'sort', 'filter']) {
+      delete out.structure[key];
+    }
+  },
+
+  /**
+   * Column ids in display order: the preference first, then anything it does
+   * not mention.
+   *
+   * **`structure.columnOrder` is a preference, not the list of what exists.**
+   * The pipeline decides which columns there are, and it can change them on
+   * any edit; a preference that has not caught up must not be able to hide a
+   * column. Filtering *by* it is what made a pivoted table show two columns in
+   * the Structure panel while the table drew eleven — the panel had the rule
+   * `compute.js` used before the pipeline, and nothing kept the two in step.
+   *
+   * One producer, called by both.
+   */
+  orderColumns(preference, ids) {
+    const wanted = preference || [];
+    return ids.slice().sort((a, b) => {
+      const ia = wanted.indexOf(a);
+      const ib = wanted.indexOf(b);
+      if (ia === ib) return 0;
+      if (ia < 0) return 1;
+      if (ib < 0) return -1;
+      return ia - ib;
+    });
+  },
+
+  /**
+   * What the editor calls each of a set of columns, made unambiguous.
+   *
+   * `columnTitle` answers for one column and cannot see its siblings, which is
+   * fine until two of them answer the same. **A pivot makes that the normal
+   * case, not an edge**: `Reshape.pivot` gives every derived column the
+   * innermost tuple value as its `shortName`, so a year × metric pivot produces
+   * three columns called *employment* and three called *output*. Every chip
+   * picker, item subtitle, selection chip and Location line then showed six
+   * indistinguishable names.
+   *
+   * A repeated title falls back to the column's full `name` — which for a pivot
+   * is the whole tuple, `2022 > employment` — and then to the id. Columns whose
+   * title is already unique are left alone, so nothing gets longer than it has
+   * to be.
+   *
+   * @returns {Object} id -> title
+   */
+  columnTitles(spec, columns) {
+    const seen = {};
+    for (const column of columns) {
+      const title = Spec.columnTitle(spec, column);
+      seen[title] = (seen[title] || 0) + 1;
+    }
+
+    const out = {};
+    for (const column of columns) {
+      const title = Spec.columnTitle(spec, column);
+      out[column.id] = seen[title] > 1
+        ? (column.name || column.id)
+        : title;
+    }
+    return out;
+  },
+
   /** True when the spec has data to render. */
   hasData(spec) {
     return !!(spec && spec.source && spec.source.rows && spec.source.rows.length);
+  },
+
+  /**
+   * Is this item of a spec list switched on?
+   *
+   * **One place decides, because nine asked and one answered differently.**
+   * Style rules, colour rules, number formats and the panels' own checkboxes
+   * all carry an `enabled` flag, and every site but one read it as *on unless
+   * explicitly false*. `StyleRules.compile` read `!rule.enabled`, so a style
+   * rule whose `enabled` key was simply absent — an older saved project, a
+   * hand-edited file — was skipped by the preview while the checkbox beside it
+   * showed ticked and `export-rgt.js` emitted the rule anyway. Three views of
+   * one flag, disagreeing.
+   *
+   * Absent means on: the flag records having been switched *off*, and a rule
+   * nobody has touched has not been.
+   */
+  isEnabled(item) {
+    return !!item && item.enabled !== false;
+  },
+
+  /**
+   * What to call a colour rule.
+   *
+   * A colour rule has no name of its own — there is nothing to type one into,
+   * unlike a style rule's `label` — so it is described instead. The Colour
+   * panel's list heading and the Inspector's "why is this cell blue" both need
+   * that description, and two of them would drift, the way four producers of a
+   * column's display name once did.
+   */
+  /**
+   * Which colour scale a rule draws: continuous, or one colour per level.
+   *
+   * **One place, because the preview and the R export must not disagree.**
+   * Equal bins and quantiles were offered until they were cut back to these
+   * two, and a rule saved with either is normalised by `migrate` — but
+   * `ExportRgt.build` takes whatever spec it is handed, so an un-migrated one
+   * would have emitted `method = "bin"` for a table the preview drew smooth.
+   * Anything that is not `factor` is continuous, which is what `Palettes.scale`
+   * does, and now what the exporter does too.
+   */
+  colorMethod(rule) {
+    return (rule && rule.method) === 'factor' ? 'factor' : 'numeric';
+  },
+
+  /**
+   * The colours a rule paints with, as the vector gt is handed.
+   *
+   * A named palette is the whole vector; `custom` is the two or three stops
+   * the user picked. The middle stop only exists when a midpoint does — a
+   * neutral centre is the thing a third colour is *for*, and tying them keeps
+   * one control from silently depending on another being set.
+   *
+   * One place, because `Palettes.scale` and `export-rgt.js` must be handed the
+   * same list or the preview and the exported table are different pictures.
+   */
+  colorRamp(rule) {
+    if ((rule && rule.palette) !== 'custom') {
+      return Palettes.byName((rule && rule.palette) || 'Blues');
+    }
+    const stops = (rule && rule.stops) || {};
+    const low = stops.low || '#FFFFFF';
+    const high = stops.high || '#08306B';
+    const wantsMiddle = rule.midpoint !== null && rule.midpoint !== undefined &&
+      Number.isFinite(Number(rule.midpoint));
+    return wantsMiddle ? [low, stops.mid || '#F7F7F7', high] : [low, high];
+  },
+
+  /**
+   * Which columns' values drive a colour rule, as against which get painted.
+   *
+   * `rule.columns` has always meant the painted cells, and it still does.
+   * `valuesFrom` is gt's `target_columns` seen from the other end: gt takes
+   * the *values* in `columns` and paints `target_columns`, so when this is set
+   * the two arguments swap over in the export. Empty means each column is
+   * coloured by its own values, which is the ordinary case.
+   */
+  colorValueColumns(rule) {
+    const from = (rule && rule.valuesFrom) || [];
+    return from.length ? from : ((rule && rule.columns) || []);
+  },
+
+  /** Auto-contrast settings for a rule, falling back to the table's own type colours. */
+  colorContrast(rule, options) {
+    return {
+      // gt's own default is APCA, and the two disagree on about a third of
+      // ordinary fills, so the default has to match gt rather than be tidy.
+      algo: (rule && rule.contrastAlgo) === 'wcag' ? 'wcag' : 'apca',
+      dark: (rule && rule.autocolorDark) || (options && options['table.font.color']) || '#000000',
+      light: (rule && rule.autocolorLight) || (options && options['table.font.color.light']) || '#FFFFFF'
+    };
+  },
+
+  colorRuleTitle(rule) {
+    if (!rule) return '';
+    const count = (rule.columns || []).length;
+    return (rule.palette || 'Blues') + ' → ' + count + ' column' + (count === 1 ? '' : 's');
   }
 };
 
@@ -427,7 +672,7 @@ const Store = {
   update(fn, opts) {
     opts = opts || {};
     const previous = Store.get();
-    const draft = Util.clone(previous);
+    const draft = Store.draftOf(previous);
 
     const result = fn(draft);
     if (result === false) return;               // mutation opted out
@@ -462,6 +707,32 @@ const Store = {
 
     Store._lastCommit = { key: opts.coalesce || null, at: now };
     Store.emit(opts.reason || 'update');
+  },
+
+  /**
+   * A working copy of a spec, sharing the imported data rather than copying it.
+   *
+   * **`spec.source` is immutable within a timeline, and it is nearly all of a
+   * spec's weight.** Nothing in the app writes into it: corrections are an
+   * override layer precisely so the file as imported survives, `Reshape` and
+   * `Corrections` both hand back `source.rows` itself when they change
+   * nothing, and the only way a source is *replaced* — import, open, new
+   * project — goes through `Store.replace` or `Store.init`, which start a
+   * fresh history anyway. So every entry in one timeline can share one copy.
+   *
+   * Measured on a 2,000 × 40 table, which is inside the app's own preview cap:
+   * 61 history entries cost **158 MB** cloned whole and **0.8 MB** sharing the
+   * source. That is what a browser tab runs out of memory on, and a fuzz run
+   * did — sixty edits on a table that size is an ordinary afternoon.
+   *
+   * It is also most of the cost of an edit. `Util.clone` serialises whatever
+   * it is handed, so every keystroke was re-serialising the whole dataset.
+   */
+  draftOf(spec) {
+    const source = spec.source;
+    const draft = Util.clone(Object.assign({}, spec, { source: null }));
+    draft.source = source;
+    return draft;
   },
 
   /** Replace the whole spec, starting a fresh history (import / open / new). */
@@ -558,10 +829,5 @@ const Store = {
       console.warn('Could not restore autosave:', err);
       return null;
     }
-  },
-
-  /** Forget the autosave. */
-  clearSaved() {
-    try { localStorage.removeItem(Spec.STORAGE_KEY); } catch (e) { /* ignore */ }
   }
 };

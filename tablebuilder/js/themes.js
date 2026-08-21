@@ -1108,12 +1108,17 @@ const Themes = {
    * Grey were no better. A band with no way to colour the text on it is a band
    * you cannot read.
    *
-   * **Only part-level locations belong here.** Style rules are kept
-   * out of themes because they name column ids and so do not survive a change
-   * of dataset. A location that names a *part* — every column label, every
-   * grand-summary row — names nothing dataset-specific, so that reasoning does
-   * not apply to it. `Themes.apply` refuses any rule that reaches for a
-   * column, a group, a spanner or a row.
+   * **Only part-level locations belong here.** A theme is a look that outlives
+   * any one project, and a style rule naming column ids does not survive a
+   * change of dataset — which is why themes carry no style rules in general. A
+   * location that names a *part* — every column label, every grand-summary row
+   * — names nothing dataset-specific, so that reasoning does not reach it.
+   *
+   * Three things hold the line. The shorthand below has nowhere to put a
+   * column, group, spanner or row, so a built-in cannot express one;
+   * `Themes.isPortable` is what decides which of a project's rules are
+   * captured when someone saves their own look; and a check in the pipeline
+   * suite asserts every built-in rule through that same predicate.
    */
   RULES: {
     inverse: [
@@ -1169,6 +1174,36 @@ const Themes = {
       { label: 'Russell totals', part: 'grand_summary', text: { color: '#E14412', weight: '400' } },
       { label: 'Russell sections', part: 'row_groups', text: { color: '#E14412', weight: '700' } }
     ]
+  },
+
+  /**
+   * Can this style rule belong to a theme?
+   *
+   * **The whole justification for letting a theme carry rules at all**: a
+   * part-level location survives a change of data, a column id does not. So the
+   * question is what the rule *names*, never where it came from.
+   *
+   * `UserThemes.fromSpec` used to ask the other question — is it tagged
+   * `fromTheme` — and then hand what it found to `toShorthand`, which keeps the
+   * part and drops columns, rows, groups and spanners. Two things followed. A
+   * theme rule the user had narrowed to one column was saved with its scope
+   * silently removed, so the theme painted every column label where the project
+   * painted one. And the user's own part-level rule — as portable as any of the
+   * theme's, and the exact thing a theme is for — was dropped, on a stated
+   * reason ("the user's own name column ids") that was not true of it.
+   *
+   * The built-in themes are held to this by a check in the pipeline suite,
+   * which now asks through here rather than restating the list.
+   */
+  isPortable(rule) {
+    if (!rule || !rule.locations || rule.locations.length !== 1) return false;
+    const loc = rule.locations[0];
+    if (!StyleRules.PARTS.some((part) => part.id === loc.part)) return false;
+    for (const field of ['columns', 'groups', 'spanners']) {
+      if (loc[field] && loc[field].length) return false;
+    }
+    if (loc.rows && loc.rows.mode && loc.rows.mode !== 'all') return false;
+    return true;
   },
 
   /** A theme rule reduced to the shorthand above, for saving. */
@@ -1248,6 +1283,12 @@ const Themes = {
    * The built-ins plus whatever the user has saved, in one list. A saved theme
    * is marked `custom` — that is the only thing the picker treats differently.
    */
+  /** A theme's display name, falling back to its id when it is not installed. */
+  label(id) {
+    const found = Themes.all().find((theme) => theme.id === id);
+    return found ? found.label : id;
+  },
+
   all() {
     return Themes.list.map((theme) => Object.assign({ custom: false }, theme))
       .concat(UserThemes.list().map((theme) => ({
@@ -1286,11 +1327,23 @@ const Themes = {
         draft.fonts = (draft.fonts || []).concat(saved.fonts.filter((f) => !have.has(f.id)));
       }
 
-      // The previous theme's rules go; the user's own stay. Theme rules lead,
-      // so anything hand-written still overrides them — a theme is a starting
-      // point, not a lock.
-      const mine = (draft.styleRules || []).filter((rule) => !rule.fromTheme);
-      draft.styleRules = Themes.buildRules(id).concat(mine);
+      // The previous theme's rules go; the user's own stay, in the order they
+      // were left in. Later rules win, so a theme is a starting point rather
+      // than a lock — but *where* the block sits is the user's to decide, and
+      // the list is drag-reorderable precisely so it can be decided. Dropping
+      // the new rules at the front unconditionally silently undid that: drag
+      // your rule above the theme's to let the theme win over it, change theme,
+      // and it was back at the bottom overriding everything again.
+      //
+      // The block goes where the last theme's block was, which for a first
+      // apply — nothing tagged yet — is the front, as before.
+      const rules = draft.styleRules || [];
+      const firstTheme = rules.findIndex((rule) => rule.fromTheme);
+      const mine = rules.filter((rule) => !rule.fromTheme);
+      const at = firstTheme < 0
+        ? 0
+        : rules.slice(0, firstTheme).filter((rule) => !rule.fromTheme).length;
+      draft.styleRules = mine.slice(0, at).concat(Themes.buildRules(id), mine.slice(at));
     }, { label: 'Theme: ' + (named ? named.label : id) });
 
     Util.toast('Applied “' + (named ? named.label : id) + '”', 'ok');

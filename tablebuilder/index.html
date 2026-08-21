@@ -75,6 +75,10 @@
             <option value="dark">Dark</option>
             <option value="checker">Checkerboard</option>
           </select>
+          <label class="switch" title="Spread the canvas across the whole stage instead of a sheet the size of the table. The table then sits directly on it, with no sheet edge.">
+            <input type="checkbox" id="toggle-fill">
+            <span>Fill stage</span>
+          </label>
           <label class="switch">
             <input type="checkbox" id="toggle-select" checked>
             <span>Select mode</span>
@@ -161,6 +165,7 @@
 <script src="js/reshape.js"></script>
 <script src="js/corrections.js"></script>
 <script src="js/filter.js"></script>
+<script src="js/pipeline.js"></script>
 <script src="js/style-rules.js"></script>
 <script src="js/compute.js"></script>
 <script src="js/edges.js"></script>
@@ -182,13 +187,11 @@
 <script src="js/ui/line-info.js"></script>
 <script src="js/ui/inspector.js"></script>
 <script src="js/ui/panel-data.js"></script>
-<script src="js/ui/panel-reshape.js"></script>
+<script src="js/ui/panel-steps.js"></script>
 <script src="js/ui/panel-structure.js"></script>
-<script src="js/ui/panel-sort.js"></script>
 <script src="js/ui/panel-content.js"></script>
 <script src="js/ui/panel-format.js"></script>
 <script src="js/ui/panel-color.js"></script>
-<script src="js/ui/panel-summaries.js"></script>
 <script src="js/ui/panel-style.js"></script>
 <script src="js/ui/panel-options.js"></script>
 <script src="js/ui/export-menu.js"></script>

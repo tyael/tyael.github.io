@@ -192,7 +192,7 @@ const Edges = {
           Edges.setH(grid, i + 1, all, Edges.edge(opt, 'row_group.border.bottom', 'structural'));
           // gt puts these on the group heading cell, which spans the table, so
           // they are that row's own two ends. They had been in the schema and in
-          // the Options panel since the first commit and drew nothing anywhere —
+          // the Table defaults panel since the first commit and drew nothing anywhere —
           // the same gap `heading.border.lr` and its three siblings were in.
           Edges.setV(grid, i, 0, Edges.edge(opt, 'row_group.border.left', 'structural'));
           Edges.setV(grid, i, nCols, Edges.edge(opt, 'row_group.border.right', 'structural'));
@@ -270,7 +270,7 @@ const Edges = {
     //
     // This is what `heading.border.lr`, `column_labels.border.lr`,
     // `footnotes.border.lr` and `source_notes.border.lr` are for. They have
-    // been in the schema and in the Options panel since the beginning and drew
+    // been in the schema and in the Table defaults panel since the beginning and drew
     // nothing at all.
     const sides = {
       table: [Edges.edge(opt, 'table.border.left', 'structural'),

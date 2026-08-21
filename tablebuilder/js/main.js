@@ -25,6 +25,15 @@ const App = {
   canvasSurface: 'light',
 
   /**
+   * Whether that surface is a sheet the size of the table, or the whole stage.
+   *
+   * View state, like `canvasSurface`, `selectMode` and `zoom`: not in the spec,
+   * so it stays off the undo stack and out of a saved `.tablespec.json`. It
+   * changes nothing about the table and nothing any exporter can see.
+   */
+  canvasFill: false,
+
+  /**
    * The zoom track the +/− buttons step along, and the dropdown lists.
    *
    * Fit lands wherever the table happens to need, which is almost never a stop.
@@ -48,10 +57,10 @@ const App = {
     // putting it in the rail meant a top-right button whose whole effect
     // landed in the opposite corner of the screen.
     App.panels = [
-      PanelData, PanelStructure, PanelSort, PanelContent, PanelFormat,
-      PanelReshape, PanelColor, PanelSummaries, PanelStyle, PanelOptions
+      PanelData, PanelSteps, PanelStructure, PanelContent, PanelFormat,
+      PanelColor, PanelStyle, PanelOptions
     ];
-    App.essentialIds = ['data', 'structure', 'sort', 'content', 'format'];
+    App.essentialIds = ['data', 'steps', 'structure', 'content', 'format'];
 
     App.buildTabs();
     App.wireChrome();
@@ -177,6 +186,9 @@ const App = {
     const model = App.model;
 
     Util.clear(host);
+    // Before the empty-state branch: the stage's surface is not a property of
+    // the table, so it has to be right whether or not there is one.
+    App.paintCanvasSurface();
 
     if (!model.ok) {
       host.appendChild(App.emptyState(model.error));
@@ -186,7 +198,21 @@ const App = {
       return;
     }
 
-    const paper = Util.el('div.paper.surface-' + (App.canvasSurface || 'light'));
+    /*
+     * Filling the stage paints the surface on `#stage-canvas` instead of on
+     * the sheet, and that is the point rather than a detail: the sheet lives
+     * inside the zoom transform, so a sheet stretched to the stage would
+     * shrink with the zoom and stop filling it. The stage is outside the
+     * transform and stays the size of the gap between the rails.
+     *
+     * The sheet then keeps its padding — the table still needs air around it —
+     * but gives up its background, border and shadow, because a sheet edge
+     * drawn on a surface that reaches the rails is the sheet the option was
+     * asked to get rid of.
+     */
+    const filling = !!App.canvasFill;
+    const surface = App.canvasSurface || 'light';
+    const paper = Util.el('div.paper' + (filling ? '.is-flat' : '.surface-' + surface));
     const rendered = RenderHtml.render(model, { selectable: App.selectMode !== false, tableId: 'gt-preview' });
 
     App.setPreviewStyle(rendered.css);
@@ -205,7 +231,7 @@ const App = {
         text: model.filteredOut.toLocaleString() + ' row' +
           (model.filteredOut === 1 ? '' : 's') + ' hidden by the filter. '
       });
-      notice.appendChild(Controls.button('Show the filter', () => App.goToPanel('sort', 'sort.filter'),
+      notice.appendChild(Controls.button('Show the filter', () => App.goToPanel('steps', 'steps.data'),
         { kind: 'ghost' }));
       paper.appendChild(notice);
     }
@@ -415,10 +441,10 @@ const App = {
   /** True when the spec uses anything that lives in the advanced tier. */
   moreTierUsed(spec) {
     if (!spec) return false;
-    if (spec.reshape && spec.reshape.mode !== 'none') return true;
+    // Not the pipeline: Steps is an essential tab, so having steps is the
+    // ordinary state of every table rather than a sign of advanced use.
     if (spec.dataColor && spec.dataColor.length) return true;
-    if (spec.summaries &&
-      ((spec.summaries.groups || []).length || (spec.summaries.grand || []).length)) return true;
+
     if (spec.styleRules && spec.styleRules.length) return true;
     return false;
   },
@@ -463,7 +489,7 @@ const App = {
     if (App.model && App.model.ok) {
       right.textContent = App.model.cols.length + ' cols · ' +
         App.model.totalRows.toLocaleString() + ' rows · ' +
-        spec.styleRules.length + ' style rules';
+        Util.plural(spec.styleRules.length, 'style rule');
     } else {
       right.textContent = '';
     }
@@ -530,6 +556,11 @@ const App = {
 
     Util.qs('#canvas-surface').addEventListener('change', (e) => {
       App.canvasSurface = e.target.value;
+      App.renderPreview();
+    });
+
+    Util.qs('#toggle-fill').addEventListener('change', (e) => {
+      App.canvasFill = e.target.checked;
       App.renderPreview();
     });
 
@@ -867,9 +898,14 @@ const App = {
     if (hadData) {
       spec = Util.clone(current);
       spec.source = source;
-      spec.reshape = Spec.create().reshape;
-      Spec.adoptColumns(spec, source.columns);
-      spec.structure.columnOrder = source.columns.map((c) => c.id);
+      // **The pipeline is kept.** Importing over an existing project keeps the
+      // design, and the structural half is design: the pivot, the sort, the
+      // filter, the row labels and groups all still describe what the user
+      // wants doing to a file of this shape. Clearing it threw all of that
+      // away — where the old flat spec had reset only the pivot — and a step
+      // that no longer fits reports itself inert rather than going quiet, which
+      // is a better answer than deleting it on the user's behalf.
+      Spec.adoptColumns(spec);
     } else {
       spec = Spec.fromSource(source);
     }
@@ -883,7 +919,7 @@ const App = {
     // After `adoptColumns`, which resets the structure — a two-row header the
     // importer read as column groups would otherwise be thrown away here.
     if (opts.spanners && opts.spanners.length) {
-      spec.structure.spanners = opts.spanners;
+      for (const spanner of opts.spanners) Pipeline.add(spec, 'spanner', spanner);
     }
 
     Store.replace(spec, 'replace', 'Imported ' + Spec.sourceLabel(source));
@@ -1024,10 +1060,13 @@ const App = {
   workingColumns() {
     const spec = Store.get();
     if (!Spec.hasData(spec)) return [];
-    const derived = Reshape.derive(spec.source, spec.reshape);
+    const derived = Pipeline.run(spec.source, spec.pipeline);
+    // Titles for the set, not one at a time: a pivot names three columns
+    // `employment`, and every picker in the app is built from this list.
+    const titles = Spec.columnTitles(spec, derived.columns);
     return derived.columns.map((col) => ({
       id: col.id,
-      label: Spec.columnTitle(spec, col),
+      label: titles[col.id],
       name: col.name,
       type: col.type
     }));
@@ -1036,7 +1075,7 @@ const App = {
   workingColumnsById() {
     const spec = Store.get();
     if (!Spec.hasData(spec)) return {};
-    const derived = Reshape.derive(spec.source, spec.reshape);
+    const derived = Pipeline.run(spec.source, spec.pipeline);
     const out = {};
     for (const col of derived.columns) out[col.id] = col;
     return out;
@@ -1050,20 +1089,33 @@ const App = {
   workingRows() {
     const spec = Store.get();
     if (!Spec.hasData(spec)) return [];
-    const working = Reshape.derive(spec.source, spec.reshape);
-    return Corrections.apply(working.rows, spec.corrections).rows;
+    // The pipeline's own output, corrections and all — one producer of "the
+    // working data", so a panel seeding an expression sees what `compute`
+    // matched against.
+    return Pipeline.run(spec.source, spec.pipeline).items.map((item) => item.row);
+  },
+
+  /**
+   * Put the canvas surface where it belongs for the current mode.
+   *
+   * One place, called from the render, because the surface is now drawn by one
+   * of two elements and leaving the other one carrying a stale class shows two
+   * surfaces at once — a dark stage behind a white sheet.
+   */
+  paintCanvasSurface() {
+    const stage = document.getElementById('stage-canvas');
+    if (!stage) return;
+    for (const name of ['light', 'dark', 'checker']) {
+      stage.classList.remove('surface-' + name);
+    }
+    stage.classList.toggle('is-filled', !!App.canvasFill);
+    if (App.canvasFill) stage.classList.add('surface-' + (App.canvasSurface || 'light'));
   },
 
   /** Row-group labels in display order. */
   groupLabels() {
     if (App.model && App.model.groups) return App.model.groups.map((g) => g.id);
     return [];
-  },
-
-  groupCount(label) {
-    if (!App.model || !App.model.groups) return 0;
-    const group = App.model.groups.find((g) => g.id === label);
-    return group ? group.count : 0;
   }
 };
 

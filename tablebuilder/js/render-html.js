@@ -213,8 +213,10 @@ const RenderHtml = {
     let c = 0;
 
     for (const cell of row.cells) {
-      // A group column cell with rowspan 0 was absorbed by the one above it.
-      if (cell.kind === 'group-col' && !cell.rowspan) { c += 1; continue; }
+      // A cell absorbed by a rowspan above it is not emitted again. The grid
+      // is the authority on that, not the cell's own `rowspan: 0` — skipping a
+      // slot nothing actually spans emits a row one cell short, which does not
+      // leave a gap but slides every later cell one column to the left.
       if (isOccupied(r, c)) { c += 1; continue; }
 
       const isStub = cell.kind === 'stub' || cell.kind === 'summary-stub' ||

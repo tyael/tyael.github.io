@@ -44,6 +44,10 @@ const PanelFormat = {
           draft.format[index].opts = Formatters.defaults(value);
         }))));
 
+      // Blank means nothing here, and means every column in a style rule's
+      // location. Same widget, same None button, opposite meaning — see the
+      // note in `panel-color.js`.
+      body.appendChild(Util.el('div.mini-label', { text: 'Columns (blank = none)' }));
       body.appendChild(Controls.field(null, Controls.columnChips('fmt.cols.' + rule.id,
         columns, rule.columns,
         (value) => Store.update((draft) => { draft.format[index].columns = value; })),
@@ -82,7 +86,7 @@ const PanelFormat = {
       },
       subtitle: (rule) => rule.columns
         .map((id) => (byId[id] ? byId[id].label : id)).join(', ') || 'no columns',
-      enabled: (rule) => rule.enabled !== false,
+      enabled: (rule) => Spec.isEnabled(rule),
       onToggle: (rule, index, on) => Store.update((draft) => { draft.format[index].enabled = on; }),
       onRemove: (rule, index) => Store.update((draft) => { draft.format.splice(index, 1); }),
       onReorder: (from, to) => Store.update((draft) => {
@@ -112,7 +116,7 @@ const PanelFormat = {
     if (!target.length) return;
 
     const spec = Store.get();
-    const working = Reshape.derive(spec.source, spec.reshape);
+    const working = { rows: App.workingRows() };
     const values = working.rows.map((row) => row[target[0]]);
     const type = Formatters.suggest(byId[target[0]], values);
 
@@ -129,19 +133,20 @@ const PanelFormat = {
   },
 
   autoFormat(columns) {
-    const spec = Store.get();
-    const working = Reshape.derive(spec.source, spec.reshape);
-    const byId = {};
-    for (const col of working.columns) byId[col.id] = col;
+    // `columns` is `App.workingColumns()` — the pipeline's output, carrying the
+    // type each column was inferred as. Looking the type up a second way is
+    // what broke this: it went through the reshaped source, whose columns a
+    // pivot's output is never among, and which the pipeline no longer hands
+    // back at all.
+    const rows = App.workingRows();
 
     // Columns sharing a suggested formatter are grouped into one rule rather
     // than producing a wall of near-identical entries.
     const buckets = new Map();
     for (const col of columns) {
-      const source = byId[col.id];
-      if (!source || source.type !== 'number') continue;
-      const values = working.rows.map((row) => row[col.id]);
-      const type = Formatters.suggest(source, values);
+      if (col.type !== 'number') continue;
+      const values = rows.map((row) => row[col.id]);
+      const type = Formatters.suggest(col, values);
       if (!buckets.has(type)) buckets.set(type, []);
       buckets.get(type).push(col.id);
     }
@@ -170,7 +175,7 @@ const PanelFormat = {
   samplePreview(rule, columns, byId) {
     if (!rule.columns.length) return null;
     const spec = Store.get();
-    const working = Reshape.derive(spec.source, spec.reshape);
+    const working = { rows: App.workingRows() };
     const colId = rule.columns[0];
 
     const samples = working.rows

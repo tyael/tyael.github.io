@@ -1,7 +1,7 @@
 /**
  * ui/panel-options.js
  *
- * The Options panel: the whole `tab_options()` surface, generated from
+ * The Table defaults panel: the whole `tab_options()` surface, generated from
  * options-schema.js.
  *
  * Nothing here is written per option — the groups, the rows, the controls and
@@ -17,7 +17,7 @@
 const PanelOptions = {
 
   id: 'options',
-  label: 'Options',
+  label: 'Table defaults',
   hint: 'Table-wide appearance defaults, and themes',
 
   _query: '',

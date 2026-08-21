@@ -106,9 +106,9 @@ const PanelContent = {
           wide: true,
           hint: 'The cell above the row labels — gt calls this the stubhead.',
           requires: {
-            met: !!spec.structure.rownameCol,
-            because: 'Not shown yet — no row-label column is set.',
-            fix: { panel: 'structure', label: 'Set one' }
+            met: !!((Pipeline.find(spec, 'stub') || {}).col),
+            because: 'Not shown yet — no Row labels step names a column.',
+            fix: { panel: 'steps', label: 'Add one' }
           }
         })
     ], { key: 'content.stubhead' });

@@ -2,7 +2,7 @@
  * ui/theme-picker.js
  *
  * The theme grid, shared by the Data panel (right after import, where someone
- * who wants "an APA table" is looking) and the Options panel (its full home).
+ * who wants "an APA table" is looking) and the Table defaults panel (its full home).
  *
  * Built-ins and saved themes sit in one list; a saved theme differs only in
  * carrying export and delete affordances. Saving, parsing and storage all live
@@ -82,7 +82,20 @@ const ThemePicker = {
     if (!UserThemes.save(theme)) return;
 
     Store.update((draft) => { draft.meta.theme = theme.id; });
-    Util.toast('Saved “' + label + '” — ' + changed + ' option(s)', 'ok');
+
+    // A rule naming a column, a group, a spanner or particular rows cannot
+    // survive a change of data, so it does not travel — and the place to find
+    // that out is here, not on the next dataset when the look comes back
+    // missing something. Named, because "2 rules" is not enough to act on.
+    const stuck = UserThemes.unportableRules(spec);
+    const parts = [changed + ' option(s)'];
+    if (theme.rules.length) parts.push(theme.rules.length + ' rule(s)');
+    Util.toast('Saved “' + label + '” — ' + parts.join(', '), 'ok');
+    if (stuck.length) {
+      Util.toast(stuck.length + ' rule(s) stayed behind — ' +
+        stuck.map((rule) => '“' + (rule.label || 'Style rule') + '”').join(', ') +
+        ' name columns or rows, which do not carry to another table', 'error');
+    }
     App.renderPanels();
   },
 

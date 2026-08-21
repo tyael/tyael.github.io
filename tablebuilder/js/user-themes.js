@@ -72,16 +72,34 @@ const UserThemes = {
       label: label,
       notes: '',
       options: options,
-      // Whatever theme-owned rules are in play travel too. Without this,
-      // saving a look built on Sydney and applying it back would drop the white
-      // header text and leave dark grey on a dark blue band. Only rules the
-      // theme put there are captured — the user's own name column ids and do
-      // not generalise, which is why they are excluded.
-      rules: (spec.styleRules || [])
-        .filter((rule) => rule.fromTheme)
-        .map(Themes.toShorthand),
+      // Every rule that can survive a change of data travels, whoever wrote
+      // it. Without any of this, saving a look built on Sydney and applying it
+      // back would drop the white header text and leave dark ink on a dark blue
+      // band — but the test is what the rule *names*, not where it came from.
+      // See `Themes.isPortable`: asking about provenance instead both dropped
+      // the user's own part-level rules and silently widened a theme rule they
+      // had narrowed to a column.
+      //
+      // A disabled rule is not part of the current look, so it does not travel
+      // either; it used to, and came back switched on.
+      rules: UserThemes.portableRules(spec).map(Themes.toShorthand),
       fonts: (spec.fonts || []).filter((font) => named.has(font.id))
     };
+  },
+
+  /**
+   * The rules of a spec that can belong to a theme, and the ones that cannot.
+   *
+   * Both halves come from one walk so the picker can say what it left behind
+   * rather than the user finding out when they apply the theme somewhere else.
+   */
+  portableRules(spec) {
+    return (spec.styleRules || []).filter((rule) => Spec.isEnabled(rule) && Themes.isPortable(rule));
+  },
+
+  /** Rules that will not travel: enabled, but naming something dataset-specific. */
+  unportableRules(spec) {
+    return (spec.styleRules || []).filter((rule) => Spec.isEnabled(rule) && !Themes.isPortable(rule));
   },
 
   /** Save a theme, replacing any existing one with the same name. */

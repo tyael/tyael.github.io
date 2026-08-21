@@ -199,16 +199,76 @@ const Palettes = {
   /* ---------- Interpolation ---------- */
 
   /** Linear mix of two colours; t = 0 gives a, t = 1 gives b. */
+  /*
+   * sRGB <-> CIE Lab, D65.
+   *
+   * **Because gt interpolates in Lab and we have to paint the same colour.**
+   * `scales::colour_ramp`, which `data_color()` builds on, converts to Lab
+   * before mixing; blending the channels straight is a different ramp, and
+   * visibly so — black to white lands on `#808080` in RGB and `#777777` in
+   * Lab, and a two-stop custom ramp drifted by six or seven steps per channel
+   * in the middle. Same picture on screen and in the exported table is the
+   * whole contract, so this follows gt rather than being simpler.
+   */
+  toLab(rgb) {
+    const lin = (v) => {
+      const c = v / 255;
+      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    const r = lin(rgb.r);
+    const g = lin(rgb.g);
+    const b = lin(rgb.b);
+    // D65 white point.
+    const x = (0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / 0.95047;
+    const y = (0.2126729 * r + 0.7151522 * g + 0.0721750 * b);
+    const z = (0.0193339 * r + 0.1191920 * g + 0.9503041 * b) / 1.08883;
+    const f = (t) => (t > 0.008856451679035631 ? Math.cbrt(t) : (903.2962962962963 * t + 16) / 116);
+    const fx = f(x);
+    const fy = f(y);
+    const fz = f(z);
+    return { L: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) };
+  },
+
+  fromLab(lab) {
+    const fy = (lab.L + 16) / 116;
+    const fx = fy + lab.a / 500;
+    const fz = fy - lab.b / 200;
+    const inv = (t) => {
+      const cube = t * t * t;
+      return cube > 0.008856451679035631 ? cube : (116 * t - 16) / 903.2962962962963;
+    };
+    const x = inv(fx) * 0.95047;
+    const y = (lab.L > 8 ? Math.pow(fy, 3) : lab.L / 903.2962962962963);
+    const z = inv(fz) * 1.08883;
+
+    const r = 3.2404542 * x - 1.5371385 * y - 0.4985314 * z;
+    const g = -0.9692660 * x + 1.8760108 * y + 0.0415560 * z;
+    const b = 0.0556434 * x - 0.2040259 * y + 1.0572252 * z;
+    const out = (v) => {
+      const c = v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(Math.max(v, 0), 1 / 2.4) - 0.055;
+      return Util.clamp(c * 255, 0, 255);
+    };
+    return { r: out(r), g: out(g), b: out(b) };
+  },
+
+  /** Blend two colours, in Lab, the way `scales::colour_ramp` does. */
   mix(a, b, t) {
     const ca = Palettes.parse(a) || { r: 0, g: 0, b: 0, a: 1 };
     const cb = Palettes.parse(b) || { r: 0, g: 0, b: 0, a: 1 };
     const k = Util.clamp(t, 0, 1);
-    return {
-      r: ca.r + (cb.r - ca.r) * k,
-      g: ca.g + (cb.g - ca.g) * k,
-      b: ca.b + (cb.b - ca.b) * k,
-      a: ca.a + (cb.a - ca.a) * k
-    };
+    if (k <= 0) return Object.assign({}, ca);
+    if (k >= 1) return Object.assign({}, cb);
+
+    const la = Palettes.toLab(ca);
+    const lb = Palettes.toLab(cb);
+    const blended = Palettes.fromLab({
+      L: la.L + (lb.L - la.L) * k,
+      a: la.a + (lb.a - la.a) * k,
+      b: la.b + (lb.b - la.b) * k
+    });
+    // Alpha is not a colour and stays linear.
+    blended.a = ca.a + (cb.a - ca.a) * k;
+    return blended;
   },
 
   /**
@@ -259,22 +319,73 @@ const Palettes = {
   },
 
   /**
-   * Pick whichever of `dark` and `light` reads better on `background`.
-   * This is gt's `autocolor_text`.
+   * APCA-W3 lightness contrast (Lc), the algorithm gt reaches for by default.
+   *
+   * **Not a refinement of the WCAG ratio — a different answer.** Of twenty
+   * ordinary fills, the two disagree about which text colour to use on eight:
+   * mid greys, most saturated mid-tones, and every teal. WCAG says black on
+   * `#767676`, APCA says white. So exposing the choice means implementing
+   * this, not approximating it, or the preview and the exported table paint
+   * different text.
+   *
+   * The constants are APCA-W3 0.1.9. Every one of those twenty was checked
+   * against what real gt actually emitted, both ways round — see the R suite.
+   *
+   * @returns {number} Lc, signed: positive for dark text on light, negative
+   *   for light on dark. Callers compare magnitudes.
    */
-  readableOn(background, dark, light) {
+  apca(text, background) {
+    const TRC = 2.4;
+    const BLACK_THRESHOLD = 0.022;
+    const BLACK_CLAMP = 1.414;
+    const y = (color) => {
+      const rgb = Palettes.parse(color);
+      if (!rgb) return 1;
+      const ch = (v) => Math.pow(v / 255, TRC);
+      const raw = 0.2126729 * ch(rgb.r) + 0.7151522 * ch(rgb.g) + 0.0721750 * ch(rgb.b);
+      // Soft-clamp the near-black end, where the power curve stops modelling
+      // how flare makes dark surfaces read.
+      return raw > BLACK_THRESHOLD
+        ? raw
+        : raw + Math.pow(BLACK_THRESHOLD - raw, BLACK_CLAMP);
+    };
+
+    const txtY = y(text);
+    const bgY = y(background);
+    if (Math.abs(bgY - txtY) < 0.0005) return 0;
+
+    // Two polarities with different exponents, because dark-on-light and
+    // light-on-dark are not symmetric to the eye.
+    let sapc;
+    let out;
+    if (bgY > txtY) {
+      sapc = (Math.pow(bgY, 0.56) - Math.pow(txtY, 0.57)) * 1.14;
+      out = sapc < 0.1 ? 0 : sapc - 0.027;
+    } else {
+      sapc = (Math.pow(bgY, 0.65) - Math.pow(txtY, 0.62)) * 1.14;
+      out = sapc > -0.1 ? 0 : sapc + 0.027;
+    }
+    return out * 100;
+  },
+
+  /**
+   * Pick whichever of `dark` and `light` reads better on `background`.
+   * This is gt's `autocolor_text`, and `algo` is its `contrast_algo`.
+   */
+  readableOn(background, dark, light, algo) {
     const darkColor = dark || '#000000';
     const lightColor = light || '#FFFFFF';
-    return Palettes.contrast(background, darkColor) >= Palettes.contrast(background, lightColor)
+    if (algo === 'wcag') {
+      return Palettes.contrast(background, darkColor) >= Palettes.contrast(background, lightColor)
+        ? darkColor
+        : lightColor;
+    }
+    return Math.abs(Palettes.apca(darkColor, background)) >=
+      Math.abs(Palettes.apca(lightColor, background))
       ? darkColor
       : lightColor;
   },
 
-  /** Lighten (positive) or darken (negative) by moving towards white or black. */
-  adjustLuminance(color, amount) {
-    const target = amount >= 0 ? '#FFFFFF' : '#000000';
-    return Palettes.toCss(Palettes.mix(color, target, Math.abs(amount)));
-  },
 
   /* ---------- Scales ---------- */
 
@@ -283,10 +394,9 @@ const Palettes = {
    *
    * @param {Object} opts
    * @param {string[]} opts.colors  palette stops
-   * @param {string} opts.method    'numeric' | 'bin' | 'quantile' | 'factor'
+   * @param {string} opts.method    'numeric' | 'factor'
    * @param {number[]} opts.values  the data the scale is fitted to
    * @param {number[]} [opts.domain] explicit [min, max] for 'numeric'
-   * @param {number} [opts.bins]    bin/quantile count
    * @param {boolean} [opts.reverse]
    * @param {number} [opts.midpoint] anchor for diverging palettes
    * @returns {{of: function, breaks: number[], levels: string[]}}
@@ -295,94 +405,120 @@ const Palettes = {
     const colors = opts.reverse ? opts.colors.slice().reverse() : opts.colors.slice();
     const method = opts.method || 'numeric';
 
+    // A missing cell gets this rather than nothing, which is gt's `na_color`.
+    // `null` means "leave the cell alone", which is what gt does with no
+    // `na_color` set, so the two agree by default.
+    const naColor = opts.naColor || null;
+    const forMissing = (value) => (Util.isMissing(value) ? naColor : undefined);
+
     if (method === 'factor') {
-      const levels = Util.unique(opts.values.map((v) => String(v)));
+      const levels = Util.unique(opts.values.filter((v) => !Util.isMissing(v)).map((v) => String(v)));
+      // An explicit assignment wins; the rest take the palette in level order.
+      // Both halves are handed to gt as `levels =` and a matching `palette =`,
+      // which maps positionally — verified against real gt, not assumed.
+      const chosen = opts.levelColors || {};
       const map = {};
       levels.forEach((level, i) => {
-        map[level] = Palettes.toCss(colors.length >= levels.length
+        map[level] = chosen[level] || Palettes.toCss(colors.length >= levels.length
           ? Palettes.parse(colors[i % colors.length])
           : Palettes.sample(colors, levels.length === 1 ? 0.5 : i / (levels.length - 1)));
       });
       return {
         levels: levels,
+        colorOf: (level) => map[String(level)] || null,
         breaks: [],
-        of: (value) => (value === null || value === undefined ? null : map[String(value)] || null)
-      };
-    }
-
-    const nums = opts.values.map(Util.toNumber).filter((n) => n !== null).sort((a, b) => a - b);
-    if (!nums.length) return { breaks: [], levels: [], of: () => null };
-
-    if (method === 'bin' || method === 'quantile') {
-      const count = Math.max(2, Math.min(24, opts.bins || 5));
-      const breaks = method === 'bin'
-        ? Palettes.equalBreaks(nums[0], nums[nums.length - 1], count)
-        : Palettes.quantileBreaks(nums, count);
-      const binColors = Palettes.ramp(colors, breaks.length - 1);
-      return {
-        breaks: breaks,
-        levels: [],
         of: (value) => {
-          const num = Util.toNumber(value);
-          if (num === null) return null;
-          for (let i = 0; i < breaks.length - 1; i += 1) {
-            const last = i === breaks.length - 2;
-            if (num >= breaks[i] && (last ? num <= breaks[i + 1] : num < breaks[i + 1])) {
-              return binColors[i];
-            }
-          }
-          return num < breaks[0] ? binColors[0] : binColors[binColors.length - 1];
+          const missing = forMissing(value);
+          if (missing !== undefined) return missing;
+          return map[String(value)] || null;
         }
       };
     }
 
-    // Continuous.
-    let lo = opts.domain && isFinite(opts.domain[0]) ? opts.domain[0] : nums[0];
-    let hi = opts.domain && isFinite(opts.domain[1]) ? opts.domain[1] : nums[nums.length - 1];
-    if (hi === lo) hi = lo + 1;
+    const nums = opts.values.map(Util.toNumber).filter((n) => n !== null).sort((a, b) => a - b);
+    if (!nums.length) {
+      return { breaks: [], levels: [], of: (value) => forMissing(value) || null };
+    }
 
-    const mid = opts.midpoint;
-    const useMid = mid !== null && mid !== undefined && isFinite(mid);
+
+    // Continuous.
+    const span = Palettes.continuousDomain(nums, opts.domain, opts.midpoint);
+    const lo = span[0];
+    const hi = span[1];
 
     return {
       breaks: [lo, hi],
       levels: [],
       of: (value) => {
+        const missing = forMissing(value);
+        if (missing !== undefined) return missing;
         const num = Util.toNumber(value);
         if (num === null) return null;
-        let t;
-        if (useMid) {
-          // Diverging: map [lo, mid] to [0, 0.5] and [mid, hi] to [0.5, 1] so the
-          // palette's neutral centre lands exactly on the midpoint.
-          t = num <= mid
-            ? (mid === lo ? 0.5 : 0.5 * (num - lo) / (mid - lo))
-            : (hi === mid ? 0.5 : 0.5 + 0.5 * (num - mid) / (hi - mid));
-        } else {
-          t = (num - lo) / (hi - lo);
-        }
-        return Palettes.toCss(Palettes.sample(colors, Util.clamp(t, 0, 1)));
+        return Palettes.toCss(Palettes.sample(colors, Util.clamp((num - lo) / (hi - lo), 0, 1)));
       }
     };
   },
 
-  /** N+1 evenly spaced break points between lo and hi. */
-  equalBreaks(lo, hi, n) {
-    const out = [];
-    const step = (hi - lo) / n;
-    for (let i = 0; i <= n; i += 1) out.push(lo + step * i);
-    return out;
+  /**
+   * The domain a continuous scale is actually fitted over.
+   *
+   * **A midpoint is a symmetric domain, not a second mapping.** It used to be
+   * one: `[lo, mid]` mapped to the palette's lower half and `[mid, hi]` to its
+   * upper half, each side stretched to reach its own extreme. Two things were
+   * wrong with that.
+   *
+   * It misreads the data. Over `[-4, 6]` centred on 0, −4 and +6 both came out
+   * at full intensity, so a small negative looked as extreme as a large
+   * positive — the opposite of what a diverging scale is for, which is that
+   * distance from the centre is comparable in both directions.
+   *
+   * And it could not be exported. gt's `data_color()` has no `midpoint`
+   * argument and maps its domain linearly, so the midpoint reached R as
+   * nothing at all: the preview put the palette's neutral colour on zero and
+   * the exported table put it wherever the data happened to be centred. A
+   * symmetric domain is how gt centres a diverging scale, and it is a domain,
+   * so `export-rgt.js` can simply say it.
+   *
+   * An explicit domain is treated as the range that must be covered: the
+   * result is widened around the midpoint until it is symmetric, never
+   * narrowed below what was asked for.
+   *
+   * @param {number[]} sorted ascending numeric values, non-empty
+   * @param {?number[]} domain explicit [min, max], or null to fit the data
+   * @param {?number} midpoint the value the palette's centre lands on
+   * @returns {number[]} [lo, hi]
+   */
+  continuousDomain(sorted, domain, midpoint) {
+    /*
+     * `Number.isFinite`, not the global `isFinite`, and that is the whole of a
+     * crash. The global one coerces first, and `Number(null)` is 0 — so
+     * `isFinite(null)` is **true**. Clearing a domain box in the Colour panel
+     * writes `null` (`Controls.number` is nullable there, because blank has to
+     * mean "fit the data"), that null passed this guard, and `lo` became null:
+     * the scale's breaks came out `[null, …]` and the panel's own legend threw
+     * on `null.toExponential()`, taking the rail down with it.
+     *
+     * `Number.isFinite` is false for null, undefined and strings, which is
+     * what "is this a number I can build a domain from" actually means.
+     */
+    let lo = domain && Number.isFinite(domain[0]) ? domain[0] : sorted[0];
+    let hi = domain && Number.isFinite(domain[1]) ? domain[1] : sorted[sorted.length - 1];
+    if (hi === lo) hi = lo + 1;
+
+    if (midpoint === null || midpoint === undefined || !isFinite(midpoint)) return [lo, hi];
+
+    // `hi > lo` above, so at least one arm is positive and the radius cannot
+    // be zero — including when the midpoint sits outside the data entirely.
+    const radius = Math.max(midpoint - lo, hi - midpoint);
+    return [midpoint - radius, midpoint + radius];
   },
 
-  /** N+1 breaks at equal quantiles of an already sorted array. */
-  quantileBreaks(sorted, n) {
-    const out = [];
-    for (let i = 0; i <= n; i += 1) {
-      const pos = (sorted.length - 1) * (i / n);
-      const lower = Math.floor(pos);
-      const upper = Math.min(sorted.length - 1, lower + 1);
-      out.push(sorted[lower] + (sorted[upper] - sorted[lower]) * (pos - lower));
-    }
-    // Collapse duplicate breaks, which happen when a value dominates the column.
-    return out.filter((v, i) => i === 0 || v !== out[i - 1]);
-  }
+  /*
+   * `equalBreaks` and `quantileBreaks` lived here until the colour methods were
+   * cut back to continuous and categorical. Binning is a statement about a
+   * particular set of rows rather than about the values, and the cases that
+   * want it are better served by `data_color(method = "bin")` in the exported
+   * R than by a control most tables never touch. Removed rather than left
+   * unreachable — see the work log.
+   */
 };

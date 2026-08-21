@@ -27,9 +27,14 @@ const Selection = {
 
   /** Distinct column ids in the selection, in table order. */
   selectedColumnIds() {
+    // Through `Spec.orderColumns`, because `columnOrder` is a preference and
+    // never mentions a pivot's output — sorting by `indexOf` alone gives every
+    // pivot-derived column the same rank of -1, so a selection across them came
+    // back in whatever order it was clicked.
     const ids = Util.unique(Selection.items.map((s) => s.colId).filter(Boolean));
-    const order = Store.get().structure.columnOrder;
-    return ids.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    const order = Spec.orderColumns(Store.get().structure.columnOrder,
+      (App.model && App.model.columns ? App.model.columns.map((col) => col.id) : ids));
+    return ids.slice().sort((a, b) => order.indexOf(a) - order.indexOf(b));
   },
 
   /** Distinct source row indices in the selection. */
@@ -361,7 +366,7 @@ const Selection = {
 
     if (part === 'column_spanners') {
       const ids = Util.unique(items.map((s) => s.spannerId).filter(Boolean));
-      const spanners = Store.get().structure.spanners;
+      const spanners = (App.model && App.model.spanners) || [];
       const labels = ids.map((id) => (spanners.find((sp) => sp.id === id) || {}).label).filter(Boolean);
       if (labels.length) args.push('spanners = ' + labels.join(', '));
     }
@@ -387,8 +392,10 @@ const Selection = {
    */
   columnLabel(colId) {
     const model = App.model;
-    const column = model && model.columnsById ? model.columnsById[colId] : null;
-    return column ? Spec.columnTitle(Store.get(), column) : colId;
+    if (!model || !model.columnsById || !model.columnsById[colId]) return colId;
+    // Against the whole set, so the chip and the Location line do not read
+    // `employment` for three different columns.
+    return Spec.columnTitles(Store.get(), model.columns)[colId] || colId;
   },
 
   /**

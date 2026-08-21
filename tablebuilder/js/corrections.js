@@ -111,9 +111,14 @@ const Corrections = {
    */
   originalValue(spec, srcIndex, colId) {
     if (!Spec.hasData(spec)) return undefined;
-    const working = Reshape.derive(spec.source, spec.reshape);
-    const row = working.rows[srcIndex];
-    return row ? row[colId] : undefined;
+    // The pipeline as it stands *just before* corrections are applied — which
+    // is what `from` was written against, and what "restore" restores to. A
+    // correct step that has been dragged past a pivot or a filter therefore
+    // compares against the data at its own position, not at the start.
+    const at = Pipeline.indexOf(spec, 'correct');
+    const before = Pipeline.run(spec.source, spec.pipeline, at < 0 ? undefined : at);
+    const item = before.items.find((entry) => entry.srcIndex === srcIndex);
+    return item ? item.row[colId] : undefined;
   },
 
   /**
@@ -132,15 +137,17 @@ const Corrections = {
    * @returns {Object|null} the correction now on the cell, or null if there is none
    */
   set(draft, srcIndex, colId, value) {
-    if (!Array.isArray(draft.corrections)) draft.corrections = [];
-
     const original = Corrections.originalValue(draft, srcIndex, colId);
     const next = String(value === null || value === undefined ? '' : value);
-    const existing = Corrections.find(draft.corrections, srcIndex, colId);
+    const step = Pipeline.find(draft, 'correct');
+    const existing = step ? Corrections.find(step.edits, srcIndex, colId) : null;
 
     if (Corrections.matches(original, next)) {
       if (existing) {
-        draft.corrections = draft.corrections.filter((c) => c !== existing);
+        step.edits = step.edits.filter((c) => c !== existing);
+        // A step holding nothing is noise in the pipeline, and the next
+        // correction recreates it in the same place.
+        if (!step.edits.length) Pipeline.remove(draft, 'correct');
       }
       return null;
     }
@@ -157,13 +164,17 @@ const Corrections = {
       from: String(original === null || original === undefined ? '' : original),
       to: next
     };
-    draft.corrections.push(correction);
+    // `Pipeline.add` puts a new correct step immediately after the last pivot,
+    // ahead of any filter or sort — see the note there.
+    (step || Pipeline.set(draft, 'correct', {})).edits.push(correction);
     return correction;
   },
 
   /** Drop a correction by id. */
   remove(draft, id) {
-    if (!Array.isArray(draft.corrections)) return;
-    draft.corrections = draft.corrections.filter((c) => c.id !== id);
+    const step = Pipeline.find(draft, 'correct');
+    if (!step) return;
+    step.edits = step.edits.filter((c) => c.id !== id);
+    if (!step.edits.length) Pipeline.remove(draft, 'correct');
   }
 };

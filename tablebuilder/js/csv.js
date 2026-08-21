@@ -291,10 +291,13 @@ const Csv = {
    * in it. What you get is what is on screen, one row per rendered row.
    *
    * Two things a CSV has no way to show are folded into columns instead of
-   * being dropped: a row group that renders as a spanning label row becomes a
-   * column, and the stub's header takes the stubhead. Group and summary rows
-   * are kept — a subtotal is part of what is rendered — with a label column
-   * saying which is which when there is anything but plain data rows.
+   * being dropped: a row group becomes one, and the stub's header takes the
+   * stubhead. A group that renders as a spanning label row has no column at
+   * all and is given one; a group shown as a column already has one, but
+   * names itself only on the group's first row and is filled down — a CSV has
+   * no rowspan either. Group and summary rows are kept — a subtotal is part
+   * of what is rendered — with a label column saying which is which when
+   * there is anything but plain data rows.
    *
    * Lives here rather than in the export menu so it can be tested without a
    * DOM, and because turning things into CSV is this file's whole job.
@@ -320,12 +323,17 @@ const Csv = {
       });
     }
 
-    // A group label row carries `groupLabel` and no cells at all, so the name
-    // is collected by id rather than read off the row above — which also gets
-    // summary rows their group, and does not depend on row order.
+    // `model.groups` is the one place that knows a group's name, so neither
+    // form reads it off a rendered cell: a spanning label row carries
+    // `groupLabel` and no cells at all, and the column form carries the text
+    // on only the first row of the group. Keying by id also gets summary rows
+    // their group, and does not depend on row order.
     const groupLabels = {};
-    for (const row of model.rows) {
-      if (row.kind === 'group') groupLabels[row.groupId] = Markup.toPlain(row.groupLabel || '');
+    for (const group of model.groups || []) {
+      if (group.id === null || group.id === undefined) continue;
+      const label = group.label;
+      groupLabels[group.id] = Markup.toPlain(
+        label === null || label === undefined ? '' : String(label));
     }
 
     const rows = [];
@@ -339,8 +347,10 @@ const Csv = {
 
       for (let i = 0; i < row.cells.length; i += 1) {
         const cell = row.cells[i];
-        // A stub cell carries no `colId` so it
-        // is matched by position instead. Keying on `cell.colId` alone
+        // A stub cell carries no `colId`, deliberately: `compute.js` resolves
+        // one with `colId: undefined` so that a style rule targeting the stub
+        // means *the row labels* rather than the column they were taken from.
+        // So it is matched by position instead. Keying on `cell.colId` alone
         // silently emitted an empty row-label column.
         const col = cell.colId
           ? model.cols.find((c) => c.colId === cell.colId)
@@ -349,6 +359,13 @@ const Csv = {
         const text = cell.text !== undefined && cell.text !== null ? cell.text : cell.label;
         out[col.colId] = Markup.toPlain(text === null || text === undefined ? '' : text);
       }
+
+      // A group's name belongs on every row of the group, and a CSV has no
+      // rowspan to carry it down: as a column only the first row of the group
+      // holds the text, the rest being absorbed by the label's span. Written
+      // after the cells, so it replaces the blank rather than racing it. A
+      // grand summary is in no group and keeps its blank.
+      if (asColumn) out[model.groupColId] = groupLabels[row.groupId] || '';
 
       rows.push(out);
     }

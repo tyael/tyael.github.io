@@ -384,7 +384,35 @@ const OptionsSchema = {
     return OptionsSchema.options.filter((o) => o.structural).map((o) => o.key);
   },
 
-  /** A fresh options object holding every default. */
+  /** A fresh options object holding every default. */  /**
+   * Options gt has no `tab_options()` argument for.
+   *
+   * The other 149 keys in this schema *are* gt's argument names — that is why
+   * they are spelled with dots — and `export-rgt.js` passes them straight
+   * through. These five have no counterpart: `tab_options()` carries nothing
+   * about spanners at all, and `row_group.font.style` is not among its
+   * `row_group.*` set either. Emitting them made the call fail on an unused
+   * argument, and `tab_options()` has no `...` to absorb it.
+   *
+   * They are not dropped — each maps to a `tab_style()` on the part it governs,
+   * which is how gt expresses these. The value is the gt call fragment's
+   * ingredient; `ExportRgt.optionStyleCalls` assembles them.
+   */
+  NOT_IN_TAB_OPTIONS: {
+    'column_labels.spanner.border.bottom.style': 'spannerBorder',
+    'column_labels.spanner.border.bottom.width': 'spannerBorder',
+    'column_labels.spanner.border.bottom.color': 'spannerBorder',
+    'column_labels.spanner.underline': 'spannerBorder',
+    'row_group.font.style': 'rowGroupFontStyle',
+    // The one entry gt *does* have an argument for. `table.font.names` takes a
+    // character vector, and a Google family has to arrive as the `font_css`
+    // object `google_font()` returns — which that argument rejects. gt's own
+    // route for a font is `opt_table_font()`, which accepts either, so the
+    // export uses it for every font rather than switching on the kind.
+    'table.font.names': 'tableFont'
+  },
+
+
   defaults() {
     const out = {};
     for (const opt of OptionsSchema.options) out[opt.key] = opt.default;
@@ -439,10 +467,6 @@ const OptionsSchema = {
     return Fonts.stack(idOrStack);
   },
 
-  /** The Google Fonts family name for a font reference, or null. */
-  webFont(idOrStack) {
-    return Fonts.webFamily(idOrStack);
-  },
 
   /**
    * Only the options that differ from their default. Used for compact project

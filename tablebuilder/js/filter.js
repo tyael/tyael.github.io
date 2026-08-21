@@ -76,10 +76,6 @@ const Filter = {
       r: (col) => '!(is.na(' + col + ') | ' + col + ' == "")' }
   ],
 
-  /** A filter that keeps everything. */
-  empty() {
-    return { match: 'all', conditions: [] };
-  },
 
   /** A new condition, defaulting to the first column. */
   newCondition(colId) {
@@ -176,13 +172,27 @@ const Filter = {
     return { rows: kept, removed: displayRows.length - kept.length };
   },
 
-  /** One condition in words, for a list item's title. */
-  describe(condition, columnsById) {
-    const column = columnsById && columnsById[condition.col];
-    const name = column ? column.label : (condition.col || 'a column');
+  /**
+   * One condition's operator and values in words: *is between 5 and 10*.
+   *
+   * The column is deliberately not in here. Naming a column is
+   * `Pipeline.name`'s job, and the version of this that did it read
+   * `column.label` off `columnsById` — which hands back the *raw* columns,
+   * carrying `name`. It would have rendered "undefined is greater than 5",
+   * and never did only because nothing called it after the cutover.
+   *
+   * Both places that put a condition into words go through this, so a
+   * two-value operator cannot lose its second value in one of them — the
+   * Shape panel's own copy dropped `value2`, so *is between 5 and 10* read as
+   * *is between 5*.
+   */
+  phrase(condition) {
     const op = Filter.get(condition.op);
-    if (op.arity === 0) return name + ' ' + op.label;
-    if (op.arity === 2) return name + ' ' + op.label + ' ' + condition.value + ' and ' + condition.value2;
-    return name + ' ' + op.label + ' ' + condition.value;
+    if (!op) return String(condition.op || '');
+    if (op.arity === 0) return op.label;
+    if (op.arity === 2) {
+      return op.label + ' ' + condition.value + ' and ' + condition.value2;
+    }
+    return op.label + (condition.value ? ' ' + condition.value : '');
   }
 };

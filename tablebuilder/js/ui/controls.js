@@ -145,8 +145,17 @@ const Controls = {
   },
 
   /** A row of buttons. */
-  actions(buttons) {
-    return Util.el('div.row-actions', null, buttons);
+  /**
+   * A row of buttons under a section or an item.
+   *
+   * Wraps by default — a row of five could otherwise run off the side of the
+   * rail with the last two unreachable, which is what the Shape panel's step
+   * types did. `opts.grid` lays them out evenly instead of ragged, for a row
+   * that is really a menu of choices rather than one action and its
+   * alternatives.
+   */
+  actions(buttons, opts) {
+    return Util.el('div.row-actions' + ((opts && opts.grid) ? '.is-grid' : ''), null, buttons);
   },
 
   button(label, onClick, opts) {
@@ -406,11 +415,18 @@ const Controls = {
     if (!chips.length) return Controls.note(opts.emptyText || 'no columns');
 
     const nodes = [Util.el('div.chip-set', null, chips)];
+    // `All` is dropped for an ordered picker: the order it would pick in is
+    // whatever the file happened to be in, which is exactly the thing an
+    // ordered picker exists to let you choose. `None` stays everywhere,
+    // because it is the only way back to the blank state without clicking
+    // every chip — and blank is a meaningful state in half these callers.
     if (!opts.single && columns.length > 2) {
-      nodes.push(Util.el('div.row-actions', null, [
-        Controls.button('All', () => onChange(columns.map((c) => c.id)), { kind: 'ghost' }),
-        Controls.button('None', () => onChange([]), { kind: 'ghost' })
-      ]));
+      const buttons = [];
+      if (!opts.ordered) {
+        buttons.push(Controls.button('All', () => onChange(columns.map((c) => c.id)), { kind: 'ghost' }));
+      }
+      buttons.push(Controls.button('None', () => onChange([]), { kind: 'ghost' }));
+      nodes.push(Util.el('div.row-actions', null, buttons));
     }
     return Util.el('div', null, nodes);
   },
@@ -466,6 +482,19 @@ const Controls = {
         title: opts.collapsible ? 'Show or hide the details' : ''
       });
       head.appendChild(title);
+
+      // A short standing fact about the item — where it came from, what owns
+      // it — as against `subtitle`, which describes what it does. It lives in
+      // the head because the head is what stays visible when an item is
+      // collapsed, and `.item-sub` is `nowrap` with an ellipsis, so a sentence
+      // put there would be cut off exactly when it mattered.
+      const badge = opts.badge ? opts.badge(item, index) : null;
+      if (badge) {
+        head.appendChild(Util.el('span.item-badge', {
+          text: badge.text,
+          title: badge.title || ''
+        }));
+      }
 
       // An item whose toggle cannot do anything says so, once, from one place.
       // `opts.toggleInert` returns `{because, fix}` or null; the checkbox and
@@ -766,15 +795,27 @@ const Controls = {
   },
 
   /** A palette picker showing each palette as a gradient strip. */
-  palettePicker(key, value, onChange) {
+  /**
+   * The palette list, with the strip underneath showing what it looks like.
+   *
+   * `opts.custom` adds a *Custom* entry and the colours to draw for it — the
+   * caller owns those stops, so the picker is handed the ramp rather than
+   * working it out, and the strip is right for both kinds without this knowing
+   * what a stop is.
+   */
+  palettePicker(key, value, onChange, opts) {
+    opts = opts || {};
     const wrap = Util.el('div', { style: { width: '100%' } });
 
-    const select = Controls.select(key, Palettes.all().map((p) => ({
+    const entries = Palettes.all().map((p) => ({
       value: p.id, label: p.id + '  (' + p.kind + ')'
-    })), value, onChange);
+    }));
+    if (opts.custom) entries.unshift({ value: 'custom', label: 'Custom — your own colours' });
+
+    const select = Controls.select(key, entries, value, onChange);
     wrap.appendChild(select);
 
-    const colors = Palettes.byName(value);
+    const colors = value === 'custom' && opts.custom ? opts.custom : Palettes.byName(value);
     const strip = Util.el('div', {
       style: {
         height: '11px',
