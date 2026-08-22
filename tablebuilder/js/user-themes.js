@@ -61,9 +61,8 @@ const UserThemes = {
     // impose it on every table it was later applied to.
     for (const key of OptionsSchema.structural()) delete options[key];
 
-    const named = new Set(Object.keys(options)
-      .filter((key) => key.indexOf('.font.names') >= 0)
-      .map((key) => options[key]));
+    const rules = UserThemes.portableRules(spec).map(Themes.toShorthand);
+    const named = UserThemes.fontIds(options, rules);
 
     return {
       kind: UserThemes.KIND,
@@ -82,9 +81,33 @@ const UserThemes = {
       //
       // A disabled rule is not part of the current look, so it does not travel
       // either; it used to, and came back switched on.
-      rules: UserThemes.portableRules(spec).map(Themes.toShorthand),
+      rules: rules,
       fonts: (spec.fonts || []).filter((font) => named.has(font.id))
     };
+  },
+
+  /**
+   * Every font id the two halves of a theme reference.
+   *
+   * Both halves, because both can name one: `table.font.names` on the options
+   * side, `text.font` on a rule. Scanning the options alone sent a look whose
+   * source notes are set in an uploaded face out as a rule pointing at a font
+   * id the receiving project has never heard of, which fell back to a system
+   * face in silence — the exact failure carrying fonts was added to prevent.
+   *
+   * This is `Fonts.usedIds` narrowed to what a theme actually carries: the
+   * *portable* rules, not every rule in the spec, since a face named only by a
+   * rule that stays behind would be bytes travelling for nothing. It does not
+   * call it, because user-themes.js holds no DOM and fonts.js does.
+   */
+  fontIds(options, rules) {
+    const ids = new Set(Object.keys(options)
+      .filter((key) => key.indexOf('.font.names') >= 0)
+      .map((key) => options[key]));
+    for (const rule of rules) {
+      if (rule.text && rule.text.font) ids.add(rule.text.font);
+    }
+    return ids;
   },
 
   /**
@@ -153,8 +176,28 @@ const UserThemes = {
       label: data.label,
       notes: typeof data.notes === 'string' ? data.notes : '',
       options: data.options,
+      // Rules travel with the theme, and this is where they used to stop.
+      // `fromSpec` captured them and `toFile` wrote them, but rebuilding the
+      // theme field by field here quietly left them out — so a look built on a
+      // coloured header band arrived at the other end as the band with the old
+      // ink back on it, unreadable, with nothing said. Only the round-trip of
+      // `options` was checked, which is why it went unseen.
+      rules: Array.isArray(data.rules) ? data.rules.filter(UserThemes.isShorthandRule) : [],
       fonts: Array.isArray(data.fonts) ? data.fonts : []
     };
+  },
+
+  /**
+   * A rule in a theme file: the part-level shorthand `Themes.buildRules`
+   * expands, and nothing else.
+   *
+   * The file came from somebody else, possibly from a later build. A part this
+   * one has never heard of would expand into a location matching nothing and
+   * then sit in the Style panel looking like a rule that works.
+   */
+  isShorthandRule(rule) {
+    return !!rule && typeof rule === 'object' &&
+      StyleRules.PARTS.some((part) => part.id === rule.part);
   },
 
   /** Serialise for download. Keys are sorted so two exports diff cleanly. */

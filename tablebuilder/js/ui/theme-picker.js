@@ -70,8 +70,14 @@ const ThemePicker = {
 
   saveCurrent(spec) {
     const changed = Object.keys(OptionsSchema.diff(spec.options)).length;
-    if (!changed) {
-      Util.toast('Nothing to save — every option is still at its default', 'error');
+    // Rules are part of the look too. Asking only about options refused to save
+    // an italic source note or white ink on a coloured header band — which is
+    // the one thing `tab_options()` cannot say, and so the whole reason a theme
+    // carries rules at all — on the grounds that there was nothing there.
+    const rules = UserThemes.portableRules(spec).length;
+    if (!changed && !rules) {
+      Util.toast('Nothing to save — every option is still at its default, and no '
+        + 'style rule here would travel to another table', 'error');
       return;
     }
 
@@ -88,11 +94,12 @@ const ThemePicker = {
     // that out is here, not on the next dataset when the look comes back
     // missing something. Named, because "2 rules" is not enough to act on.
     const stuck = UserThemes.unportableRules(spec);
-    const parts = [changed + ' option(s)'];
-    if (theme.rules.length) parts.push(theme.rules.length + ' rule(s)');
+    const parts = [];
+    if (changed) parts.push(Util.plural(changed, 'option'));
+    if (theme.rules.length) parts.push(Util.plural(theme.rules.length, 'rule'));
     Util.toast('Saved “' + label + '” — ' + parts.join(', '), 'ok');
     if (stuck.length) {
-      Util.toast(stuck.length + ' rule(s) stayed behind — ' +
+      Util.toast(Util.plural(stuck.length, 'rule') + ' stayed behind — ' +
         stuck.map((rule) => '“' + (rule.label || 'Style rule') + '”').join(', ') +
         ' name columns or rows, which do not carry to another table', 'error');
     }

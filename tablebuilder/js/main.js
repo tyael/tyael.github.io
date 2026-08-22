@@ -549,6 +549,13 @@ const App = {
     Util.qs('#btn-open-spec').addEventListener('click', () => Util.qs('#file-spec').click());
     Util.qs('#btn-save-spec').addEventListener('click', () => App.saveSpec());
 
+    // The same two actions the theme picker offers. They were reachable only
+    // from the bottom of a panel, under a grid of sixteen built-ins that looks
+    // like the whole of the feature — so a look someone had spent an afternoon
+    // building was one they had no idea they could keep.
+    Util.qs('#btn-save-theme').addEventListener('click', () => ThemePicker.saveCurrent(Store.get()));
+    Util.qs('#btn-import-theme').addEventListener('click', () => ThemePicker.importFile());
+
     Util.qs('#btn-export').addEventListener('click', () => ExportMenu.toggle());
 
     Util.qs('#file-csv').addEventListener('change', (e) => {
@@ -1142,6 +1149,30 @@ const App = {
     // working data", so a panel seeding an expression sees what `compute`
     // matched against.
     return Pipeline.run(spec.source, spec.pipeline).items.map((item) => item.row);
+  },
+
+  /**
+   * The working row a given `srcIndex` names.
+   *
+   * **Never `workingRows()[srcIndex]`.** That array is the pipeline's output in
+   * display order, so its positions are original row numbers only while nothing
+   * above it has reordered or removed anything. Put a sort in and position 2 is
+   * some other row entirely; put a filter in and the row may not be at any
+   * position at all. Both went unnoticed because the array is still full of
+   * perfectly good rows and the lookup still returns one.
+   *
+   * `srcIndex` is a row's identity, and `items` is where that identity
+   * survives — the same lookup `Corrections.originalValue` already does, and
+   * for the same reason.
+   *
+   * @returns {Object|null} the row, or null when the pipeline no longer has it
+   */
+  workingRowAt(srcIndex) {
+    const spec = Store.get();
+    if (!Spec.hasData(spec)) return null;
+    const item = Pipeline.run(spec.source, spec.pipeline).items
+      .find((entry) => entry.srcIndex === srcIndex);
+    return item ? item.row : null;
   },
 
   /**

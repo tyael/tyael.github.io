@@ -109,7 +109,7 @@ const Inspector = {
     const column = App.workingColumnsById()[colId];
     if (!column) return null;
 
-    const row = App.workingRows()[item.srcIndex];
+    const row = App.workingRowAt(item.srcIndex);
     if (!row || !(colId in row)) return null;
 
     const raw = row[colId] === null || row[colId] === undefined ? '' : String(row[colId]);
@@ -254,7 +254,7 @@ const Inspector = {
         if (row.kind === 'data') rowsById[row.srcIndex] = row;
       }
 
-      const raw = (App.workingRows()[item.srcIndex] || {})[item.colId];
+      const raw = (App.workingRowAt(item.srcIndex) || {})[item.colId];
       const expr = StyleRules.seedExpr(item.colId, raw, column.type);
       const matched = StyleRules.evalRowExpr(expr, {
         rows: App.workingRows(), columnsById: columns

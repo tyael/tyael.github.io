@@ -858,6 +858,17 @@ const Compute = {
 
       while (i < bodyCols.length) {
         const col = bodyCols[i];
+
+        // Already placed at a higher level, where it was given a rowspan
+        // reaching down to the label row. That cell occupies this row's grid
+        // column too, so there is nothing here to emit and nothing to leave
+        // blank. Without the guard the label went in again at every level
+        // below the one that placed it, and each extra cell pushed its row a
+        // column wider than the table — a spanner row visibly hanging off
+        // the right-hand end of the body. It takes two spanner levels to show,
+        // which is why a single name column never did.
+        if (emitted.has(col.colId)) { i += 1; continue; }
+
         const spanner = at[col.colId] && at[col.colId][level];
 
         if (spanner) {
