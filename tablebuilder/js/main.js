@@ -12,6 +12,32 @@
 
 const App = {
 
+  /**
+   * The bundled samples, in the order they are offered.
+   *
+   * **One list, because a sample is more than a path.** `headerRows` cannot be
+   * read off the file and the import preview is deliberately skipped for
+   * samples, so it is declared here; `App.loadSample` looks it up by path,
+   * which is why the three places that draw these buttons stay ignorant of it.
+   * They were three separate lists, and a fourth is still in `index.html` as
+   * the paint before this file runs.
+   *
+   * `name` is what a *Sample: …* button says; `label` is the sentence the Data
+   * panel has room for.
+   */
+  SAMPLES: [
+    { path: 'data/samples/long.csv', name: 'long / tidy',
+      label: 'Long / tidy (region × year × metric)' },
+    { path: 'data/samples/wide.csv', name: 'wide',
+      label: 'Wide (already table-shaped)' },
+    { path: 'data/samples/gtcars.csv', name: 'gtcars',
+      label: 'gtcars (gt’s own example)' },
+    { path: 'data/samples/releases.csv', name: 'releases',
+      label: 'Releases (dates, times and blanks)' },
+    { path: 'data/samples/trace-gases.csv', name: 'trace gases',
+      label: 'Trace gases (markup and a two-row header)', headerRows: 2 }
+  ],
+
   /** The panels in the left rail, in tab order. */
   panels: null,
 
@@ -302,12 +328,9 @@ const App = {
       const actions = Util.el('div.empty-actions');
       actions.appendChild(Controls.button('Import CSV', () => App.pickCsv(), { kind: 'primary' }));
       actions.appendChild(Controls.button('Paste a table', () => ImportPreview.awaitPaste()));
-      for (const sample of [
-        { path: 'data/samples/long.csv', label: 'Sample: long / tidy' },
-        { path: 'data/samples/wide.csv', label: 'Sample: wide' },
-        { path: 'data/samples/gtcars.csv', label: 'Sample: gtcars' }
-      ]) {
-        actions.appendChild(Controls.button(sample.label, () => App.loadSample(sample.path)));
+      for (const sample of App.SAMPLES) {
+        actions.appendChild(Controls.button('Sample: ' + sample.name,
+          () => App.loadSample(sample.path)));
       }
       wrap.appendChild(actions);
     }
@@ -866,13 +889,36 @@ const App = {
     }
   },
 
+  /**
+   * Load a bundled sample, on the terms the sample itself sets.
+   *
+   * **The sample's own entry decides how many rows are header**, which is the
+   * one thing no file can say about itself and the one question the import
+   * preview exists to ask. Samples deliberately skip that modal — they are
+   * known-good demos, and a dialog between *Sample: gtcars* and a table is
+   * friction in the path the first run depends on — so the answer is declared
+   * in `App.SAMPLES` beside the path, and looked up here rather than passed in.
+   * Three places offer these buttons and none of them should have to know.
+   */
   async loadSample(path) {
     try {
       Util.status('Loading ' + path + '…');
       const response = await fetch(path);
       if (!response.ok) throw new Error('HTTP ' + response.status);
       const text = await response.text();
-      App.adoptSource(Csv.parse(text, path.split('/').pop()));
+
+      const entry = App.SAMPLES.find((sample) => sample.path === path) || {};
+      const grid = Csv.toGrid(text, {});
+      const built = Csv.fromTable(grid.rows, {
+        headerRows: entry.headerRows === undefined ? 1 : entry.headerRows,
+        filename: path.split('/').pop(),
+        delimiter: grid.delimiter,
+        warnings: grid.warnings
+      });
+      // A two-row header's column groups come back beside the source and are
+      // lost if they are not carried over — `Csv.parse` returns only the
+      // source, which is why it is not used here.
+      App.adoptSource(built.source, { spanners: built.spanners });
     } catch (err) {
       console.error(err);
       Util.toast('Could not load the sample — samples need the page served over http. ' +
@@ -1050,12 +1096,20 @@ const App = {
      ================================================================ */
 
   /**
-   * The working columns, post-reshape, as `{id, label, name, type}`.
+   * The working columns, post-reshape, each with the `label` the editor uses.
    *
    * `label` is what the editor calls the column and is never empty; `name` is
    * the raw header it arrived with, which only "Reset labels" has any business
    * with. Both come from `Spec`, so this cannot drift from what `compute.js`
    * draws — it did, and a column could read "Mfr" in the table and `mfr` here.
+   *
+   * **The column is added to, never rebuilt from four of its keys.** It was
+   * rebuilt, and every fact the pipeline puts on a column that was not one of
+   * those four stopped here: `dateOrder` — which is how the whole column reads
+   * `3/05/2016` — reached `compute.js` and the R export intact and reached the
+   * format panel as `undefined`, so a rule previewed `5 March 2016` beside a
+   * table that said `3 May 2016`. Anything read off a column anywhere is read
+   * off the same object here.
    */
   workingColumns() {
     const spec = Store.get();
@@ -1064,12 +1118,7 @@ const App = {
     // Titles for the set, not one at a time: a pivot names three columns
     // `employment`, and every picker in the app is built from this list.
     const titles = Spec.columnTitles(spec, derived.columns);
-    return derived.columns.map((col) => ({
-      id: col.id,
-      label: titles[col.id],
-      name: col.name,
-      type: col.type
-    }));
+    return derived.columns.map((col) => Object.assign({}, col, { label: titles[col.id] }));
   },
 
   workingColumnsById() {

@@ -159,15 +159,12 @@ const PanelData = {
 
   /** Sample data buttons, shown when nothing is loaded. */
   samples() {
-    return Controls.section('Or load a sample', [
-      Controls.button('Long / tidy (region × year × metric)',
-        () => App.loadSample('data/samples/long.csv'), { block: true }),
-      Util.el('div', { style: { height: '5px' } }),
-      Controls.button('Wide (already table-shaped)',
-        () => App.loadSample('data/samples/wide.csv'), { block: true }),
-      Util.el('div', { style: { height: '5px' } }),
-      Controls.button('gtcars (gt’s own example)',
-        () => App.loadSample('data/samples/gtcars.csv'), { block: true })
-    ], { key: 'data.samples' });
+    const nodes = [];
+    for (const sample of App.SAMPLES) {
+      if (nodes.length) nodes.push(Util.el('div', { style: { height: '5px' } }));
+      nodes.push(Controls.button(sample.label,
+        () => App.loadSample(sample.path), { block: true }));
+    }
+    return Controls.section('Or load a sample', nodes, { key: 'data.samples' });
   }
 };

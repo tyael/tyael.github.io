@@ -188,6 +188,253 @@ const Util = {
     return negative ? -num : num;
   },
 
+  /* ---------- Dates ---------- */
+
+  /**
+   * Days from the spreadsheet epoch to 1970-01-01. Excel, Sheets and LibreOffice
+   * all count from 1899-12-30 — a day earlier than they claim, because 1900 is
+   * treated as a leap year for compatibility with Lotus 1-2-3.
+   */
+  SERIAL_EPOCH: -2209161600000,
+
+  MONTH_NAMES: ['january', 'february', 'march', 'april', 'may', 'june',
+    'july', 'august', 'september', 'october', 'november', 'december'],
+
+  /**
+   * Coerce a value to a `Date`, or null when it is not one.
+   *
+   * The sibling of `toNumber`, and **the one date parser in the app**.
+   * `Csv.isDateish` asks it what counts as a date and `Formatters.parseDate`
+   * asks it what a date *is*, so the two cannot disagree about a value. They
+   * did: `isDateish` accepted `14/05/2013`, `new Date` called it invalid, and
+   * the column typed as dates while the Date format silently did nothing to it.
+   *
+   * **Nothing here goes through `new Date(string)`.** The engine's string
+   * parser is locale-flavoured and largely unspecified: it reads `3/05/2016`
+   * month-first with no way to ask for the other, rejects `14/05/2013`
+   * outright, and disagrees with itself across browsers on most of the rest.
+   * Every shape below is matched explicitly and built from its parts.
+   *
+   * A value is local time unless it carries a `Z` or a `±HH:MM` offset, which
+   * is honoured. A bare date is midnight local, so the day it prints is the day
+   * it was written and never one either side of it.
+   *
+   * @param {*} value
+   * @param {Object} [opts]
+   * @param {'dmy'|'mdy'|null} [opts.order] - how to read `3/05/2016` when the
+   *   numbers alone cannot say. A value that settles it — `14/05/2013` — always
+   *   settles it, whatever this says. Omitted means month-first, which is how
+   *   the engine and gt both read it.
+   * @param {boolean} [opts.serial] - accept a bare number as a spreadsheet
+   *   serial. Off by default, or every numeric column would be dates.
+   * @param {boolean} [opts.timeOnly] - accept a bare `09:30`, dated today.
+   * @returns {Date|null}
+   */
+  toDate(value, opts) {
+    opts = opts || {};
+    if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+    if (Util.isMissing(value)) return null;
+
+    const str = String(value).trim();
+    if (!str) return null;
+
+    const split = Util.splitTime(str);
+    const parts = split.date ? Util.dateParts(split.date, opts) : null;
+
+    if (!parts) {
+      // Nothing but a clock face. Only the time formatters want this; for
+      // everyone else `09:30` is a number with a colon in it.
+      if (!split.time || split.date || !opts.timeOnly) return null;
+      const now = new Date();
+      return Util.dateAt(
+        { y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate() }, split.time);
+    }
+
+    return Util.dateAt(parts, split.time);
+  },
+
+  /**
+   * A trailing clock time, split off whatever date shape precedes it.
+   *
+   * Done first and separately so each date shape below is written once rather
+   * than once bare and once with a time glued to the end of it.
+   *
+   * @returns {{date: string, time: Object|null}}
+   */
+  splitTime(str) {
+    const match = /(?:^|[\sT])(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?\s*(?:([ap])\.?m\.?)?\s*(Z|[+-]\d{1,2}:?\d{2})?$/i
+      .exec(str);
+    if (!match) return { date: str, time: null };
+
+    let hour = Number(match[1]);
+    const half = match[5] ? match[5].toLowerCase() : null;
+    if (half === 'p' && hour < 12) hour += 12;
+    if (half === 'a' && hour === 12) hour = 0;
+    if (hour > 23) return { date: str, time: null };
+
+    const zone = match[6];
+    let offset = null;
+    if (zone) {
+      if (/^z$/i.test(zone)) {
+        offset = 0;
+      } else {
+        const sign = zone[0] === '-' ? -1 : 1;
+        const digits = zone.slice(1).replace(':', '');
+        offset = sign * (Number(digits.slice(0, digits.length - 2)) * 60 +
+          Number(digits.slice(-2)));
+      }
+    }
+
+    return {
+      // Whatever joined the two — a comma, a `T`, spaces — belongs to neither.
+      date: str.slice(0, match.index).replace(/[\s,T]+$/, ''),
+      time: {
+        h: hour,
+        mi: Number(match[2]),
+        s: match[3] ? Number(match[3]) : 0,
+        ms: match[4] ? Math.round(Number('0.' + match[4]) * 1000) : 0,
+        offset: offset
+      }
+    };
+  },
+
+  /**
+   * The year, month and day of a date written without a time.
+   *
+   * Ordered widest-net-last: every shape that says outright which number is
+   * the year is tried before the one that has to be told.
+   *
+   * @returns {{y, m, d}|null} month is 1-based
+   */
+  dateParts(str, opts) {
+    let m;
+
+    // 2024-03-08, 2024/03/08, 2024.03.08 — the year leads, so nothing to guess.
+    m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(str);
+    if (m) return { y: +m[1], m: +m[2], d: +m[3] };
+
+    // 2024-03. A month is a date once a day is assumed, and gt has a
+    // `month_year` style to show it with.
+    m = /^(\d{4})[-/](\d{1,2})$/.exec(str);
+    if (m) return { y: +m[1], m: +m[2], d: 1 };
+
+    // 2024 March 8 — the `year_month_day` style this app itself emits.
+    m = /^(\d{4})\s+([A-Za-z]{3,})\s+(\d{1,2})$/.exec(str);
+    if (m) return { y: +m[1], m: Util.monthNumber(m[2]), d: +m[3] };
+
+    // 20240308. Ahead of the serial branch: a serial that large is the year
+    // 57000, so the two can never mean the same string.
+    m = /^(\d{4})(\d{2})(\d{2})$/.exec(str);
+    if (m && +m[2] >= 1 && +m[2] <= 12 && +m[3] >= 1 && +m[3] <= 31) {
+      return { y: +m[1], m: +m[2], d: +m[3] };
+    }
+
+    // 8-Mar-2024, 8 Mar 2024, 8 March 2024.
+    m = /^(\d{1,2})(?:st|nd|rd|th)?[-\s]+([A-Za-z]{3,})[-\s,]+(\d{2,4})$/.exec(str);
+    if (m) return { y: Util.fullYear(+m[3]), m: Util.monthNumber(m[2]), d: +m[1] };
+
+    // Mar 8, 2024 / March 8 2024 / Mar-8-2024.
+    m = /^([A-Za-z]{3,})[-\s]+(\d{1,2})(?:st|nd|rd|th)?[-\s,]+(\d{2,4})$/.exec(str);
+    if (m) return { y: Util.fullYear(+m[3]), m: Util.monthNumber(m[1]), d: +m[2] };
+
+    // March 2024, Mar-24.
+    m = /^([A-Za-z]{3,})[-\s]+(\d{2,4})$/.exec(str);
+    if (m) return { y: Util.fullYear(+m[2]), m: Util.monthNumber(m[1]), d: 1 };
+
+    // 3/05/2016 and 14-05-2013 — the ambiguous one, so it goes last.
+    // A dotted date must spell its year out in full: `1.2.3` is a version
+    // number far more often than it is the 1st of February 2003.
+    m = /^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/.exec(str) ||
+        /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(str);
+    if (m) {
+      const first = +m[1];
+      const second = +m[2];
+      return Util.dayFirst(first, second, opts.order)
+        ? { y: Util.fullYear(+m[3]), m: second, d: first }
+        : { y: Util.fullYear(+m[3]), m: first, d: second };
+    }
+
+    // A spreadsheet serial, for a column that came across as bare numbers.
+    if (opts.serial && /^\d+(\.\d+)?$/.test(str)) {
+      const days = Number(str);
+      // 1 is 1899-12-31 and 2958465 is 9999-12-31. Outside that it is a
+      // number that happens to be a number.
+      if (days >= 1 && days <= 2958465) {
+        return { serial: days };
+      }
+    }
+
+    return null;
+  },
+
+  /**
+   * Which of the first two numbers in `3/05/2016` is the day.
+   *
+   * **A value that settles it settles it**, whatever the caller asked for: told
+   * `dmy` and handed `5/23/2024`, reading the 23 as a month gives no date at
+   * all. The setting only decides the ones the numbers cannot.
+   */
+  dayFirst(first, second, order) {
+    if (first > 12 && second <= 12) return true;
+    if (second > 12 && first <= 12) return false;
+    if (order === 'dmy') return true;
+    if (order === 'mdy') return false;
+    return false;
+  },
+
+  /** A month name or abbreviation as a 1-based number, or 0. */
+  monthNumber(name) {
+    const lower = String(name).toLowerCase().replace(/\.$/, '');
+    for (let i = 0; i < Util.MONTH_NAMES.length; i += 1) {
+      if (Util.MONTH_NAMES[i].indexOf(lower) === 0 && lower.length >= 3) return i + 1;
+    }
+    return 0;
+  },
+
+  /**
+   * A two-digit year in full. The POSIX pivot, which R's `%y` uses too: 69–99
+   * is last century, 00–68 is this one.
+   */
+  fullYear(year) {
+    if (year >= 100) return year;
+    return year < 69 ? 2000 + year : 1900 + year;
+  },
+
+  /**
+   * Build the `Date`, and refuse the ones that only look like dates.
+   *
+   * `new Date(2024, 1, 31)` is the 2nd of March rather than an error, so every
+   * field is read back: a rolled-over day means the parts were never a date.
+   */
+  dateAt(parts, time) {
+    const t = time || { h: 0, mi: 0, s: 0, ms: 0, offset: null };
+
+    if (parts.serial !== undefined) {
+      return new Date(Util.SERIAL_EPOCH + Math.round(parts.serial * 86400000));
+    }
+    if (!parts.m || parts.m < 1 || parts.m > 12 || parts.d < 1 || parts.d > 31) return null;
+
+    if (t.offset !== null) {
+      const utc = new Date(0);
+      utc.setUTCFullYear(parts.y, parts.m - 1, parts.d);
+      utc.setUTCHours(t.h, t.mi - t.offset, t.s, t.ms);
+      if (isNaN(utc.getTime())) return null;
+      return utc;
+    }
+
+    const date = new Date(0);
+    // Through `setFullYear`, because the two-argument `Date` constructor maps
+    // years 0–99 onto 1900–1999 and a year 50 date is a year 50 date.
+    date.setFullYear(parts.y, parts.m - 1, parts.d);
+    date.setHours(t.h, t.mi, t.s, t.ms);
+    if (isNaN(date.getTime())) return null;
+    if (date.getFullYear() !== parts.y || date.getMonth() !== parts.m - 1 ||
+        date.getDate() !== parts.d) {
+      return null;
+    }
+    return date;
+  },
+
   /** True when a value counts as missing (NA / NaN / empty / null). */
   isMissing(value) {
     if (value === null || value === undefined) return true;

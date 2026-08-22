@@ -22,31 +22,53 @@ const Formatters = {
     { code: 'ZAR', symbol: 'R' }, { code: 'SEK', symbol: 'kr' }, { code: 'NOK', symbol: 'kr' }
   ],
 
-  /** Named date styles, mapped to Intl options. */
+  /**
+   * Named date styles, mapped to Intl options — and each carrying the name gt
+   * knows it by, where gt knows it at all.
+   *
+   * **The two sets of names are not the same set**, which is why `gt` is
+   * written out rather than assumed to be `id`. Three styles here were emitting
+   * `date_style = "month_year"` and its neighbours, which are not gt style
+   * names: `fmt_date()` aborts on them, so those three tables exported R that
+   * would not run. `month_year` and `m_year` are `yMMMM` and `yMMM` in gt and
+   * render identically; `year_month_day` is nothing in gt, and says so rather
+   * than being emitted as something close.
+   */
   DATE_STYLES: [
-    { id: 'iso', label: 'ISO — 2024-03-08' },
-    { id: 'wday_month_day_year', label: 'Friday, March 8, 2024' },
-    { id: 'month_day_year', label: 'March 8, 2024' },
-    { id: 'm_day_year', label: 'Mar 8, 2024' },
-    { id: 'day_month_year', label: '8 March 2024' },
-    { id: 'day_m_year', label: '8 Mar 2024' },
-    { id: 'day_month', label: '8 March' },
-    { id: 'year_month_day', label: '2024 March 8' },
-    { id: 'month_year', label: 'March 2024' },
-    { id: 'm_year', label: 'Mar 2024' },
-    { id: 'year', label: '2024' },
-    { id: 'month', label: 'March' },
-    { id: 'yMd', label: '3/8/2024 (locale short)' }
+    { id: 'iso', label: 'ISO — 2024-03-08', gt: 'iso' },
+    { id: 'wday_month_day_year', label: 'Friday, March 8, 2024', gt: 'wday_month_day_year' },
+    { id: 'month_day_year', label: 'March 8, 2024', gt: 'month_day_year' },
+    { id: 'm_day_year', label: 'Mar 8, 2024', gt: 'm_day_year' },
+    { id: 'day_month_year', label: '8 March 2024', gt: 'day_month_year' },
+    { id: 'day_m_year', label: '8 Mar 2024', gt: 'day_m_year' },
+    { id: 'day_month', label: '8 March', gt: 'day_month' },
+    { id: 'year_month_day', label: '2024 March 8', gt: null },
+    { id: 'month_year', label: 'March 2024', gt: 'yMMMM' },
+    { id: 'm_year', label: 'Mar 2024', gt: 'yMMM' },
+    { id: 'year', label: '2024', gt: 'year' },
+    { id: 'month', label: 'March', gt: 'month' },
+    { id: 'yMd', label: '3/8/2024 (locale short)', gt: 'yMd' }
   ],
 
+  /** As above: `hm_p` and `hms_p` are `h_m_p` and `h_m_s_p` to gt. */
   TIME_STYLES: [
-    { id: 'iso', label: 'ISO — 14:30:00' },
-    { id: 'hms', label: '14:30:00' },
-    { id: 'hm', label: '14:30' },
-    { id: 'h_p', label: '2 PM' },
-    { id: 'hm_p', label: '2:30 PM' },
-    { id: 'hms_p', label: '2:30:00 PM' }
+    { id: 'iso', label: 'ISO — 14:30:00', gt: 'iso' },
+    { id: 'hms', label: '14:30:00', gt: 'Hms' },
+    { id: 'hm', label: '14:30', gt: 'Hm' },
+    { id: 'h_p', label: '2 PM', gt: 'h_p' },
+    { id: 'hm_p', label: '2:30 PM', gt: 'h_m_p' },
+    { id: 'hms_p', label: '2:30:00 PM', gt: 'h_m_s_p' }
   ],
+
+  /**
+   * The gt name for one of the styles above, or null where gt has none.
+   * @param {'date'|'time'} family
+   */
+  gtStyle(family, id) {
+    const list = family === 'time' ? Formatters.TIME_STYLES : Formatters.DATE_STYLES;
+    const found = list.find((style) => style.id === id);
+    return found ? found.gt : null;
+  },
 
   /* ---------- Registry ---------- */
 
@@ -232,11 +254,15 @@ const Formatters = {
       label: 'Date',
       params: [
         { key: 'style', label: 'Style', type: 'select', enum: [], default: 'iso' },
+        { key: 'order', label: 'Day/month order', type: 'select',
+          enum: ['auto', 'dmy', 'mdy'], default: 'auto',
+          hint: 'Only used where the numbers cannot say: a column holding 14/05 anywhere ' +
+            'is read day-first throughout, whatever this says.' },
         { key: 'locale', label: 'Locale', type: 'text', default: '', hint: "Blank uses the browser's." },
         { key: 'pattern', label: 'Pattern', type: 'text', default: '{x}' }
       ],
-      apply(value, o) {
-        const date = Formatters.parseDate(value);
+      apply(value, o, ctx) {
+        const date = Formatters.parseDate(value, Formatters.dateOpts(o, ctx));
         if (!date) return null;
         return Formatters.applyPattern(Formatters.formatDate(date, o.style, o.locale), o.pattern);
       }
@@ -250,8 +276,9 @@ const Formatters = {
         { key: 'locale', label: 'Locale', type: 'text', default: '' },
         { key: 'pattern', label: 'Pattern', type: 'text', default: '{x}' }
       ],
-      apply(value, o) {
-        const date = Formatters.parseDate(value);
+      apply(value, o, ctx) {
+        const date = Formatters.parseDate(value,
+          Object.assign(Formatters.dateOpts(o, ctx), { timeOnly: true }));
         if (!date) return null;
         return Formatters.applyPattern(Formatters.formatTime(date, o.style, o.locale), o.pattern);
       }
@@ -263,12 +290,16 @@ const Formatters = {
       params: [
         { key: 'dateStyle', label: 'Date style', type: 'select', enum: [], default: 'iso' },
         { key: 'timeStyle', label: 'Time style', type: 'select', enum: [], default: 'hms' },
+        { key: 'order', label: 'Day/month order', type: 'select',
+          enum: ['auto', 'dmy', 'mdy'], default: 'auto',
+          hint: 'Only used where the numbers cannot say.' },
         { key: 'sep', label: 'Separator', type: 'text', default: ' ' },
         { key: 'locale', label: 'Locale', type: 'text', default: '' },
         { key: 'pattern', label: 'Pattern', type: 'text', default: '{x}' }
       ],
-      apply(value, o) {
-        const date = Formatters.parseDate(value);
+      apply(value, o, ctx) {
+        const date = Formatters.parseDate(value,
+          Object.assign(Formatters.dateOpts(o, ctx), { timeOnly: true }));
         if (!date) return null;
         const text = Formatters.formatDate(date, o.dateStyle, o.locale) + (o.sep || ' ') +
           Formatters.formatTime(date, o.timeStyle, o.locale);
@@ -433,19 +464,33 @@ const Formatters = {
 
   /* ---------- Dates ---------- */
 
-  /** Parse the date shapes csv.js recognises, plus epoch numbers. */
-  parseDate(value) {
-    if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
-    const str = String(value).trim();
-    if (!str) return null;
+  /**
+   * Parse a date. Every shape lives in `Util.toDate`, which `Csv.isDateish`
+   * asks the same question of, so what types as a date is what formats as one.
+   */
+  parseDate(value, opts) {
+    return Util.toDate(value, opts);
+  },
 
-    // Bare YYYY-MM-DD is parsed as UTC by the engine; force local time so the
-    // displayed day never shifts by one.
-    const ymd = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (ymd) return new Date(+ymd[1], +ymd[2] - 1, +ymd[3]);
-
-    const parsed = new Date(str);
-    return isNaN(parsed.getTime()) ? null : parsed;
+  /**
+   * How to read this column's dates, from the rule and the column together.
+   *
+   * The rule's setting wins when it is not `auto`; otherwise the order the
+   * importer worked out from the whole column does. Neither is consulted for a
+   * value that says outright which number is the day.
+   *
+   * **Serial numbers are on.** Choosing the Date format is a statement that the
+   * column holds dates, and 45292 in a column of them is a spreadsheet serial,
+   * not the number forty-five thousand. `Util.toDate` refuses them by default
+   * precisely because type inference must not make every numeric column dates.
+   */
+  dateOpts(o, ctx) {
+    const column = (ctx && ctx.column) || null;
+    const chosen = o && o.order && o.order !== 'auto' ? o.order : null;
+    return {
+      order: chosen || (column && column.dateOrder) || null,
+      serial: true
+    };
   },
 
   formatDate(date, style, locale) {
@@ -538,6 +583,16 @@ const Formatters = {
     for (const s of list) map[s.id] = s.label;
     return map;
   };
+
+  const ORDER_LABELS = {
+    auto: 'Auto — as the column reads',
+    dmy: 'Day first — 3/05 is 3 May',
+    mdy: 'Month first — 3/05 is 5 March'
+  };
+  for (const type of ['date', 'datetime']) {
+    const order = Formatters.get(type).params.find((p) => p.key === 'order');
+    order.enumLabels = ORDER_LABELS;
+  }
 
   const date = Formatters.get('date').params.find((p) => p.key === 'style');
   date.enum = dateStyles;

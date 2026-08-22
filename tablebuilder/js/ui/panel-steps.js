@@ -89,12 +89,9 @@ const PanelSteps = {
    */
   columnsAt(spec, index) {
     const state = Pipeline.run(spec.source, spec.pipeline, index);
-    const columns = state.columns.map((col) => ({
-      id: col.id,
-      label: Spec.columnTitle(spec, col),
-      name: col.name,
-      type: col.type
-    }));
+    // Added to rather than rebuilt, for the reason in `App.workingColumns`.
+    const columns = state.columns.map((col) =>
+      Object.assign({}, col, { label: Spec.columnTitle(spec, col) }));
     const byId = {};
     for (const col of columns) byId[col.id] = col;
     return { columns: columns, byId: byId };

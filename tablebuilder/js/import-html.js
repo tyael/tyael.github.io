@@ -85,13 +85,19 @@ const ImportHtml = {
    * **A date is the exception.** A spreadsheet's underlying value for a date is
    * a serial number, so 1/1/2024 would import as 45292 — losing the very thing
    * that makes it a date. Where the display reads as a date, the display wins.
+   *
+   * **And the value may not show fewer decimals than the display did**, which
+   * is what `atLeastAsPrecise` is for. Taking the value is meant to add
+   * precision, never to remove it.
    */
   valueOf(el, text) {
     if (Csv.isDateish(text)) return text;
 
     if (el.hasAttribute && el.hasAttribute('x:num')) {
       const raw = el.getAttribute('x:num');
-      if (raw !== '' && raw !== null && isFinite(parseFloat(raw))) return String(parseFloat(raw));
+      if (raw !== '' && raw !== null && isFinite(parseFloat(raw))) {
+        return ImportHtml.atLeastAsPrecise(parseFloat(raw), text);
+      }
     }
 
     const sheets = el.getAttribute && el.getAttribute('data-sheets-value');
@@ -99,12 +105,46 @@ const ImportHtml = {
       try {
         const parsed = JSON.parse(sheets);
         if (parsed && typeof parsed['3'] === 'number' && isFinite(parsed['3'])) {
-          return String(parsed['3']);
+          return ImportHtml.atLeastAsPrecise(parsed['3'], text);
         }
       } catch (e) { /* not ours to interpret */ }
     }
 
     return text;
+  },
+
+  /**
+   * The underlying value, written to at least as many decimals as the display.
+   *
+   * **A spreadsheet's number format is a statement about precision.** A column
+   * of "% of GDP" formatted `0.0` says one decimal, and the cell holding
+   * exactly 10 shows `10.0`. Excel then writes `x:num="10"` beside it, and
+   * taking that alone put a bare `10` in a column where every other cell had a
+   * decimal — the whole point of preferring the underlying value being to
+   * *keep* precision the display lost. A table of Australian budget
+   * projections came in with 132 of its cells silently rounded that way.
+   *
+   * So the value still wins on digits it actually has: where the display
+   * rounded `1,234.57` off a stored `1234.5678`, the stored digits stay. This
+   * only ever pads back the zeros the display was already showing.
+   */
+  atLeastAsPrecise(num, text) {
+    const shown = ImportHtml.decimalsIn(text);
+    return shown > ImportHtml.decimalsIn(String(num))
+      ? num.toFixed(Math.min(shown, 20))
+      : String(num);
+  },
+
+  /**
+   * Digits after the decimal point in a number as written, else 0.
+   *
+   * Tolerant of what a display carries around a number — a currency symbol, an
+   * opening parenthesis, thousands separators — because the question is only
+   * how many decimals were on show.
+   */
+  decimalsIn(text) {
+    const match = /^[^\d]*[\d,\s]*\.(\d+)/.exec(String(text));
+    return match ? match[1].length : 0;
   },
 
   /**

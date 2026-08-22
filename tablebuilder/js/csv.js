@@ -117,7 +117,14 @@ const Csv = {
 
     const columns = Csv.buildColumns(labels, warnings);
     const rows = Csv.buildRows(columns, body, warnings);
-    for (const col of columns) col.type = Csv.inferType(rows, col.id);
+    for (const col of columns) {
+      col.type = Csv.inferType(rows, col.id);
+      // Recorded here because this is the only place that sees the whole
+      // column at once, and one `14/05/2013` in it settles how every other
+      // value is read. See `Csv.inferDateOrder`.
+      const order = Csv.inferDateOrder(rows, col.id);
+      if (order) col.dateOrder = order;
+    }
 
     const spanners = Csv.spannersFrom(table.slice(0, Math.max(0, headerRows - 1)), columns);
 
@@ -267,19 +274,62 @@ const Csv = {
   },
 
   /**
-   * Recognise unambiguous date shapes only. Deliberately conservative: passing
-   * arbitrary strings to `Date.parse` turns things like "March" or "12" into
-   * dates and would mis-type ordinary text columns.
+   * Recognise unambiguous date shapes only, by asking whether one parses.
+   *
+   * **Recognising and parsing must be the same question.** They were two, and
+   * they disagreed: this accepted `14/05/2013` on a regex while
+   * `Formatters.parseDate` handed it to `new Date`, which reads a slashed date
+   * month-first and called it invalid. So the column typed as dates and then
+   * the Date format did nothing to it — and `import-html.js`, which asks this
+   * before deciding whether to take a cell's underlying value, swapped it for
+   * its spreadsheet serial number.
+   *
+   * `Util.toDate` is deliberately narrow about what a date looks like — it
+   * takes no bare number and no bare month name — which is what makes it safe
+   * to ask here, where a wrong yes mis-types a whole column.
    */
   isDateish(value) {
-    const str = String(value).trim();
-    if (!/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?)?/.test(str) &&
-        !/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(str) &&
-        !/^\d{1,2}-[A-Za-z]{3}-\d{2,4}$/.test(str)) {
-      return false;
+    return Util.toDate(value) !== null;
+  },
+
+  /**
+   * Which way round a column writes `3/05/2016`, where the column says.
+   *
+   * `d/m/y` and `m/d/y` are both in the wild and no single value distinguishes
+   * them — but a column usually contains one that does. One `14/05/2013`
+   * anywhere in a column of publication dates makes every `3/05/2016` beside it
+   * the third of May, and there is nothing to ask the user.
+   *
+   * Recorded on the column rather than worked out per value, so the whole
+   * column reads one way. Per value, the same column had `14/05/2013` in May
+   * and `3/05/2016` in March.
+   *
+   * A column that says nothing gets no answer rather than a guess; the Date
+   * format offers the setting for those.
+   *
+   * @returns {'dmy'|'mdy'|null}
+   */
+  inferDateOrder(rows, colId) {
+    const sample = rows.length > Csv.INFER_SAMPLE ? rows.slice(0, Csv.INFER_SAMPLE) : rows;
+    let dayFirst = 0;
+    let monthFirst = 0;
+
+    for (const row of sample) {
+      const value = row[colId];
+      if (Util.isMissing(value)) continue;
+      const match = /^(\d{1,2})[-/.](\d{1,2})[-/.]\d{2,4}$/.exec(String(value).trim());
+      if (!match) continue;
+      const first = Number(match[1]);
+      const second = Number(match[2]);
+      if (first > 12 && second <= 12) dayFirst += 1;
+      else if (second > 12 && first <= 12) monthFirst += 1;
     }
-    const parsed = Date.parse(str);
-    return !isNaN(parsed);
+
+    // A column holding both is not a column with an order; it is a column with
+    // a problem, and guessing would settle half of it wrongly and say nothing.
+    if (dayFirst && !monthFirst) return 'dmy';
+    if (monthFirst && !dayFirst) return 'mdy';
+    return null;
   },
 
   /** Serialise a resolved table back out as CSV (used by the export panel). */

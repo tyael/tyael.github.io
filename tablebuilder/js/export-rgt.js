@@ -34,7 +34,7 @@ const ExportRgt = {
     out.push('library(dplyr)');
     out.push('');
 
-    out.push.apply(out, ExportRgt.data(spec, working));
+    out.push.apply(out, ExportRgt.data(spec, working, model));
     out.push('');
 
     const pipeline = ExportRgt.pipeline(spec, model, working);
@@ -54,8 +54,9 @@ const ExportRgt = {
      Data
      ================================================================ */
 
-  data(spec, working) {
+  data(spec, working, model) {
     const out = [];
+    const dateCols = ExportRgt.dateColumns(working, model);
 
     if (working.rows.length > ExportRgt.MAX_INLINE_ROWS) {
       out.push('# ' + working.rows.length + ' rows is too many to inline readably.');
@@ -63,18 +64,146 @@ const ExportRgt = {
       out.push('# rest of the pipeline expects.');
       out.push('# Columns: ' + working.columns.map((c) => c.id).join(', '));
       out.push('data <- readr::read_csv("' + (spec.source.filename || 'data.csv') + '")');
+      // Nothing rewrote the dates on the way past, because nothing here reads
+      // the file. gt parses no date shape but ISO, so say what has to happen.
+      for (const id of Object.keys(dateCols)) {
+        out.push('# readr must hand ' + id + ' over as a Date or an ISO string — ' +
+          'fmt_date() parses nothing else.');
+      }
       return out;
     }
 
     out.push('data <- tibble::tribble(');
     out.push('  ' + working.columns.map((col) => '~' + ExportRgt.symbol(col.id)).join(', ') + ',');
 
+    const mixed = ExportRgt.mixedColumns(working, dateCols);
+    const markup = new Set(ExportRgt.markupColumns(working, spec));
+
+    let lost = 0;
     working.rows.forEach((row, index) => {
-      const values = working.columns.map((col) => ExportRgt.value(row[col.id], col.type));
+      const values = working.columns.map((col) => {
+        if (mixed[col.id] && ExportRgt.strays(row[col.id], col.type, dateCols[col.id])) lost += 1;
+        return ExportRgt.value(row[col.id], col.type, dateCols[col.id], mixed[col.id],
+          markup.has(col.id));
+      });
       out.push('  ' + values.join(', ') + (index < working.rows.length - 1 ? ',' : ''));
     });
 
     out.push(')');
+    if (lost) {
+      out.push('# ' + lost + ' value(s) above are not the type their column is — a date column');
+      out.push('# with something in it that is not a date, or a number column with a stray');
+      out.push('# "n/a". The preview leaves those cells as they were imported; an R vector is');
+      out.push('# one type all the way down, so here they are NA.');
+    }
+    return out;
+  },
+
+  /**
+   * The columns that cannot carry every value they hold, and so lose some.
+   *
+   * **An R vector is one type all the way down.** A column of numbers with a
+   * stray `n/a` in it — which the preview shows as it stands, and which the
+   * format panel advertises it will — has no representation: `tribble()`
+   * refuses to combine a double with a character, so the whole script failed
+   * before gt ever saw it. `fmt_date()` is stricter still and aborts on a
+   * column that is not every one of them a date.
+   *
+   * Worked out per column rather than per value, because whether a stray is a
+   * problem depends on what the rest of the column is. A column typed `number`
+   * whose values are *all* text is a character vector in R, which R is
+   * perfectly happy to hold — nothing is lost there and nothing is coerced.
+   *
+   * @returns {Object} colId -> true where a value will have to become NA
+   */
+  mixedColumns(working, dateCols) {
+    const out = {};
+
+    for (const col of working.columns) {
+      const dateFmt = dateCols[col.id];
+      if (!dateFmt && col.type !== 'number') continue;
+
+      let carried = 0;
+      let strays = 0;
+      for (const row of working.rows) {
+        if (Util.isMissing(row[col.id])) continue;
+        if (ExportRgt.strays(row[col.id], col.type, dateFmt)) strays += 1;
+        else carried += 1;
+      }
+      // A date column is coerced even with nothing to carry: `fmt_date()` is
+      // about to be emitted for it either way, and it refuses a character
+      // vector outright.
+      if (strays && (carried || dateFmt)) out[col.id] = true;
+    }
+
+    return out;
+  },
+
+  /**
+   * The columns whose cells carry markup, and so go out as HTML.
+   *
+   * Text only: a number column's values are numbers in the tibble and cannot
+   * carry a `<sub>`. A column the user has already given a format rule is left
+   * alone — see the note at the call site.
+   *
+   * Read by both halves of the export and so by neither on its own: `data()`
+   * writes the HTML and `pipeline()` emits the call that renders it, and a
+   * disagreement between the two shows up as escaped tags on the page.
+   *
+   * @returns {Array<string>} column ids, in the table's own order
+   */
+  markupColumns(working, spec) {
+    const spoken = new Set();
+    for (const rule of (spec.format || [])) {
+      if (!Spec.isEnabled(rule)) continue;
+      for (const id of (rule.columns || [])) spoken.add(id);
+    }
+
+    return working.columns
+      .filter((col) => col.type === 'text' && !spoken.has(col.id))
+      .filter((col) => working.rows.some((row) => {
+        const value = row[col.id];
+        return !Util.isMissing(value) && Markup.hasMarkup(String(value));
+      }))
+      .map((col) => col.id);
+  },
+
+  /** True when a value is not the type its column will be in R. */
+  strays(raw, type, dateFmt) {
+    if (Util.isMissing(raw)) return false;
+    if (dateFmt) {
+      return Util.toDate(raw, Formatters.dateOpts(dateFmt.opts, { column: dateFmt.column })) === null;
+    }
+    return type === 'number' && Util.toNumber(raw) === null;
+  },
+
+  /**
+   * The columns whose values have to go out as ISO, and how to read them.
+   *
+   * **gt will not parse a date for you.** `fmt_date()` on a column of
+   * `14/05/2013` fails with `object 'input_dt' not found` — verified against
+   * real gt, not read off the documentation — and one unparseable value in an
+   * otherwise good column aborts the whole call. The preview reads a dozen date
+   * shapes through `Util.toDate`, so the tibble carries what that read rather
+   * than what was typed: the same dates, in the one notation gt accepts.
+   *
+   * Keyed off the resolved format plan rather than `col.type`, because it is
+   * the `fmt_date` call that will choke, and a column can be typed anything —
+   * a spreadsheet serial column is `number` — and still carry one.
+   *
+   * @returns {Object} colId -> {type, opts, column}
+   */
+  dateColumns(working, model) {
+    const plan = (model && model.formatPlan) || {};
+    const out = {};
+
+    for (const col of working.columns) {
+      const entry = plan[col.id];
+      if (!entry) continue;
+      if (entry.type !== 'date' && entry.type !== 'time' && entry.type !== 'datetime') continue;
+      out[col.id] = { type: entry.type, opts: entry.opts, column: col };
+    }
+
     return out;
   },
 
@@ -349,6 +478,29 @@ const ExportRgt = {
 
     /* ---- Formatting ---- */
 
+    /*
+     * **Markup in a cell needs a call of its own.** A column label carrying
+     * `CO_{2}` goes out through `ExportRgt.md` as `html("CO<sub>2</sub>")`, and
+     * a body cell had nothing equivalent: it went over as the literal string
+     * `CO_{2}`, which gt escapes and prints as typed. The preview drew a
+     * subscript and the export drew four characters of markup.
+     *
+     * `fmt_passthrough(escape = FALSE)` is what gt has for it — verified
+     * against real gt rather than read off the documentation, because
+     * `fmt_markdown()` looks like the obvious answer and mangles the sub and
+     * sup tags this markup needs. The values themselves are written as HTML in
+     * the tibble; see `ExportRgt.markupColumns`.
+     *
+     * Emitted before the user's own rules so that a rule on the same column
+     * still wins, and skipped entirely for a column that has one — two fmt
+     * calls fighting over a column is worse than the markup staying raw.
+     */
+    const markupCols = ExportRgt.markupColumns(working, spec);
+    if (markupCols.length) {
+      lines.push('fmt_passthrough(columns = ' + ExportRgt.columnVector(markupCols) +
+        ', escape = FALSE)');
+    }
+
     for (const rule of spec.format) {
       if (!Spec.isEnabled(rule)) continue;
       const cols = rule.columns.filter((id) => columnsById[id]);
@@ -576,18 +728,29 @@ const ExportRgt = {
         push('decimals', opts.decimals);
         return 'fmt_engineering(' + args.join(', ') + ')';
 
-      case 'date':
-        push('date_style', ExportRgt.str(opts.style));
+      case 'date': {
+        const style = Formatters.gtStyle('date', opts.style);
+        if (!style) return ExportRgt.noStyle('date', opts.style, cols);
+        push('date_style', ExportRgt.str(style));
         return 'fmt_date(' + args.join(', ') + ')';
+      }
 
-      case 'time':
-        push('time_style', ExportRgt.str(opts.style));
+      case 'time': {
+        const style = Formatters.gtStyle('time', opts.style);
+        if (!style) return ExportRgt.noStyle('time', opts.style, cols);
+        push('time_style', ExportRgt.str(style));
         return 'fmt_time(' + args.join(', ') + ')';
+      }
 
-      case 'datetime':
-        push('date_style', ExportRgt.str(opts.dateStyle));
-        push('time_style', ExportRgt.str(opts.timeStyle));
+      case 'datetime': {
+        const dateStyle = Formatters.gtStyle('date', opts.dateStyle);
+        const timeStyle = Formatters.gtStyle('time', opts.timeStyle);
+        if (!dateStyle) return ExportRgt.noStyle('date', opts.dateStyle, cols);
+        if (!timeStyle) return ExportRgt.noStyle('time', opts.timeStyle, cols);
+        push('date_style', ExportRgt.str(dateStyle));
+        push('time_style', ExportRgt.str(timeStyle));
         return 'fmt_datetime(' + args.join(', ') + ')';
+      }
 
       case 'markdown':
         return 'fmt_markdown(' + args.join(', ') + ')';
@@ -1185,15 +1348,61 @@ const ExportRgt = {
   },
 
   /** One data value as an R literal. */
-  value(raw, type) {
+  value(raw, type, dateFmt, coerce, markup) {
     if (Util.isMissing(raw)) return 'NA';
+    if (coerce && ExportRgt.strays(raw, type, dateFmt)) return 'NA';
+
+    // A date goes out in the one shape gt reads, whatever shape it arrived in.
+    if (dateFmt) {
+      const date = Util.toDate(raw, Formatters.dateOpts(dateFmt.opts, { column: dateFmt.column }));
+      return date === null ? ExportRgt.str(raw) : ExportRgt.str(ExportRgt.isoOf(date, dateFmt.type));
+    }
+
     if (type === 'number') {
       const num = Util.toNumber(raw);
       return num === null ? ExportRgt.str(raw) : String(num);
     }
-    if (type === 'bool') {
-      return /^(true|yes|t)$/i.test(String(raw).trim()) ? 'TRUE' : 'FALSE';
-    }
+
+    /*
+     * Written as HTML where the pipeline is going to emit the passthrough that
+     * renders it, and as it was typed where it is not.
+     *
+     * **Every value in such a column, not only the ones carrying markup.**
+     * `escape = FALSE` applies to the whole column, so a neighbouring `a < b`
+     * left as it was typed would be read as an unclosed tag and swallow the
+     * rest of the cell. `Markup.toHtml` escapes what it does not recognise,
+     * which is exactly the guarantee needed here.
+     */
+    if (markup) return ExportRgt.str(Markup.toHtml(String(raw)));
+    // A `bool` column goes out as the text it arrived as, not as TRUE/FALSE.
+    // Nothing downstream wants a logical: there is no bool formatter, and the
+    // filter's R form compares text — `tolower(superseded) == "yes"`, which is
+    // never true of a logical, because `tolower(TRUE)` is "true". A table
+    // filtered to nine rows on screen exported nought. Publication tables print
+    // "yes" and "no" in any case; R idiom is not the thing being reproduced.
     return ExportRgt.str(raw);
+  },
+
+  /** ISO 8601, in the part `fmt_date`, `fmt_time` or `fmt_datetime` reads. */
+  isoOf(date, type) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const day = date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+    const clock = pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds());
+    if (type === 'time') return clock;
+    if (type === 'datetime') return day + ' ' + clock;
+    return day;
+  },
+
+  /**
+   * A style this app has and gt does not.
+   *
+   * The `text` formatter below set the precedent: say so in the emitted R
+   * rather than emit the nearest thing, which would export a table that is
+   * quietly not the one on screen — or, as `date_style = "month_year"` did for
+   * three of these, one that does not run at all.
+   */
+  noStyle(family, id, cols) {
+    return '# the "' + id + '" ' + family + ' style on ' + cols.join(', ') +
+      ' has no gt equivalent, so those cells keep the value as imported';
   }
 };
