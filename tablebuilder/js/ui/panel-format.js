@@ -68,6 +68,19 @@ const PanelFormat = {
             { hint: param.hint }));
         }
 
+        // An expression that will not compile extracts nothing, and the sample
+        // below shows the text unchanged — which reads as "the rule is not
+        // working" rather than "this expression is not finished". Say which.
+        const regexError = rule.type === 'text' &&
+          Formatters.regexError(opts.regex, opts.regexIgnoreCase);
+        if (regexError) {
+          body.appendChild(Util.el('div.field-hint', {
+            style: { color: 'var(--danger)' },
+            text: 'That expression will not compile, so nothing is being ' +
+              'extracted — ' + regexError
+          }));
+        }
+
         // There is nothing to preview for a rule with no columns yet, or one
         // whose column holds nothing but missing values — both return null,
         // and `appendChild(null)` throws, which takes the whole rail down.

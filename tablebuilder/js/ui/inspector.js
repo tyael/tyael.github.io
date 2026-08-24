@@ -256,9 +256,14 @@ const Inspector = {
 
       const raw = (App.workingRowAt(item.srcIndex) || {})[item.colId];
       const expr = StyleRules.seedExpr(item.colId, raw, column.type);
-      const matched = StyleRules.evalRowExpr(expr, {
-        rows: App.workingRows(), columnsById: columns
-      });
+      // The same context the rule will be compiled in when it exists, so the
+      // count here and the cells that light up later are one answer. A count
+      // survives being taken over the rows in the wrong order — it is the same
+      // number either way — but only until a seeded expression names a
+      // neighbouring cell, and a second producer of the context is how the
+      // hover preview came to disagree with the table it was painted over.
+      const matched = StyleRules.evalRowExpr(expr,
+        (App.model && App.model.ruleContext) || { rows: [], columnsById: {} });
       const hits = matched.rows ? matched.rows.size : 0;
 
       nodes.push(Controls.button('By value: ' + Util.truncate(expr, 30), () => {

@@ -40,6 +40,12 @@ const Corrections = {
    * when there is no pivot, and memoises the pivoted result when there is, so
    * writing through either would corrupt the source or poison the memo.
    *
+   * A stale entry carries `found`, the value that was there instead — the only
+   * thing that can tell *why* a guard failed apart, and the reason the Data
+   * panel can say that normalising the column is what broke it rather than
+   * guessing between that and the data having been replaced. Absent on the
+   * entry for a row that is not there at all, which is a different failure.
+   *
    * @param {Array<Object>} rows - working rows
    * @param {Array<Object>} corrections - `spec.corrections`
    * @returns {{rows, applied, stale}}
@@ -61,8 +67,9 @@ const Corrections = {
 
       const row = rows[correction.srcIndex];
       if (!row || !(correction.colId in row)) { stale.push(correction); continue; }
-      if (!Corrections.matches(row[correction.colId], correction.from)) {
-        stale.push(correction);
+      const found = row[correction.colId];
+      if (!Corrections.matches(found, correction.from)) {
+        stale.push(Object.assign({}, correction, { found: found }));
         continue;
       }
 
@@ -116,7 +123,7 @@ const Corrections = {
     // correct step that has been dragged past a pivot or a filter therefore
     // compares against the data at its own position, not at the start.
     const at = Pipeline.indexOf(spec, 'correct');
-    const before = Pipeline.run(spec.source, spec.pipeline, at < 0 ? undefined : at);
+    const before = Pipeline.run(Spec.workingSource(spec), spec.pipeline, at < 0 ? undefined : at);
     const item = before.items.find((entry) => entry.srcIndex === srcIndex);
     return item ? item.row[colId] : undefined;
   },
@@ -168,6 +175,51 @@ const Corrections = {
     // ahead of any filter or sort — see the note there.
     (step || Pipeline.set(draft, 'correct', {})).edits.push(correction);
     return correction;
+  },
+
+  /**
+   * Rewrite a correction against the value its cell holds now.
+   *
+   * **This moves `from`, which `set` above is at pains never to do**, and the
+   * difference is worth being clear about. `set` refuses because the value the
+   * user last typed is not a fact about the file, and a guard that drifted onto
+   * it would compare against something no import ever produced. Here the file's
+   * own value is what changed — normalising the column rewrote `14/05/2013` to
+   * `2013-05-14` underneath the correction — so `from` is moved to the value
+   * the pipeline now delivers to that cell, and goes on describing the data
+   * rather than the editing. Import over the top afterwards and the guard is
+   * exactly as strong: it matches only a cell that genuinely holds that date.
+   *
+   * `originalValue` is what decides "the value now", the same as when a
+   * correction is first written, so the two cannot come to disagree about it.
+   *
+   * `to` follows it into ISO where the column is being normalised. Left in the
+   * old notation it would put `15/05/2013` back into a column that has just
+   * been made uniform — one mixed-notation cell, which is the whole thing the
+   * switch exists to prevent, reintroduced by the button offering to help.
+   *
+   * A rewrite that leaves nothing to do — a correction that only ever restated
+   * a date in another notation, which normalising has now done for it — drops
+   * the correction instead of storing a no-op, as `set` does.
+   */
+  rebase(draft, id) {
+    const step = Pipeline.find(draft, 'correct');
+    const correction = step && (step.edits || []).find((c) => c.id === id);
+    if (!correction) return;
+
+    const now = Corrections.originalValue(draft, correction.srcIndex, correction.colId);
+    if (now === undefined) return;
+
+    let to = correction.to;
+    if (Dates.isOn(draft, correction.colId)) {
+      const col = draft.source.columns.find((c) => c.id === correction.colId);
+      const iso = Dates.eligible(col) && Dates.isoOf(Dates.plan(draft.source, col), to);
+      if (iso) to = iso;
+    }
+
+    if (Corrections.matches(now, to)) { Corrections.remove(draft, id); return; }
+    correction.from = String(now);
+    correction.to = to;
   },
 
   /** Drop a correction by id. */

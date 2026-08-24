@@ -94,6 +94,10 @@ const App = {
 
     Store.subscribe(App.onChange);
 
+    // Panels are held rather than rebuilt while the user is mid-interaction;
+    // this is what tells the app the interaction has ended.
+    Controls.watch(App.drainPanels);
+
     const restored = Store.loadSaved();
     if (restored && Spec.hasData(restored)) {
       Store.init(restored, 'Restored last session');
@@ -126,8 +130,23 @@ const App = {
     App.updateSelectionChip();
   },
 
+  /**
+   * Spec changes that happen *to* the user rather than because of them.
+   *
+   * A panel holding a spec that has been undone out from under it is not
+   * describing anything, so these rebuild it even mid-edit — and whatever was
+   * half-typed was typed against a spec that no longer exists, so it goes
+   * rather than landing a moment later on top of the undo.
+   */
+  FORCED_REASONS: ['init', 'replace', 'undo', 'redo', 'jump'],
+
   /** Every spec change lands here. */
   onChange(spec, reason) {
+    if (App.FORCED_REASONS.indexOf(reason) >= 0) {
+      Controls.cancelPending();
+      App._forcePanels = true;
+    }
+
     App.render();
     App.autosave();
 
@@ -153,6 +172,13 @@ const App = {
 
   render: null,     // assigned below (rAF-coalesced)
 
+  /* A panel rebuild `refreshPanels` held back; `drainPanels` runs it. */
+  _railStale: false,
+  _inspectorStale: false,
+
+  /* Set by `onChange` for a `FORCED_REASONS` change; consumed by `_render`. */
+  _forcePanels: false,
+
   _render() {
     const spec = Store.get();
 
@@ -163,8 +189,15 @@ const App = {
     }
 
     App.model = Compute.run(spec);
+
+    // One flag, consumed here rather than in `renderPanels`, because `render`
+    // is coalesced into a frame: several changes can arrive before this runs,
+    // and a forced one anywhere in the batch forces the whole batch.
+    const force = App._forcePanels;
+    App._forcePanels = false;
+
     App.renderPreview();
-    App.renderPanels();
+    App.refreshPanels(force);
     App.updateChrome();
 
     // A render measures geometry back out of the table it has just laid out —
@@ -343,8 +376,43 @@ const App = {
     App.renderInspector();
   },
 
+  /**
+   * The render loop's panel rebuild, and the only one that ever yields.
+   *
+   * **A rebuild a handler asks for is one the user asked for**, so
+   * `renderRail`, `renderInspector` and `renderPanels` always rebuild: the
+   * click that switched panels, cleared the search or collapsed every section
+   * has already been delivered, and the node it landed on is meant to go. Only
+   * the rebuild that falls out of a spec change can arrive while the user is
+   * still mid-word, and only that one is held.
+   *
+   * `force` is `App.FORCED_REASONS` — undo, redo, a file opened — where the
+   * panel on screen describes a spec that no longer exists and holding it
+   * would leave a lie on the screen.
+   */
+  refreshPanels(force) {
+    if (!force && Controls.busy(Util.qs('#rail-body'))) App._railStale = true;
+    else App.renderRail();
+
+    if (!force && Controls.busy(Util.qs('#inspector-body'))) App._inspectorStale = true;
+    else App.renderInspector();
+  },
+
+  /**
+   * Rebuild whatever `refreshPanels` held back.
+   *
+   * Called when a press ends or focus leaves a field — the two moments an
+   * interaction can finish. Still busy (focus moved from one box straight to
+   * the next) simply means it is held again, and the next end of an
+   * interaction asks once more.
+   */
+  drainPanels() {
+    if (App._railStale || App._inspectorStale) App.refreshPanels();
+  },
+
   renderRail() {
     const host = Util.qs('#rail-body');
+    App._railStale = false;
 
     // Drop any rule-hover preview before the nodes that own it are destroyed.
     // `Selection._previewRule` is set on a rule's `mouseenter` and cleared only
@@ -369,6 +437,8 @@ const App = {
 
   renderInspector() {
     const host = Util.qs('#inspector-body');
+    App._inspectorStale = false;
+
     Controls.rememberFocus(host);
     Util.clear(host);
     host.appendChild(Inspector.render(Store.get()));
@@ -1121,7 +1191,7 @@ const App = {
   workingColumns() {
     const spec = Store.get();
     if (!Spec.hasData(spec)) return [];
-    const derived = Pipeline.run(spec.source, spec.pipeline);
+    const derived = Pipeline.run(Spec.workingSource(spec), spec.pipeline);
     // Titles for the set, not one at a time: a pivot names three columns
     // `employment`, and every picker in the app is built from this list.
     const titles = Spec.columnTitles(spec, derived.columns);
@@ -1131,7 +1201,7 @@ const App = {
   workingColumnsById() {
     const spec = Store.get();
     if (!Spec.hasData(spec)) return {};
-    const derived = Pipeline.run(spec.source, spec.pipeline);
+    const derived = Pipeline.run(Spec.workingSource(spec), spec.pipeline);
     const out = {};
     for (const col of derived.columns) out[col.id] = col;
     return out;
@@ -1148,7 +1218,7 @@ const App = {
     // The pipeline's own output, corrections and all — one producer of "the
     // working data", so a panel seeding an expression sees what `compute`
     // matched against.
-    return Pipeline.run(spec.source, spec.pipeline).items.map((item) => item.row);
+    return Pipeline.run(Spec.workingSource(spec), spec.pipeline).items.map((item) => item.row);
   },
 
   /**
@@ -1170,7 +1240,7 @@ const App = {
   workingRowAt(srcIndex) {
     const spec = Store.get();
     if (!Spec.hasData(spec)) return null;
-    const item = Pipeline.run(spec.source, spec.pipeline).items
+    const item = Pipeline.run(Spec.workingSource(spec), spec.pipeline).items
       .find((entry) => entry.srcIndex === srcIndex);
     return item ? item.row : null;
   },

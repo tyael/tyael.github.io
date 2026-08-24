@@ -88,7 +88,7 @@ const PanelSteps = {
    * that stays true as the list is reordered.
    */
   columnsAt(spec, index) {
-    const state = Pipeline.run(spec.source, spec.pipeline, index);
+    const state = Pipeline.run(Spec.workingSource(spec), spec.pipeline, index);
     // Added to rather than rebuilt, for the reason in `App.workingColumns`.
     const columns = state.columns.map((col) =>
       Object.assign({}, col, { label: Spec.columnTitle(spec, col) }));
@@ -183,8 +183,8 @@ const PanelSteps = {
    * reordered under each other.
    */
   shapeAfter(spec, index) {
-    const before = Pipeline.run(spec.source, spec.pipeline, index);
-    const after = Pipeline.run(spec.source, spec.pipeline, index + 1);
+    const before = Pipeline.run(Spec.workingSource(spec), spec.pipeline, index);
+    const after = Pipeline.run(Spec.workingSource(spec), spec.pipeline, index + 1);
     const bits = [after.items.length.toLocaleString() + ' row' +
       (after.items.length === 1 ? '' : 's') + ' × ' +
       after.columns.length + ' column' + (after.columns.length === 1 ? '' : 's')];

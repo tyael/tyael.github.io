@@ -311,6 +311,12 @@ const Formatters = {
       type: 'text',
       label: 'Text',
       params: [
+        { key: 'regex', label: 'Extract', type: 'text', default: '',
+          hint: 'A regular expression. The cell shows what it matches — “\\d{4}” pulls ' +
+            'the year out of a citation. A cell it does not match is left alone.' },
+        { key: 'regexGroup', label: 'Group', type: 'int', default: 0, min: 0, max: 9,
+          hint: '0 is the whole match; 1 is the first (…) in the expression.' },
+        { key: 'regexIgnoreCase', label: 'Ignore case', type: 'bool', default: false },
         { key: 'transform', label: 'Case', type: 'select',
           enum: ['none', 'uppercase', 'lowercase', 'capitalize', 'title'], default: 'none' },
         { key: 'trim', label: 'Trim whitespace', type: 'bool', default: true },
@@ -320,6 +326,12 @@ const Formatters = {
       apply(value, o) {
         let text = String(value);
         if (o.trim) text = text.trim();
+
+        // **Before the case change and the truncation, after the trim.** The
+        // expression is written against what is in the cell, so it has to see
+        // the cell; everything after it is tidying up what came out.
+        text = Formatters.extract(text, o);
+
         switch (o.transform) {
           case 'uppercase': text = text.toUpperCase(); break;
           case 'lowercase': text = text.toLowerCase(); break;
@@ -457,6 +469,77 @@ const Formatters = {
   },
 
   /** Substitute the formatted value into a `{x}` pattern. */
+  /**
+   * Compiled expressions, by pattern and flags.
+   *
+   * `new RegExp` on every cell of every render is not free, and this runs on
+   * the keystroke path — the Format panel previews a rule as it is typed, so
+   * the half-written expressions all arrive here too.
+   */
+  _regexCache: {},
+
+  /**
+   * Compile a user's expression, or null if it will not compile.
+   *
+   * **Never throws.** A regular expression is typed a character at a time and
+   * is invalid for most of that time — `(`, `[a-`, `\` are all states on the
+   * way to something good. A throw here would take the whole render with it
+   * and blank the table under the person typing.
+   */
+  regex(pattern, ignoreCase) {
+    if (!pattern) return null;
+    const key = (ignoreCase ? 'i:' : ':') + pattern;
+    if (key in Formatters._regexCache) return Formatters._regexCache[key];
+
+    let compiled = null;
+    try {
+      compiled = new RegExp(pattern, ignoreCase ? 'i' : '');
+    } catch (err) {
+      compiled = null;
+    }
+
+    // One entry per keystroke while an expression is being typed, and every
+    // prefix of it is a key nothing will ask for again. Emptied rather than
+    // evicted one by one: the only entry that matters is the last one.
+    if (Object.keys(Formatters._regexCache).length > 200) Formatters._regexCache = {};
+    Formatters._regexCache[key] = compiled;
+    return compiled;
+  },
+
+  /** Why an expression will not compile, or null when it will. */
+  regexError(pattern, ignoreCase) {
+    if (!pattern) return null;
+    if (Formatters.regex(pattern, ignoreCase)) return null;
+    try {
+      new RegExp(pattern, ignoreCase ? 'i' : '');
+      return null;
+    } catch (err) {
+      return err.message;
+    }
+  },
+
+  /**
+   * The part of `text` an expression matches, or `text` untouched.
+   *
+   * **A cell the expression does not match keeps what it had.** That is what
+   * every other formatter here does with a value it cannot handle — the number
+   * formatter hands back `null` and `Compute.cellText` shows the raw value
+   * rather than blanking it — and blanking a cell is a bad way to say "no
+   * match" when the alternative is showing what is actually there.
+   */
+  extract(text, o) {
+    const compiled = Formatters.regex(o.regex, o.regexIgnoreCase);
+    if (!compiled) return text;
+
+    const match = compiled.exec(text);
+    if (!match) return text;
+
+    const group = o.regexGroup || 0;
+    const picked = match[group];
+    // A group that did not take part matched nothing, not the whole cell.
+    return picked === undefined ? text : picked;
+  },
+
   applyPattern(text, pattern) {
     if (!pattern || pattern === '{x}') return text;
     return String(pattern).replace(/\{x\}/g, text);
@@ -499,7 +582,13 @@ const Formatters = {
 
     switch (style) {
       case 'iso':
-        return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+        // `Util.toIso` and not a second spelling of it. This was one, and it
+        // carried the same unpadded year — so a date before 1000 AD drew
+        // `850-05-14` in the table while claiming to be ISO, and the column
+        // stopped being readable by anything that reads dates, this formatter
+        // included. The styles below spell a year out for a person to read and
+        // an unpadded one is right for them; only this one has a grammar.
+        return Util.toIso(date, false);
       case 'wday_month_day_year':
         return date.toLocaleDateString(loc, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
       case 'month_day_year':

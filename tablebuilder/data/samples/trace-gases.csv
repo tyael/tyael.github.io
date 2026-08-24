@@ -1,6 +1,7 @@
 ,,Baseline air,Baseline air,Baseline air,Radiative forcing,Radiative forcing,,
 Gas,Formula,Mole fraction,Uncertainty,Growth (% yr^{-1}),Efficiency (W m^{-2} ppb^{-1}),GWP-100,Series,Status
 Carbon dioxide,CO_{2},4.193e-4,2.1e-7,0.55,1.37e-5,1,`CGO-01`,final
+Carbon-13 dioxide,^{13}CO_{2},4.65e-6,2.3e-9,0.52,,,`CGO-04`,final
 Methane,CH_{4},1.923e-6,4.0e-9,0.62,3.63e-4,27,`CGO-02`,final
 Nitrous oxide,N_{2}O,3.36e-7,8.0e-10,0.29,3.00e-3,273,`CGO-03`,final
 Sulfur hexafluoride,SF_{6},1.16e-11,3.0e-14,4.10,0.567,25200,`CGO-11`,*provisional*

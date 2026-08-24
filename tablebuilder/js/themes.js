@@ -10,6 +10,55 @@
  * header band. See `Themes.RULES` for why that is not an option instead.
  */
 
+/**
+ * The two development bases, built from the option surface rather than listed.
+ *
+ * "No line anywhere" and "a 1px line everywhere one can go" are statements
+ * about `options-schema.js`, not lists of keys — so they are read out of it. A
+ * border option added to the schema later joins both of these on the day it is
+ * added; written out by hand, the day it is added is the day **Lined** quietly
+ * stops meaning every line, with nothing to notice it.
+ *
+ * The width and the colour are set even when the style is `none`. Nothing draws
+ * them, and that is the point: switching one line on while building a theme on
+ * top of **Blank** gives a 1px line in the theme's own ink, rather than the
+ * schema's 2px `#D3D3D3` arriving from somewhere the theme never chose.
+ *
+ * @param {boolean} drawn - solid lines, or none at all
+ * @param {string} ink - text and lines
+ * @param {string} paper - the table behind them
+ */
+function lineBase(drawn, ink, paper) {
+  const patch = {
+    'table.background.color': paper,
+    'table.font.color': ink,
+    // The ink `data_color` switches to over a fill too dark for the main one.
+    // On a dark base that is the paper colour, which is what `dark` does.
+    'table.font.color.light': paper,
+    // Off, and in the base's own black or white for whoever turns it on: the
+    // schema's mid grey is neither, and all but disappears on a black table.
+    'row.striping.include_table_body': false,
+    'row.striping.include_stub': false,
+    'row.striping.background_color': stripeFor(paper),
+    'column_labels.spanner.underline': drawn
+  };
+
+  for (const option of OptionsSchema.options) {
+    if (!option.border) continue;
+    if (option.borderRole === 'style') patch[option.key] = drawn ? 'solid' : 'none';
+    else if (option.borderRole === 'width') patch[option.key] = '1px';
+    else patch[option.key] = ink;
+  }
+
+  return patch;
+}
+
+/** A stripe in the base's own opposite, faint enough to read straight through. */
+function stripeFor(paper) {
+  return String(paper).toUpperCase() === '#FFFFFF'
+    ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.06)';
+}
+
 const Themes = {
 
   /**
@@ -111,7 +160,13 @@ const Themes = {
     'row.striping.include_table_body': false
   },
 
-  /** Every line drawn — useful when you actually want a grid. */
+  /**
+   * A grey line around every cell.
+   *
+   * Not *every* line, which is what **Lined** is for: this leaves the header
+   * band, the footer and the grand-summary double rule as they come, because it
+   * is a look rather than a base.
+   */
   grid: {
     'table.border.top.style': 'solid',
     'table.border.bottom.style': 'solid',
@@ -186,6 +241,30 @@ const Themes = {
     'row_group.border.bottom.color': '#39424f',
     'row.striping.background_color': 'rgba(255,255,255,0.035)'
   },
+
+  /* ================================================================
+     Bases to build on
+
+     Not looks. These two are the ends of the range — nothing drawn, and
+     everything drawn — in black and white, so that building a theme is
+     subtracting from one or adding to the other rather than working out which
+     of the schema's greys is currently showing.
+
+     Both are generated from the option surface by `lineBase` above, and both
+     come in a dark counterpart with the ink and the paper swapped.
+     ================================================================ */
+
+  /** No line anywhere, black on white. */
+  blank: lineBase(false, '#000000', '#FFFFFF'),
+
+  /** No line anywhere, white on black. */
+  'blank-dark': lineBase(false, '#FFFFFF', '#000000'),
+
+  /** A 1px black line everywhere the app can draw one. */
+  lined: lineBase(true, '#000000', '#FFFFFF'),
+
+  /** A 1px white line everywhere the app can draw one. */
+  'lined-dark': lineBase(true, '#FFFFFF', '#000000'),
 
   /* ================================================================
      Structure, not hue
@@ -1248,9 +1327,16 @@ const Themes = {
     { id: 'gt-default', label: 'gt default', hint: 'The gt package’s own look.' },
     { id: 'booktabs', label: 'Booktabs', hint: 'Three lines, no verticals — the LaTeX journal convention.' },
     { id: 'apa', label: 'APA 7', hint: 'APA table style: sans-serif, lines top and bottom, lettered notes.' },
-    { id: 'plain', label: 'Plain', hint: 'No lines, striped rows.' },
-    { id: 'grid', label: 'Grid', hint: 'Every line drawn.' },
+    { id: 'plain', label: 'Plain', hint: 'Striped rows under one hairline, and nothing else.' },
+    { id: 'grid', label: 'Grid', hint: 'A grey line around every cell.' },
     { id: 'dark', label: 'Dark', hint: 'Light text on a dark table, for slides.' },
+
+    /* Bases rather than looks — see the block above. */
+    { id: 'blank', label: 'Blank', hint: 'No line anywhere, black on white. A base to add to.' },
+    { id: 'blank-dark', label: 'Blank dark', hint: 'No line anywhere, white on black.' },
+    { id: 'lined', label: 'Lined',
+      hint: 'A 1px black line everywhere one can be drawn. A base to take away from.' },
+    { id: 'lined-dark', label: 'Lined dark', hint: 'Every line, 1px white on black.' },
     { id: 'boxed', label: 'Boxed', hint: 'A frame around a light interior grid.' },
     { id: 'monograph', label: 'Monograph', hint: 'Garamond with a double rule under the heads — a book table.' },
     { id: 'inverse', label: 'Inverse', hint: 'Near-black header band over a white body.' },

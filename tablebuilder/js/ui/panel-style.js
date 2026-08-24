@@ -62,8 +62,13 @@ const PanelStyle = {
           'copy it into a rule of your own to keep it.'
       } : null),
       enabled: (rule) => Spec.isEnabled(rule),
-      onToggle: (rule, index, on) => Store.update((draft) => { draft.styleRules[index].enabled = on; }),
-      onRemove: (rule, index) => Store.update((draft) => { draft.styleRules.splice(index, 1); }),
+      onToggle: (rule, index, on) => Store.update((draft) => {
+        const target = PanelStyle.ruleIn(draft, rule.id);
+        if (target) target.enabled = on;
+      }),
+      onRemove: (rule) => Store.update((draft) => {
+        draft.styleRules = draft.styleRules.filter((r) => r.id !== rule.id);
+      }),
       onReorder: (from, to) => Store.update((draft) => {
         draft.styleRules = Util.moveItem(draft.styleRules, from, to);
       })
@@ -100,10 +105,53 @@ const PanelStyle = {
      One rule
      ================================================================ */
 
+  /**
+   * A rule in a draft, by **identity**.
+   *
+   * `Controls.itemList` hands its callbacks the rule and its position in the
+   * list, and the position is the tempting one: `draft.styleRules[index]` is
+   * shorter and right most of the time. It is right until the list changes
+   * between the render that captured the index and the write that uses it, and
+   * a control commits when a burst of typing *ends* rather than on the
+   * keystroke — so an undo, a drag, or a rule removed above this one all land
+   * in that gap. The fuzzer found it after 51,200 actions: type into a rule's
+   * Name, remove a rule, and `draft.styleRules[index]` is `undefined`.
+   *
+   * **The throw was the lucky half.** Where the index still exists but now
+   * holds a different rule, the edit lands silently on a rule the user was not
+   * editing — the same shape as `App.workingRows()[srcIndex]`, which also
+   * returns a perfectly good answer about the wrong thing.
+   *
+   * Absent means the rule went while the edit was in flight, and the edit goes
+   * with it: there is nothing left to apply it to, and inventing somewhere to
+   * put it is how the wrong rule gets written.
+   */
+  ruleIn(draft, id) {
+    return (draft.styleRules || []).find((r) => r.id === id) || null;
+  },
+
+  /**
+   * One of a rule's locations, by the rule's identity and the location's
+   * position within it.
+   *
+   * **A location has no id**, so this half stays positional — but scoped to the
+   * right rule, which is the part that was going wrong. Within one rule the
+   * index only moves when that rule's own locations are edited, and a location
+   * removed under an in-flight edit resolves to nothing and drops it, as above.
+   * Giving locations ids would close the last of it and costs a spec migration;
+   * it is not worth one for the gap that is left.
+   */
+  locationIn(draft, ruleId, locIndex) {
+    const rule = PanelStyle.ruleIn(draft, ruleId);
+    return (rule && rule.locations && rule.locations[locIndex]) || null;
+  },
+
   body(rule, index, columns, byId) {
     const body = Util.el('div');
-    const update = (fn, coalesce) => Store.update((draft) => fn(draft.styleRules[index]),
-      { coalesce: coalesce });
+    const update = (fn, coalesce) => Store.update((draft) => {
+      const target = PanelStyle.ruleIn(draft, rule.id);
+      if (target) fn(target);
+    }, { coalesce: coalesce });
 
     body.appendChild(Controls.field('Name', Controls.text('sr.label.' + rule.id, rule.label,
       (value) => update((r) => { r.label = value; }, 'sr.label.' + rule.id))));
@@ -181,6 +229,12 @@ const PanelStyle = {
       field.focus();
       try { field.setSelectionRange(caret, caret); } catch (e) { /* not selectable */ }
 
+      // The chip keeps focus on the field, so nothing blurred and a burst of
+      // typing from a moment ago may still be waiting to commit. `next` was
+      // read from the live field, so it already contains everything that
+      // burst held — letting it land afterwards would put the older text back
+      // and take the inserted name out again.
+      Controls.cancelPending();
       onChange(next);
     };
 
@@ -246,7 +300,10 @@ const PanelStyle = {
   },
 
   locationEditor(rule, ruleIndex, loc, locIndex, columns, byId) {
-    const update = (fn) => Store.update((draft) => fn(draft.styleRules[ruleIndex].locations[locIndex]));
+    const update = (fn) => Store.update((draft) => {
+      const target = PanelStyle.locationIn(draft, rule.id, locIndex);
+      if (target) fn(target);
+    });
     const part = StyleRules.PARTS.find((p) => p.id === loc.part) || StyleRules.PARTS[0];
 
     const nodes = [];
@@ -260,7 +317,8 @@ const PanelStyle = {
         title: 'Remove this location',
         on: {
           click: () => Store.update((draft) => {
-            draft.styleRules[ruleIndex].locations.splice(locIndex, 1);
+            const target = PanelStyle.ruleIn(draft, rule.id);
+            if (target) target.locations.splice(locIndex, 1);
           })
         }
       })
@@ -298,7 +356,8 @@ const PanelStyle = {
       if (mode === 'expr') {
         nodes.push(Controls.field(null, Controls.text('loc.expr.' + rule.id + '.' + locIndex,
           loc.rows.expr, (value) => Store.update((draft) => {
-            draft.styleRules[ruleIndex].locations[locIndex].rows.expr = value;
+            const target = PanelStyle.locationIn(draft, rule.id, locIndex);
+            if (target) target.rows.expr = value;
           }, { coalesce: 'loc.expr.' + rule.id + '.' + locIndex }),
           { placeholder: 'population > 1e6 && state != "NT"' }), { wide: true }));
 
@@ -311,7 +370,8 @@ const PanelStyle = {
         nodes.push(PanelStyle.scopeList(columns,
           'loc.expr.' + rule.id + '.' + locIndex,
           (value) => Store.update((draft) => {
-            draft.styleRules[ruleIndex].locations[locIndex].rows.expr = value;
+            const target = PanelStyle.locationIn(draft, rule.id, locIndex);
+            if (target) target.rows.expr = value;
           }, { coalesce: 'loc.expr.' + rule.id + '.' + locIndex })));
       }
     }
@@ -392,7 +452,11 @@ const PanelStyle = {
     const textFields = StyleRules.TEXT_PROPS.map((prop) =>
       Controls.field(prop.label,
         Controls.forParam(prop, text[prop.key], (value) => onSet('text', prop.key, value),
-          keyPrefix + '.text', { unset: 'inherit' })));
+          keyPrefix + '.text', { unset: 'inherit' }),
+        // A property whose effect depends on something set elsewhere says so.
+        // `whitespace` does nothing until a column width makes the text wrap,
+        // which is why it read as broken.
+        prop.hint ? { hint: prop.hint } : null));
 
     wrap.appendChild(Controls.section('Text', textFields, { key: keyPrefix + '.text' }));
 

@@ -33,6 +33,18 @@ const PanelStructure = {
     const byId = {};
     for (const col of columns) byId[col.id] = col;
 
+    // A copy of `column_labels.hidden`, not a move. The Options panel is a 1:1
+    // mirror of `tab_options()` and every key has to stay reachable there —
+    // but "should this table have column labels at all" is a question about
+    // the table's shape, and nobody goes looking for it twenty rows down a
+    // list of fonts and paddings.
+    panel.appendChild(Controls.field('Hide the whole header',
+      Controls.checkbox('st.hideHeader', Spec.headerHidden(spec),
+        (on) => Store.update((draft) => { draft.options['column_labels.hidden'] = on; },
+          { label: on ? 'Hide the header' : 'Show the header' })),
+      { hint: 'Takes off the column labels, any column-group rows above them, and the ' +
+          'row-label header. A title or subtitle then sits directly on top of the body.' }));
+
     panel.appendChild(PanelStructure.columnsSection(spec, columns, byId));
 
     return panel;
@@ -79,7 +91,16 @@ const PanelStructure = {
         Controls.text('col.label.' + colId, st.labels[colId] === undefined ? '' : st.labels[colId],
           (value) => Store.update((draft) => { draft.structure.labels[colId] = value; },
             { coalesce: 'col.label.' + colId }),
-          { placeholder: Spec.columnLabel(spec, col) || '(blank heading)' })));
+          { placeholder: Spec.columnLabel(spec, col) || '(blank heading)' }),
+        // Still editable — the label is kept, and the R export still carries
+        // `cols_label()` — but nothing on the page is drawing it. No fix
+        // button: the switch is at the top of this same panel.
+        {
+          requires: {
+            met: !Spec.headerHidden(spec),
+            because: 'The header is hidden, so this label is not drawn.'
+          }
+        }));
 
       body.appendChild(Controls.field('Align',
         Controls.select('col.align.' + colId, ['auto', 'left', 'center', 'right'],

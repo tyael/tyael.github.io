@@ -230,6 +230,36 @@ const Util = {
    * @param {boolean} [opts.timeOnly] - accept a bare `09:30`, dated today.
    * @returns {Date|null}
    */
+  /**
+   * A `Date` written as ISO, in local time.
+   *
+   * Local, deliberately: every date in this app is read as a wall-clock date
+   * with no zone — `14/05/2013` is the fourteenth of May wherever you are —
+   * and `toISOString` would shift it by the offset and hand back the
+   * thirteenth for anyone east of Greenwich.
+   *
+   * The one place this spelling lives. `ExportRgt.isoOf` had it, `Dates`
+   * needed it, `Formatters.formatDate` restated it for its `iso` style, and
+   * more than one of them is how a table's values and its R stop agreeing
+   * about what a date is.
+   *
+   * **The year is padded to four, like the month and day.** It was not, and
+   * every other reader here wants four: `Util.dateParts` matches `\d{4}` and
+   * nothing else, so year 850 went out as `850-05-14` and came back as
+   * nothing at all. Normalising a column of them therefore put it beyond
+   * `Compute.sortRows` and every date format in the app — the switch quietly
+   * producing the unreadable column it exists to prevent. `Util.dateAt` goes
+   * out of its way to keep a year 50 a year 50 rather than 1950, so a small
+   * year is a thing this app means to hold, and this is the other half of it.
+   */
+  toIso(date, withTime) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const day = String(date.getFullYear()).padStart(4, '0') +
+      '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+    if (!withTime) return day;
+    return day + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds());
+  },
+
   toDate(value, opts) {
     opts = opts || {};
     if (value instanceof Date) return isNaN(value.getTime()) ? null : value;

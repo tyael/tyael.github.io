@@ -32,6 +32,17 @@ const Spec = {
         rows: []       // [{colId: value}]
       },
 
+      /* Values rewritten before the pipeline runs.
+
+         The one transform that cannot be a step, and not for want of trying:
+         a step sees the state the steps above it produced, and this has to be
+         true of the data every step reads — a sort ordering dates, a filter
+         comparing them, a pivot keying on them. So it sits between the file
+         and the pipeline, which is the only place "before everything" exists. */
+      dates: {
+        iso: []            // column ids read and rewritten as ISO
+      },
+
       /* The structural pipeline: an ordered list of steps turning the file
          above into the table the aesthetic layer decorates. See pipeline.js
          for the step types and why the two stages cannot interleave. This
@@ -222,7 +233,7 @@ const Spec = {
     // so pruning against the file dropped the width, alignment and hidden flag
     // of every derived column on reimport, while the column itself came
     // straight back.
-    columns = columns || Pipeline.run(spec.source, spec.pipeline).columns;
+    columns = columns || Pipeline.run(Spec.workingSource(spec), spec.pipeline).columns;
     const ids = columns.map((c) => c.id);
     const known = new Set(ids);
     const st = spec.structure;
@@ -320,7 +331,7 @@ const Spec = {
     const out = Object.assign({}, base, obj);
 
     // Merge one level deep for the structured sections.
-    for (const key of ['source', 'structure', 'parts', 'subs', 'meta']) {
+    for (const key of ['source', 'structure', 'parts', 'subs', 'meta', 'dates']) {
       out[key] = Object.assign({}, base[key], obj[key] || {});
     }
 
@@ -512,6 +523,53 @@ const Spec = {
         : title;
     }
     return out;
+  },
+
+  /**
+   * Is the whole column-label header hidden?
+   *
+   * `column_labels.hidden` is gt's own name and gt's own behaviour, and both
+   * are broader than the name suggests: it takes the **entire header block** —
+   * the label row, any column-group rows above it, and the stubhead — not just
+   * the labels. `Edges.gridRows` drops all of them together, which is why one
+   * boolean reaches the preview, the HTML, the SVG, the LaTeX and the border
+   * grid without any of them knowing about it.
+   */
+  headerHidden(spec) {
+    return !!(spec && spec.options && spec.options['column_labels.hidden']);
+  },
+
+  /**
+   * Is this location somewhere the table is not currently drawing?
+   *
+   * The question a footnote has to ask before it anchors: gt keeps a
+   * footnote's text in the footer whatever it points at, and simply drops the
+   * mark when the thing it marks is not on the page. The note then sits under
+   * the table referring to a marker nobody can see — confirmed against real
+   * gt rather than inferred, which is the only reason it is worth guarding.
+   */
+  inHiddenHeader(spec, loc) {
+    if (!loc || !loc.part || !Spec.headerHidden(spec)) return false;
+    const part = StyleRules.PARTS.find((p) => p.id === loc.part);
+    return !!(part && part.header);
+  },
+
+  /**
+   * The source every structural operation starts from.
+   *
+   * **`spec.source` is the file; this is the file as the table reads it.** The
+   * only thing between them is `Dates`, which rewrites a date column to ISO
+   * when asked — and which has to run before the pipeline rather than inside
+   * it, because a step sees what the steps above it produced and this has to
+   * be true of what every step reads.
+   *
+   * Every `Pipeline.run` in the app comes through here, so that the panels
+   * cannot be looking at the file while the table draws something else. That
+   * is not hypothetical: four readers of a moved fact survived the pipeline
+   * cutover looking perfectly correct, and this is the same shape of trap.
+   */
+  workingSource(spec) {
+    return Dates.source(spec);
   },
 
   /** True when the spec has data to render. */
@@ -710,28 +768,38 @@ const Store = {
   },
 
   /**
-   * A working copy of a spec, sharing the imported data rather than copying it.
+   * A working copy of a spec, sharing the imported rows rather than copying them.
    *
-   * **`spec.source` is immutable within a timeline, and it is nearly all of a
-   * spec's weight.** Nothing in the app writes into it: corrections are an
-   * override layer precisely so the file as imported survives, `Reshape` and
-   * `Corrections` both hand back `source.rows` itself when they change
-   * nothing, and the only way a source is *replaced* — import, open, new
-   * project — goes through `Store.replace` or `Store.init`, which start a
-   * fresh history anyway. So every entry in one timeline can share one copy.
+   * **`source.rows` is immutable within a timeline, and it is nearly all of a
+   * spec's weight.** Nothing writes into it: corrections are an override layer
+   * precisely so the file as imported survives, `Reshape`, `Corrections` and
+   * `Dates` all hand back `source.rows` itself when they change nothing, and
+   * the only way a source is *replaced* — import, open, new project — goes
+   * through `Store.replace` or `Store.init`, which start a fresh history
+   * anyway. So every entry in one timeline can share one copy of the data.
    *
    * Measured on a 2,000 × 40 table, which is inside the app's own preview cap:
    * 61 history entries cost **158 MB** cloned whole and **0.8 MB** sharing the
    * source. That is what a browser tab runs out of memory on, and a fuzz run
-   * did — sixty edits on a table that size is an ordinary afternoon.
+   * did — sixty edits on a table that size is an ordinary afternoon. It is also
+   * most of the cost of an edit: `Util.clone` serialises whatever it is handed,
+   * so every keystroke was re-serialising the whole dataset.
    *
-   * It is also most of the cost of an edit. `Util.clone` serialises whatever
-   * it is handed, so every keystroke was re-serialising the whole dataset.
+   * **`source.columns` is copied, and that is not a hedge.** The claim used to
+   * be that nothing writes into `source` at all, and one control did: the Type
+   * dropdown in the Data panel assigns `column.type` straight into it. Sharing
+   * the object meant that assignment landed on every entry in the timeline at
+   * once, past and future — so undo moved the cursor back over a change that
+   * was still there, and a column retyped by mistake could not be untyped.
+   * Columns are a handful of small objects where the rows are megabytes, so
+   * copying them costs nothing and buys back the invariant.
    */
   draftOf(spec) {
     const source = spec.source;
     const draft = Util.clone(Object.assign({}, spec, { source: null }));
-    draft.source = source;
+    draft.source = Object.assign({}, source, {
+      columns: (source.columns || []).map((col) => Object.assign({}, col))
+    });
     return draft;
   },
 

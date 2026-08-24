@@ -91,6 +91,12 @@ const Compute = {
       header: { show: false, totalRows: 0, lead: [], levels: [] },
       footnotes: [],
       sourceNotes: [],
+      // Empty rather than absent, for the same reason as `rows` and `cols`
+      // above: the Style panel's hover preview and the Inspector both compile
+      // against this, and a model that did not resolve is still one they can be
+      // holding. An empty `columnsById` makes `evalRowExpr` answer "nothing
+      // matches", which is the truth about a table that did not resolve.
+      ruleContext: { rows: [], columnsById: {}, sequence: [], bodyColumns: [] },
       title: '',
       subtitle: '',
       totalRows: 0,
@@ -110,7 +116,7 @@ const Compute = {
     // `pipeline.js`. This used to be five fixed stages hard-coded here, in
     // whatever order the code was written in, with nothing on screen saying
     // there was an order at all.
-    const shaped = Pipeline.run(spec.source, spec.pipeline);
+    const shaped = Pipeline.run(Spec.workingSource(spec), spec.pipeline);
     model.warnings.push.apply(model.warnings, shaped.warnings);
     // Per step: whether it did nothing, and anything it could not do. The
     // Shape panel puts these on the step; the table-wide banner carries only
@@ -224,6 +230,10 @@ const Compute = {
     // For `export-rgt.js`: an unset summary format follows the column being
     // totalled, and this is the one place that resolved which format that is.
     model.formatPlan = formatPlan;
+    // A sort the export will not reproduce. It reads the plan, so it cannot be
+    // a note the sort step makes as it runs — the plan is not resolved until
+    // every step has finished changing the columns.
+    Compute.warnMixedDateSort(spec, model, working);
     // Over the rows that survived the filter, not the whole source: a scale
     // fitted to rows nobody can see leaves the visible ones bunched at one end
     // of it. Summaries do the same by construction, since they are built from
@@ -233,16 +243,37 @@ const Compute = {
 
     /* ---- 6. Style rules ---- */
 
-    const compiled = StyleRules.compile(spec.styleRules, {
+    /*
+     * **The one context a style rule is ever compiled in.**
+     *
+     * `rows` is indexed by `srcIndex`, because that is what `StyleRules.resolve`
+     * looks a matched row up by. `App.workingRows()` is the same rows in the
+     * order they are *drawn*, and under a sort those are different arrays —
+     * which is what the Style panel's hover preview used to build its own
+     * context out of, so it lit up whichever row happened to be sitting at the
+     * matched position. The rule itself was right; only the preview of it was
+     * wrong, which is the hardest kind of wrong to believe.
+     *
+     * `sequence` and `bodyColumns` are for a `where` expression that names a
+     * neighbouring cell: the rows in the order they are drawn, and the body
+     * columns in the order they are drawn, because "above" and "left" are about
+     * the page rather than about the file. Left out, `evalRowExpr` falls back to
+     * treating the source order as the page order and every column as a body
+     * column — wrong twice over, and silently.
+     *
+     * It rides on the model rather than being rebuilt by each caller because
+     * the model is what the table on screen was rendered from: a preview
+     * painted over those nodes has to answer the question the same way they
+     * did, and recomputing from the spec is how it stops doing so.
+     */
+    model.ruleContext = {
       rows: rows,
       columnsById: columnsById,
-      // For a `where` expression that names a neighbouring cell: the rows in
-      // the order they are drawn, and the body columns in the order they are
-      // drawn. Both are needed because "above" and "left" are about the page,
-      // not about the file.
       sequence: displayRows,
       bodyColumns: Compute.bodyColumnIds(model)
-    });
+    };
+
+    const compiled = StyleRules.compile(spec.styleRules, model.ruleContext);
     const compiledRules = compiled.rules;
     // Comes back from this compile, so it cannot describe a rule that is no
     // longer here — see the note on `StyleRules.compile`.
@@ -446,6 +477,27 @@ const Compute = {
           else if (na === null) return 1;
           else if (nb === null) return -1;
           else cmp = na - nb;
+        } else if (col.type === 'date') {
+          /*
+           * **A date column sorted as text is not sorted.** There were two
+           * branches here, `number` and everything else, and a date fell into
+           * the text one — so `14/05/2013`, `03/05/2016`, `25/12/2011` came out
+           * in that order reversed rather than in the order they happened, and
+           * a day-first column came out in an order with no meaning at all.
+           *
+           * Read the same way every other date in the app is read: through
+           * `Util.toDate`, with the column's own `dateOrder`, because one
+           * `14/05/2013` in a column settles how every `3/05/2016` beside it
+           * is read and the value alone cannot say.
+           */
+          const opts = Formatters.dateOpts({}, { column: col });
+          const da = Util.toDate(av, opts);
+          const db = Util.toDate(bv, opts);
+          // Unreadable sorts with missing — last, whichever way round.
+          if (da === null && db === null) cmp = 0;
+          else if (da === null) return 1;
+          else if (db === null) return -1;
+          else cmp = da.getTime() - db.getTime();
         } else {
           // Missing last here too, whichever direction is asked for — the
           // numeric branch above has always said so and this one mapped a
@@ -474,6 +526,67 @@ const Compute = {
     });
   },
 
+  /**
+   * Say so when a sort will come out of the export in a different order.
+   *
+   * `sortRows` above reads every notation a column holds, through
+   * `Util.toDate`. `dplyr::arrange()` gets one `strptime` format per column,
+   * built by `ExportRgt.dateFormatArg` from the day/month order and separator
+   * the importer recorded — and a column written two ways, `14/05/2013` beside
+   * `2016-05-03`, has no single separator, so `Csv.inferDateSeparator` records
+   * none. `ExportRgt.sortCall` then falls back to `stringr::str_rank()`, a rank
+   * over characters, and the exported table comes out in an order the preview
+   * never showed.
+   *
+   * **That fallback is deliberate and stays.** A format picked anyway would
+   * turn most of the column into `NA`, and a silent re-ordering is worse than a
+   * visible wrong one. What was missing is only that nothing on screen said the
+   * two had parted company — while the fix, normalising the column to ISO, was
+   * already built and one tab away.
+   *
+   * **A date format on the column settles it by itself**, which is why the plan
+   * is consulted and not just the column. `ExportRgt.dateColumns` puts a
+   * formatted column into the tibble as ISO, and `str_rank(numeric = TRUE)`
+   * over ISO *is* chronological — checked by running it, not reasoned about.
+   * Warning there would be crying wolf about a table that agrees.
+   *
+   * Both halves are the exporter's own predicates rather than a restatement of
+   * them, so this cannot come to describe an export that no longer works that
+   * way.
+   */
+  warnMixedDateSort(spec, model, working) {
+    const asIso = ExportRgt.dateColumns(working, model);
+    const said = new Set();
+    // A `remove` step *below* the sort leaves a column the sort still ordered
+    // by and the export still emits an `arrange()` for, so the row order parts
+    // company over a column nobody can see. Falling back to the source is
+    // exact rather than approximate: `dateOrder` is recorded by the importer
+    // and only ever copied from there — a pivot's value columns are built with
+    // a `type` and nothing else — so every column that can carry one is here.
+    const source = Spec.workingSource(spec);
+    const sourceById = {};
+    for (const col of source.columns) sourceById[col.id] = col;
+
+    (model.pipelineNotes || []).forEach((notes, index) => {
+      const step = spec.pipeline[index];
+      if (!step || step.type !== 'sort') return;
+      // An inert step sorted nothing here and emits nothing there, so there is
+      // no disagreement to report.
+      if (notes.inert || !Spec.isEnabled(step)) return;
+
+      for (const key of (step.keys || [])) {
+        const column = model.columnsById[key.col] || sourceById[key.col];
+        if (!column || said.has(key.col)) continue;
+        if (asIso[key.col] || !ExportRgt.dateUnreadable(column)) continue;
+        said.add(key.col);
+        model.warnings.push('“' + Spec.columnTitle(spec, column) + '” is sorted by date here ' +
+          'and by its text in the exported R — it is written in more than one date notation, ' +
+          'and R needs a single one. Turn on “Normalise to ISO” for it in the Data tab and ' +
+          'the two will agree.');
+      }
+    });
+  },
+
   /* ================================================================
      Formatting
      ================================================================ */
@@ -487,9 +600,12 @@ const Compute = {
    * `mode: 'index'` filtered the preview, no control in either panel could set
    * it, and neither exporter emitted it — so the only way to reach it was to
    * hand-edit a saved project, and doing so produced a table whose R printed
-   * different values. gt has `rows =` on `data_color()` and on the `fmt_*`
-   * family if this is ever wanted for real; it needs a control and an emitted
-   * argument, not a resurrected branch.
+   * different values.
+   *
+   * **This is the answer, not a gap.** gt has `rows =` on `data_color()` and on
+   * the `fmt_*` family, and the app deliberately does not: a table that needs
+   * two formats down one column is a job for gt directly, by hand. `rule.rows`
+   * stays a dead field. Do not resurrect the branch.
    *
    * @returns {Object} colId -> {type, opts}
    */

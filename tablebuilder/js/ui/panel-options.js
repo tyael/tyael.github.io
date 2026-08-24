@@ -68,6 +68,9 @@ const PanelOptions = {
       dataset: { ctl: 'opt.search' },
       on: {
         input: (e) => {
+          // Neither deferred nor held: this filters the panel rather than
+          // changing the spec, so the rebuild *is* the keystroke's effect, and
+          // `renderRail` never yields to the box it is called from.
           PanelOptions._query = e.target.value;
           App.renderRail();
         }
@@ -87,7 +90,7 @@ const PanelOptions = {
       panel.appendChild(Controls.button('Reset all to defaults', () => {
         if (!window.confirm('Reset every appearance option to its default?\n\n' +
           'Structural choices — row groups as a column, the default group label, ' +
-          'a hidden label row — are kept.')) return;
+          'a hidden header — are kept.')) return;
         Store.update((draft) => {
           const next = OptionsSchema.defaults();
           for (const key of OptionsSchema.structural()) next[key] = draft.options[key];
@@ -152,6 +155,8 @@ const PanelOptions = {
       const changedRest = rest.filter((row) => PanelOptions.rowChanged(row, changedKeys)).length;
 
       const nodes = [Util.el('div.field-hint', { text: group.hint })];
+      const inert = PanelOptions.groupInert(spec, group);
+      if (inert) nodes.push(inert);
       for (const row of basic) nodes.push(PanelOptions.rowField(spec, row, changedKeys));
 
       if (rest.length) {
@@ -190,6 +195,30 @@ const PanelOptions = {
   /* ================================================================
      Rows
      ================================================================ */
+
+  /**
+   * Why a whole group is drawing nothing, when that is the case.
+   *
+   * Twenty-odd fonts, paddings and borders for a header that is switched off
+   * read as broken rather than as inert, and the switch is in a different
+   * panel — so the note carries the way there. Same shape as
+   * `Controls.field`'s `requires`, one level up.
+   */
+  groupInert(spec, group) {
+    if (group.id !== 'column_labels' || !Spec.headerHidden(spec)) return null;
+
+    return Util.el('div.field-hint.field-inert-note', null, [
+      Util.el('span', { text: 'The header is hidden, so none of this is drawn — ' +
+        'the label row, the column-group rows and the stubhead are all off.' }),
+      Util.el('button.btn.btn-mini.btn-ghost', {
+        type: 'button',
+        text: 'Go to Columns',
+        // `goToPanel`, not `setPanel` — `setPanel` only sets the state, and
+        // the one place rail navigation happens is the one that also renders.
+        on: { click: () => App.goToPanel('structure') }
+      })
+    ]);
+  },
 
   /** Every option a row covers — one, or the three of a composite border. */
   rowOptions(row) {

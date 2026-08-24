@@ -134,8 +134,19 @@ const PanelContent = {
           { coalesce: 'fn.text.' + note.id }), { rows: 2, placeholder: 'Footnote text' }),
         { wide: true }));
 
+      // A note anchored before the header was hidden cannot be refused after
+      // the fact, so it is reported instead: its text is still in the footer,
+      // and its mark is nowhere.
       body.appendChild(Controls.field('Attached to',
-        Util.el('span.mono.dim', { text: PanelContent.describeLocation(note.location) })));
+        Util.el('span.mono.dim', { text: PanelContent.describeLocation(note.location) }),
+        {
+          requires: {
+            met: !Spec.inHiddenHeader(spec, note.location),
+            because: 'This is in the header, which is hidden — the text still ' +
+              'prints in the footer, but the mark is not drawn.',
+            fix: { label: 'Go to Columns', panel: 'structure' }
+          }
+        }));
 
       body.appendChild(Controls.actions([
         Controls.button('Attach to selection', () => PanelContent.attachToSelection(index),
@@ -150,7 +161,8 @@ const PanelContent = {
       key: 'footnotes',
       title: (note) => (marks[note.id] ? marks[note.id] + '  ' : '') +
         (Util.truncate(Markup.toPlain(note.text), 30) || '(empty)'),
-      subtitle: (note) => PanelContent.describeLocation(note.location),
+      subtitle: (note) => PanelContent.describeLocation(note.location) +
+        (Spec.inHiddenHeader(spec, note.location) ? '  ·  mark not drawn' : ''),
       onRemove: (note, index) => Store.update((draft) => { draft.parts.footnotes.splice(index, 1); }),
       onReorder: (from, to) => Store.update((draft) => {
         draft.parts.footnotes = Util.moveItem(draft.parts.footnotes, from, to);
@@ -185,12 +197,37 @@ const PanelContent = {
     ], { key: 'content.footnotes' });
   },
 
+  /**
+   * Why this location cannot carry a mark, or null if it can.
+   *
+   * **gt keeps a footnote's text whatever it points at, and silently drops the
+   * mark when the thing it marks is not drawn.** With the header hidden, a
+   * note anchored to a column label renders as `1 A NOTE` under a table with
+   * no `1` anywhere in it — checked against real gt, and the preview does
+   * exactly the same. There is no reason to want a footnote on a label nobody
+   * can see, so it is refused rather than explained after the fact.
+   */
+  anchorRefusal(spec, loc) {
+    if (!Spec.inHiddenHeader(spec, loc)) return null;
+    const part = StyleRules.PARTS.find((p) => p.id === loc.part);
+    return (part ? part.label : loc.part) + ' is not drawn while the header is ' +
+      'hidden, so the mark would have nowhere to go.';
+  },
+
   addFootnote(selection) {
+    const loc = selection.length ? PanelContent.locationOf(selection[0]) : null;
+    const refused = PanelContent.anchorRefusal(Store.get(), loc);
+
+    // The note is still made, just unattached — an unattached footnote is an
+    // ordinary state, and throwing away the text someone was about to write
+    // would be the ruder half of refusing.
+    if (refused) Util.toast(refused + ' Added without an anchor.', 'error', 5000);
+
     Store.update((draft) => {
       draft.parts.footnotes.push({
         id: Util.uid('fn'),
         text: 'Footnote text',
-        location: selection.length ? PanelContent.locationOf(selection[0]) : null
+        location: refused ? null : loc
       });
     });
   },
@@ -201,8 +238,16 @@ const PanelContent = {
       Util.toast('Select something in the table first', 'error');
       return;
     }
+
+    const loc = PanelContent.locationOf(selection[0]);
+    const refused = PanelContent.anchorRefusal(Store.get(), loc);
+    if (refused) {
+      Util.toast(refused, 'error', 5000);
+      return;
+    }
+
     Store.update((draft) => {
-      draft.parts.footnotes[index].location = PanelContent.locationOf(selection[0]);
+      draft.parts.footnotes[index].location = loc;
     });
   },
 

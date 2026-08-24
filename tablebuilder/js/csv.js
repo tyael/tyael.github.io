@@ -124,6 +124,10 @@ const Csv = {
       // value is read. See `Csv.inferDateOrder`.
       const order = Csv.inferDateOrder(rows, col.id);
       if (order) col.dateOrder = order;
+      const sep = Csv.inferDateSeparator(rows, col.id);
+      if (sep) col.dateSeparator = sep;
+      const clock = Csv.inferDateClock(rows, col.id);
+      if (clock) col.dateClock = clock;
     }
 
     const spanners = Csv.spannersFrom(table.slice(0, Math.max(0, headerRows - 1)), columns);
@@ -317,7 +321,12 @@ const Csv = {
     for (const row of sample) {
       const value = row[colId];
       if (Util.isMissing(value)) continue;
-      const match = /^(\d{1,2})[-/.](\d{1,2})[-/.]\d{2,4}$/.exec(String(value).trim());
+      // The *date* part: a value carrying a clock is still a value that says
+      // which number is the day. Matching the whole string meant a column of
+      // `14/05/2013 09:05` reported no order at all, so `Util.toDate` fell
+      // back to month-first and read every `3/05/2016` beside it as March.
+      const match = /^(\d{1,2})[-/.](\d{1,2})[-/.]\d{2,4}$/
+        .exec(Util.splitTime(String(value).trim()).date.trim());
       if (!match) continue;
       const first = Number(match[1]);
       const second = Number(match[2]);
@@ -330,6 +339,74 @@ const Csv = {
     if (dayFirst && !monthFirst) return 'dmy';
     if (monthFirst && !dayFirst) return 'mdy';
     return null;
+  },
+
+  /**
+   * Which character a column's dates are written with, or null.
+   *
+   * `14/05/2013` and `14-05-2013` are both day-first, and nothing that reads
+   * them here has to care — `Util.toDate` takes either. **R does.**
+   * `as.Date(x, format = "%d/%m/%Y")` returns `NA` for the dashed one, and a
+   * column of `NA` sorts as one block, so the exported table came out in a
+   * different order from the preview. Recorded beside `dateOrder`, in the one
+   * place that sees the whole column at once, and for the same reason.
+   *
+   * Null where the column is ISO or says nothing consistent: `as.Date` reads
+   * ISO with no format at all, which is also the shorter thing to emit.
+   *
+   * @returns {'/'|'-'|'.'|null}
+   */
+  inferDateSeparator(rows, colId) {
+    const sample = rows.length > Csv.INFER_SAMPLE ? rows.slice(0, Csv.INFER_SAMPLE) : rows;
+    const seen = {};
+
+    for (const row of sample) {
+      const value = row[colId];
+      if (Util.isMissing(value)) continue;
+      const match = /^\d{1,2}([-/.])\d{1,2}\1\d{2,4}$/
+        .exec(Util.splitTime(String(value).trim()).date.trim());
+      if (match) seen[match[1]] = (seen[match[1]] || 0) + 1;
+    }
+
+    const found = Object.keys(seen);
+    // Two separators in one column is not a separator, the same way two
+    // day/month orders in one column is not an order.
+    return found.length === 1 ? found[0] : null;
+  },
+
+  /**
+   * The clock shape a column's values carry, as an `strptime` fragment, or null.
+   *
+   * The third fact R needs and nothing here does. `Util.toDate` reads
+   * `09:05`, `09:05:30` and `9:05 pm` without being told which; `as.Date` and
+   * `as.POSIXct` want one format, and one that stops short of the clock throws
+   * the time away — so two rows on the same day tie in the exported table and
+   * are ordered in the preview.
+   *
+   * Only the two unambiguous shapes, and only when the column is all one of
+   * them: an am/pm or offset-bearing column returns null and the exporter
+   * falls back rather than emitting a format that quietly mis-parses.
+   *
+   * @returns {'%H:%M'|'%H:%M:%S'|null}
+   */
+  inferDateClock(rows, colId) {
+    const sample = rows.length > Csv.INFER_SAMPLE ? rows.slice(0, Csv.INFER_SAMPLE) : rows;
+    const seen = {};
+
+    for (const row of sample) {
+      const value = row[colId];
+      if (Util.isMissing(value)) continue;
+      const split = Util.splitTime(String(value).trim());
+      if (!split.time || !split.date) continue;
+      const clock = /^\s*\d{1,2}:\d{2}:\d{2}\s*$/.test(String(value).slice(split.date.length))
+        ? '%H:%M:%S'
+        : (/^\s*\d{1,2}:\d{2}\s*$/.test(String(value).slice(split.date.length)) ? '%H:%M' : 'other');
+      seen[clock] = (seen[clock] || 0) + 1;
+    }
+
+    const found = Object.keys(seen);
+    if (found.length !== 1 || found[0] === 'other') return null;
+    return found[0];
   },
 
   /** Serialise a resolved table back out as CSV (used by the export panel). */

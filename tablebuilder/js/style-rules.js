@@ -25,9 +25,15 @@ const StyleRules = {
   PARTS: [
     { id: 'body', label: 'Body cells', gt: 'cells_body', columns: true, rows: true, optionGroup: 'table_body' },
     { id: 'stub', label: 'Row labels', gt: 'cells_stub', columns: false, rows: true, optionGroup: 'stub' },
-    { id: 'column_labels', label: 'Column labels', gt: 'cells_column_labels', columns: true, rows: false, optionGroup: 'column_labels' },
-    { id: 'column_spanners', label: 'Column groups', gt: 'cells_column_spanners', columns: false, rows: false, spanners: true, optionGroup: 'column_labels' },
-    { id: 'stubhead', label: 'Row-label header', gt: 'cells_stubhead', columns: false, rows: false, optionGroup: 'column_labels' },
+    // `header: true` is the three parts that live in the column-label header
+    // block and so are not drawn at all under `column_labels.hidden` — which
+    // takes the whole block, not just the label row. It is read through
+    // `Spec.inHiddenHeader`, and it is deliberately *not* one of the flags
+    // `Compute.locationKey` identifies a location by: adding it must not
+    // change what a persisted footnote anchors to.
+    { id: 'column_labels', label: 'Column labels', gt: 'cells_column_labels', columns: true, rows: false, header: true, optionGroup: 'column_labels' },
+    { id: 'column_spanners', label: 'Column groups', gt: 'cells_column_spanners', columns: false, rows: false, spanners: true, header: true, optionGroup: 'column_labels' },
+    { id: 'stubhead', label: 'Row-label header', gt: 'cells_stubhead', columns: false, rows: false, header: true, optionGroup: 'column_labels' },
     { id: 'row_groups', label: 'Row group labels', gt: 'cells_row_groups', columns: false, rows: false, groups: true, optionGroup: 'row_group' },
     { id: 'summary', label: 'Summary rows', gt: 'cells_summary', columns: true, rows: false, groups: true, optionGroup: 'summary_row' },
     { id: 'grand_summary', label: 'Grand summary', gt: 'cells_grand_summary', columns: true, rows: false, optionGroup: 'summary_row' },
@@ -37,7 +43,24 @@ const StyleRules = {
     { id: 'source_notes', label: 'Source notes', gt: 'cells_source_notes', columns: false, rows: false, optionGroup: 'source_notes' }
   ],
 
-  /** Text properties a rule can set, mirroring gt's `cell_text()`. */
+  /**
+   * Text properties a rule can offer, mirroring gt's `cell_text()`.
+   *
+   * **`stretch` is deliberately not here, and `toCss` still reads it.** A
+   * browser synthesises bold and oblique but never a width: `font-stretch`
+   * only ever *selects* a condensed or expanded face the family already has,
+   * and none of the sixteen built-ins has one — `index.html` asks Google Fonts
+   * for `:wght@…` and nothing else, so no `wdth` axis is served, and Google
+   * ships condensed designs as separate families anyway. That is what the
+   * separate `roboto-condensed` stack is for. Measured across every built-in
+   * with the faces confirmed loaded, the control moved nothing at all.
+   *
+   * It stays in `toCss` and in `export-rgt.js` because it is not inert
+   * everywhere: an uploaded variable font with a `wdth` axis answers it, and
+   * so does gt in RStudio against a locally installed condensed face. A spec
+   * or theme that already carries one keeps working — there is just no longer
+   * a control that writes one.
+   */
   TEXT_PROPS: [
     { key: 'color', label: 'Colour', type: 'color' },
     { key: 'font', label: 'Font', type: 'fonts' },
@@ -48,9 +71,8 @@ const StyleRules = {
     { key: 'vAlign', label: 'Vertical align', type: 'select', enum: ['top', 'middle', 'bottom'] },
     { key: 'transform', label: 'Transform', type: 'select', enum: ['none', 'uppercase', 'lowercase', 'capitalize'] },
     { key: 'decorate', label: 'Decoration', type: 'select', enum: ['none', 'underline', 'overline', 'line-through'] },
-    { key: 'stretch', label: 'Stretch', type: 'select',
-      enum: ['normal', 'condensed', 'semi-condensed', 'extra-condensed', 'expanded', 'semi-expanded'] },
-    { key: 'whitespace', label: 'Whitespace', type: 'select', enum: ['normal', 'nowrap', 'pre', 'pre-wrap'] },
+    { key: 'whitespace', label: 'Whitespace', type: 'select', enum: ['normal', 'nowrap', 'pre', 'pre-wrap'],
+      hint: 'Only shows where something makes the text wrap — give the column a width under Structure first.' },
     { key: 'indent', label: 'Indent', type: 'len' }
   ],
 
@@ -477,6 +499,8 @@ const StyleRules = {
     if (text.vAlign) css.verticalAlign = text.vAlign;
     if (text.transform) css.textTransform = text.transform;
     if (text.decorate && text.decorate !== 'none') css.textDecoration = text.decorate;
+    // No longer offered by the editor; still read, for the fonts that answer
+    // it. See TEXT_PROPS.
     if (text.stretch) css.fontStretch = text.stretch;
     if (text.whitespace) css.whiteSpace = text.whitespace;
     if (text.indent) css.paddingLeft = Util.cssLength(text.indent);

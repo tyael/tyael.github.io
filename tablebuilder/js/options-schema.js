@@ -146,7 +146,11 @@ const OptionsSchema = {
     { key: 'column_labels.text_transform', group: 'column_labels', label: 'Text transform', type: 'select', enum: TEXT_TRANSFORMS, default: 'inherit' },
     { key: 'column_labels.padding', group: 'column_labels', label: 'Padding', type: 'len', default: '5px' },
     { key: 'column_labels.padding.horizontal', group: 'column_labels', label: 'Padding (h)', type: 'len', default: '5px' },
-    { key: 'column_labels.hidden', group: 'column_labels', label: 'Hide label row', type: 'bool', default: false, structural: true },
+    // Named for what it does rather than for its key: gt hides the whole
+    // header block, spanners and stubhead included, and "Hide label row" sent
+    // people looking for a separate control for the other two.
+    { key: 'column_labels.hidden', group: 'column_labels', label: 'Hide the whole header', type: 'bool', default: false, structural: true,
+      hint: 'Takes off the labels, any column-group rows above them, and the row-label header. A title sits directly on the body.' },
     ...borderTriplet('column_labels.border.top', 'column_labels', 'Top border', 'solid', '2px', '#D3D3D3'),
     ...borderTriplet('column_labels.border.bottom', 'column_labels', 'Bottom border', 'solid', '2px', '#D3D3D3'),
     ...borderTriplet('column_labels.border.lr', 'column_labels', 'Side borders', 'none', '1px', '#D3D3D3'),

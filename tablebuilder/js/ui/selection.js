@@ -320,13 +320,24 @@ const Selection = {
     // The error this may produce is deliberately dropped: hovering a rule is
     // not editing it, and the render's own compile is what the warning in the
     // Style panel reports on.
+    //
+    // **`model.ruleContext`, never a context built here.** This used to pass
+    // `App.workingRows()`, which is the pipeline's rows in the order they are
+    // *drawn*, while `StyleRules.resolve` looks a matched row up by `srcIndex`.
+    // With a sort in the pipeline those are different arrays, so a `where`
+    // expression lit up whichever row was sitting at the matched position while
+    // the rule itself styled the right one — a preview that disagreed with the
+    // table under it. It also left out `sequence` and `bodyColumns`, so
+    // `above()` and `left()` were resolved against the source order and against
+    // every column rather than the body ones.
+    //
+    // The model is also the right place to read it from rather than the spec:
+    // these nodes were rendered from that model, so an answer computed from
+    // anything else can describe a table that is not on screen.
     const compiled = StyleRules.compile([Object.assign({}, rule, {
       enabled: true,
       style: { text: { color: '#000' } }   // force a non-empty style so it compiles
-    })], {
-      rows: App.workingRows(),
-      columnsById: App.workingColumnsById()
-    });
+    })], (App.model && App.model.ruleContext) || { rows: [], columnsById: {} });
     if (!compiled.rules.length) return;
 
     for (const cell of Util.qsa('.gt-cell', table)) {

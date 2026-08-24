@@ -4,10 +4,21 @@
  * The widget factory every panel is built from.
  *
  * Panels are rebuilt wholesale whenever the spec changes, which keeps them
- * trivially correct but would normally throw away focus mid-keystroke. So each
- * control carries a stable `data-ctl` key, and `rememberFocus`/`restoreFocus`
- * put the caret back exactly where it was after a rebuild. That is what makes
- * "type in a box, watch the table update live" work without any diffing.
+ * trivially correct but would throw away whatever the user was in the middle
+ * of. Three things guard against that, and they are not the same thing:
+ *
+ *   - **Nothing is rebuilt out from under a live interaction.** A caret, an
+ *     open colour picker and a press waiting for its click all live *on* a DOM
+ *     node and die with it. `Controls.busy` is what the render loop asks
+ *     before it destroys a panel; a rebuild refused there is held until the
+ *     interaction ends.
+ *   - **A burst of edits commits once.** `Controls.defer` holds the value
+ *     until the typing stops, so the spec never sees `#a` on the way to
+ *     `#aaaaaa`, and the whole table is not recomputed per character.
+ *   - **The caret survives the rebuilds that cannot be held.** Each control
+ *     carries a stable `data-ctl` key, and `rememberFocus`/`restoreFocus` put
+ *     it back. That is for undo, redo and opening a file — the changes that
+ *     happen *to* the user rather than because of them.
  */
 
 const Controls = {
@@ -47,6 +58,233 @@ const Controls = {
     if (saved.start !== null && saved.start !== undefined && node.setSelectionRange) {
       try { node.setSelectionRange(saved.start, saved.end); } catch (e) { /* not a text input */ }
     }
+  },
+
+  /* ================================================================
+     Live interaction: what a rebuild must not interrupt
+     ================================================================ */
+
+  /**
+   * True between a pointer going down and the click it produces.
+   *
+   * A rebuild inside that window removes the button before its `click` fires,
+   * and the click is then silently lost — the event goes to whichever ancestor
+   * survived, so the handler simply never runs. Every way a press can end
+   * clears this, including the ones that never reach `click` (a drag that ends
+   * in a drop, a press cancelled by a scroll, a window that loses focus mid
+   * press), because a flag stuck true here would freeze the panels for good.
+   */
+  _pressed: false,
+
+  _onIdle: null,
+
+  /**
+   * Watch for the end of an interaction, and say so.
+   *
+   * @param {Function} onIdle - called a task after a press or a focus ends
+   */
+  watch(onIdle) {
+    Controls._onIdle = onIdle;
+
+    const release = () => {
+      // A task later, not now: `pointerup`, `mouseup` and `click` are one
+      // dispatch, and clearing the flag inside it would let a rebuild land
+      // between the press and the click it is about to become.
+      setTimeout(() => {
+        Controls._pressed = false;
+        // A press that reaches the document is the page being used, which a
+        // native picker's own window never is: whatever was open is closed.
+        Controls._picking = null;
+        if (Controls._onIdle) Controls._onIdle();
+      }, 0);
+    };
+
+    document.addEventListener('pointerdown', () => { Controls._pressed = true; }, true);
+    for (const ended of ['pointerup', 'pointercancel', 'dragend', 'drop', 'click']) {
+      document.addEventListener(ended, release, false);
+    }
+    window.addEventListener('blur', release);
+
+    // Focus leaving a field ends an edit without ending a press, so it needs
+    // its own drain. Whether anything is actually free to rebuild is still
+    // `busy`'s answer, asked again on the far side of the timeout.
+    document.addEventListener('focusout', () => setTimeout(() => {
+      if (Controls._onIdle) Controls._onIdle();
+    }, 0), true);
+  },
+
+  /**
+   * Is the user mid-edit in a control inside `root`?
+   *
+   * A caret in a text box is the obvious one. The other is a native colour
+   * picker: it is a browser window rather than anything in the document, there
+   * is no event for it opening or closing, and the only trace of it on this
+   * side is that its swatch holds the focus. Destroy the swatch and the picker
+   * goes with it — which is exactly what used to happen on the first character
+   * typed into the picker's own hex box, since Chrome pads a partial hex out
+   * to a whole colour (`a` becomes `#00000a`) and reports it as you type.
+   */
+  isEditing(root) {
+    const active = document.activeElement;
+    if (!active || !root.contains(active)) return false;
+    if (active.tagName === 'TEXTAREA') return true;
+    if (active.tagName !== 'INPUT') return false;
+    return /^(text|search|number|color)$/.test(active.type);
+  },
+
+  /**
+   * The swatch whose native picker may still be open, and when it last said so.
+   *
+   * `isEditing` finds an open picker by the focus, which is where Chrome keeps
+   * it while the picker is up. No browser is obliged to: the picker is a
+   * native window, and one that took the focus with it would leave its swatch
+   * looking idle while it is anything but — and the swatch would then be
+   * destroyed on the first value it reported, which is the whole bug. A swatch
+   * that reported a value a moment ago is in use whatever the focus says.
+   *
+   * Held to the swatch itself, and dropped on the first press that reaches the
+   * document, so this cannot quietly freeze the rest of the panel: a picker's
+   * own window sends no events here, so a press *is* the page being used
+   * again. Being wrong costs one rebuild's delay; being wrong the other way
+   * costs the picker.
+   */
+  _picking: null,
+  _pickedAt: 0,
+  _pickerTimer: null,
+  PICKER_GRACE_MS: 1500,
+
+  /** A swatch reporting a value: its picker is open, whatever the focus says. */
+  picking(node) {
+    Controls._picking = node;
+    Controls._pickedAt = Date.now();
+    clearTimeout(Controls._pickerTimer);
+    // Nothing announces a picker closing, so the grace has to expire on its
+    // own — and expiring silently would leave the held rebuild sitting there
+    // until the user happened to click something.
+    Controls._pickerTimer = setTimeout(() => {
+      if (Controls._onIdle) Controls._onIdle();
+    }, Controls.PICKER_GRACE_MS + 50);
+  },
+
+  /** Everything a rebuild of `root` would interrupt, in one question. */
+  busy(root) {
+    if (Controls._pressed) return true;
+    if (Controls._picking && root.contains(Controls._picking) &&
+        Date.now() - Controls._pickedAt < Controls.PICKER_GRACE_MS) {
+      return true;
+    }
+    return Controls.isEditing(root);
+  },
+
+  /* ================================================================
+     Deferred commits
+     ================================================================ */
+
+  /**
+   * How long a burst of edits may run before it lands in the spec.
+   *
+   * A commit is not cheap — it clones the spec, recomputes the model and
+   * rebuilds the preview — but the reason for waiting is not the cost. It is
+   * that a half-typed value is not a value. `#a`, `#aa` and `#aaa` are not
+   * colours anyone asked for, `-` is not a number, and each of them used to be
+   * written into the spec and rendered.
+   */
+  COMMIT_MS: 220,
+
+  /** What a reader returns for an input that is not a value yet. */
+  SKIP: { skip: true },
+
+  /**
+   * The one edit in flight. There is one caret, so one slot is enough, and
+   * anything that needs the spec current can ask for it by name.
+   */
+  _pending: null,
+
+  /** Commit whatever is waiting, now. */
+  flushPending() { if (Controls._pending) Controls._pending.flush(); },
+
+  /** Throw away whatever is waiting — the spec it was typed against is gone. */
+  cancelPending() { if (Controls._pending) Controls._pending.cancel(); },
+
+  /**
+   * Wrap a commit so a burst of values lands once.
+   *
+   * Trailing by default, which is what typing wants: nothing reaches the spec
+   * until the burst ends. `opts.lead` commits the first value at once and then
+   * no more than one per `wait`, which is what dragging a colour picker wants
+   * — every value there is already a whole colour, and watching it change is
+   * the point.
+   *
+   * @param {Function} commit
+   * @param {Object} [opts] - {lead, wait}
+   * @returns {{push: Function, flush: Function, cancel: Function}}
+   */
+  defer(commit, opts) {
+    opts = opts || {};
+    const wait = opts.wait === undefined ? Controls.COMMIT_MS : opts.wait;
+    const entry = { timer: null, value: undefined, held: false, at: 0 };
+
+    entry.flush = () => {
+      clearTimeout(entry.timer);
+      entry.timer = null;
+      if (Controls._pending === entry) Controls._pending = null;
+      if (!entry.held) return;
+      entry.held = false;
+      entry.at = Date.now();
+      commit(entry.value);
+    };
+
+    entry.cancel = () => {
+      clearTimeout(entry.timer);
+      entry.timer = null;
+      entry.held = false;
+      if (Controls._pending === entry) Controls._pending = null;
+    };
+
+    entry.push = (value) => {
+      // Moving to another box ends the burst in the one just left, rather than
+      // stranding it: the slot holds one edit, and the other one is real.
+      if (Controls._pending && Controls._pending !== entry) Controls.flushPending();
+      entry.value = value;
+      entry.held = true;
+      Controls._pending = entry;
+      if (opts.lead && Date.now() - entry.at >= wait) { entry.flush(); return; }
+      clearTimeout(entry.timer);
+      entry.timer = setTimeout(entry.flush, wait);
+    };
+
+    return entry;
+  },
+
+  /**
+   * Wire an input so a run of edits commits once.
+   *
+   * @param {Element} node
+   * @param {Function} read - node => the value to commit, or `Controls.SKIP`
+   *   for an intermediate state the spec should not see
+   * @param {Function} onChange
+   * @param {Object} [opts] - {lead, wait, changeEnds}
+   */
+  live(node, read, onChange, opts) {
+    opts = opts || {};
+    const pending = Controls.defer(onChange, opts);
+
+    node.addEventListener('input', () => {
+      const value = read(node);
+      if (value !== Controls.SKIP) pending.push(value);
+    });
+
+    // The end of a burst, whatever the clock says.
+    node.addEventListener('blur', pending.flush);
+    node.addEventListener('keydown', (e) => { if (e.key === 'Enter') pending.flush(); });
+
+    // `change` means blur-or-Enter on a text box and nothing more — but on a
+    // colour swatch Chrome fires it for every value the picker passes through,
+    // which would leave the interval doing nothing at all. `changeEnds: false`
+    // is that case.
+    if (opts.changeEnds !== false) node.addEventListener('change', pending.flush);
+
+    return node;
   },
 
   /* ================================================================
@@ -188,13 +426,13 @@ const Controls = {
 
   text(key, value, onChange, opts) {
     opts = opts || {};
-    return Util.el('input', {
+    const node = Util.el('input', {
       type: 'text',
       value: value === null || value === undefined ? '' : value,
       placeholder: opts.placeholder || '',
-      dataset: { ctl: key },
-      on: { input: (e) => onChange(e.target.value) }
+      dataset: { ctl: key }
     });
+    return Controls.live(node, (n) => n.value, onChange);
   },
 
   textarea(key, value, onChange, opts) {
@@ -202,9 +440,9 @@ const Controls = {
     const node = Util.el('textarea', {
       placeholder: opts.placeholder || '',
       rows: opts.rows || 3,
-      dataset: { ctl: key },
-      on: { input: (e) => onChange(e.target.value) }
+      dataset: { ctl: key }
     });
+    Controls.live(node, (n) => n.value, onChange);
     // A textarea has no `value` attribute — its value is its child text — so
     // this must be a property assignment. Routing it through Util.el would
     // setAttribute and leave the box empty after every rebuild.
@@ -214,23 +452,32 @@ const Controls = {
 
   number(key, value, onChange, opts) {
     opts = opts || {};
-    return Util.el('input', {
+    const node = Util.el('input', {
       type: 'number',
       value: value === null || value === undefined ? '' : value,
       min: opts.min === undefined ? null : opts.min,
       max: opts.max === undefined ? null : opts.max,
       step: opts.step === undefined ? null : opts.step,
       placeholder: opts.placeholder || '',
-      dataset: { ctl: key },
-      on: {
-        input: (e) => {
-          const raw = e.target.value;
-          if (raw === '') { onChange(opts.nullable ? null : 0); return; }
-          const num = parseFloat(raw);
-          onChange(isFinite(num) ? num : 0);
-        }
-      }
+      dataset: { ctl: key }
     });
+
+    return Controls.live(node, (n) => {
+      // **A number box reports what it cannot parse as an empty value.** `-`
+      // on the way to `-5`, `1e` on the way to `1e6`: `node.value` is `''` for
+      // all of them, exactly as it is for a box the user has cleared, and
+      // `validity.badInput` is the only thing that tells the two apart. Read
+      // by value alone, every one of those keystrokes committed 0 — and the
+      // box, rebuilt from the spec, then had that 0 sitting in front of
+      // whatever was typed next. It is why a negative number could not be
+      // typed into any of these boxes at all.
+      if (n.validity && n.validity.badInput) return Controls.SKIP;
+
+      const raw = n.value;
+      if (raw === '') return opts.nullable ? null : 0;
+      const num = parseFloat(raw);
+      return isFinite(num) ? num : Controls.SKIP;
+    }, onChange);
   },
 
   select(key, options, value, onChange, opts) {
@@ -272,8 +519,7 @@ const Controls = {
     const swatch = Util.el('input', {
       type: 'color',
       value: Palettes.toHexInput(value, '#000000'),
-      dataset: { ctl: key + '.swatch' },
-      on: { input: (e) => onChange(e.target.value) }
+      dataset: { ctl: key + '.swatch' }
     });
 
     const field = Util.el('input', {
@@ -281,14 +527,28 @@ const Controls = {
       value: value === null || value === undefined ? '' : value,
       placeholder: opts.placeholder || (opts.nullable ? 'not set' : '#000000'),
       dataset: { ctl: key },
-      style: { fontFamily: 'var(--font-mono)', fontSize: '11px' },
-      on: {
-        input: (e) => {
-          onChange(e.target.value);
-          const parsed = Palettes.parse(e.target.value);
-          if (parsed) swatch.value = Palettes.toHex(parsed);
-        }
-      }
+      style: { fontFamily: 'var(--font-mono)', fontSize: '11px' }
+    });
+
+    // The swatch leads: dragging in the picker is meant to be watched, and
+    // every value it reports is already a whole colour, so the first lands at
+    // once and the rest at no more than one per frame or so.
+    Controls.live(swatch, (n) => n.value, onChange,
+      { lead: true, wait: 60, changeEnds: false });
+
+    // The two boxes keep each other current directly, because neither can be
+    // refreshed from the spec while the other has the focus — that is the
+    // whole point of `busy`. Before, the swatch left the hex box behind and
+    // only a rebuild caught it up.
+    swatch.addEventListener('input', () => {
+      Controls.picking(swatch);
+      field.value = swatch.value;
+    });
+
+    Controls.live(field, (n) => n.value, onChange);
+    field.addEventListener('input', () => {
+      const parsed = Palettes.parse(field.value);
+      if (parsed) swatch.value = Palettes.toHex(parsed);
     });
 
     const nodes = [swatch, field];
@@ -296,7 +556,13 @@ const Controls = {
       nodes.push(Util.el('button.btn.btn-mini.btn-ghost', {
         text: '✕',
         title: 'Clear',
-        on: { click: () => onChange('') }
+        on: {
+          click: () => {
+            // Whatever was half-typed is what this is clearing.
+            Controls.cancelPending();
+            onChange('');
+          }
+        }
       }));
     }
     return nodes;
@@ -305,14 +571,14 @@ const Controls = {
   /** A CSS length: free text, because '12px', '90%' and '1.2em' are all valid. */
   length(key, value, onChange, opts) {
     opts = opts || {};
-    return Util.el('input', {
+    const node = Util.el('input', {
       type: 'text',
       value: value === null || value === undefined ? '' : value,
       placeholder: opts.placeholder || 'e.g. 12px',
       dataset: { ctl: key },
-      style: { fontFamily: 'var(--font-mono)', fontSize: '11px' },
-      on: { input: (e) => onChange(e.target.value) }
+      style: { fontFamily: 'var(--font-mono)', fontSize: '11px' }
     });
+    return Controls.live(node, (n) => n.value, onChange);
   },
 
   /**
