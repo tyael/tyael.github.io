@@ -1626,3 +1626,148 @@ select {
   font-size: 10.5px;
   color: var(--text-dim);
 }
+
+/* ============================================
+   Markup editor
+   ============================================ */
+
+/* The box and the button that opens the editor on it, on one line. The box
+   takes the room; the button is the same height whatever the box is. */
+.markup-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+}
+
+.markup-field > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.markup-open {
+  flex: 0 0 auto;
+  font-family: var(--font-display);
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 3px 7px;
+}
+
+/* Wider than a menu: this one holds a paragraph rather than a list of
+   choices, and a title wrapping every four words is hard to read back. */
+.popover.markup-editor {
+  width: 328px;
+  padding: 10px;
+}
+
+.markup-heading {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-strong);
+  padding-bottom: 6px;
+}
+
+.markup-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding-bottom: 6px;
+}
+
+.markup-btn {
+  min-width: 27px;
+  padding: 3px 5px;
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.markup-btn.is-bold { font-weight: 700; }
+.markup-btn.is-italic { font-style: italic; font-family: var(--font-display); }
+
+/* The source, in the font that makes `^{` and `_{` legible as the delimiters
+   they are rather than as punctuation. */
+.markup-area {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  min-height: 64px;
+}
+
+/* ---- The link form ---- */
+
+.markup-link {
+  margin-top: 6px;
+  padding: 7px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+}
+
+.markup-link-row {
+  display: flex;
+  gap: 5px;
+}
+
+.markup-link-row + .markup-link-row {
+  margin-top: 5px;
+}
+
+.markup-link-row.is-actions {
+  justify-content: flex-end;
+}
+
+.markup-link-text { flex: 0 0 38%; }
+.markup-link-url { flex: 1 1 auto; min-width: 0; }
+
+.markup-link-error {
+  margin-top: 5px;
+}
+
+/* ---- The preview ---- */
+
+.markup-preview-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  padding: 9px 0 4px;
+}
+
+/* Drawn by `Markup.toDom`, which is the call the table cell makes, so this is
+   the table's own rendering rather than an impression of it. The serif is
+   deliberate: what it stands in for is a cell, not a control. */
+.markup-preview {
+  font-family: var(--font-display);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-bright);
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  overflow-wrap: anywhere;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.markup-preview code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+/* Drawn as a link and inert as one, for the same reason the table preview
+   suppresses them: following it would navigate away from the editor, and
+   there is unsaved text in the box above. */
+.markup-preview a {
+  color: inherit;
+  text-decoration: underline;
+  pointer-events: none;
+}
+
+.markup-preview-empty {
+  color: var(--text-dim);
+  font-style: italic;
+}

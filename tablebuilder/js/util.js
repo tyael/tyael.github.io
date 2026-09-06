@@ -536,15 +536,58 @@ const Util = {
       return true;
     } catch (e) {
       // Fallback for file:// and older browsers, where the async API is blocked.
-      const area = Util.el('textarea', { style: { position: 'fixed', opacity: '0' } });
-      area.value = text;
-      document.body.appendChild(area);
-      area.select();
-      let ok = false;
-      try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
-      document.body.removeChild(area);
-      return ok;
+      return Util.copyViaEvent(null, text);
     }
+  },
+
+  /**
+   * Copy one thing in two flavours: rich HTML for anywhere that pastes
+   * formatting, and text for everywhere else. Resolves to true on success.
+   *
+   * Both have to go on together, in one write. A destination picks the flavour
+   * it understands and there is no second chance to offer the other, so a
+   * word processor and a code box are served by the same copy or by neither.
+   */
+  async copyRich(html, text) {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([text], { type: 'text/plain' })
+      })]);
+      return true;
+    } catch (e) {
+      return Util.copyViaEvent(html, text);
+    }
+  },
+
+  /**
+   * Put flavours on the clipboard through a `copy` event.
+   *
+   * This is the fallback for both of the above, and the only route that offers
+   * more than plain text without the async API — which is blocked on `file://`,
+   * where this app is expected to run. `execCommand` still needs something
+   * selected to copy *from* even though the listener replaces whatever that
+   * turns out to be, hence the textarea; and `preventDefault` is what makes
+   * the listener's data the payload rather than an ignored suggestion.
+   */
+  copyViaEvent(html, text) {
+    const area = Util.el('textarea', { style: { position: 'fixed', opacity: '0' } });
+    area.value = text;
+    document.body.appendChild(area);
+    area.select();
+
+    const onCopy = (e) => {
+      if (html) e.clipboardData.setData('text/html', html);
+      e.clipboardData.setData('text/plain', text);
+      e.preventDefault();
+    };
+
+    document.addEventListener('copy', onCopy, true);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.removeEventListener('copy', onCopy, true);
+    document.body.removeChild(area);
+    return ok;
   },
 
   /** Read a File as text. */

@@ -1,14 +1,20 @@
 /**
  * ui/import-preview.js
  *
- * The one door every import comes through: show what was found, ask the one
- * question that cannot be guessed, then commit.
+ * The one door every import comes through: show what was found, ask what
+ * cannot be guessed, then commit.
  *
- * The question is **how many rows are header**. No format answers it reliably
+ * Always asked: **how many rows are header**. No format answers it reliably
  * — a CSV has no way to say, a pasted spreadsheet range usually has no header
  * at all, and an HTML table that marks none still often has one. Guessing it
  * silently eats a row of data or invents a header out of one. So it is asked,
  * with the answer visible in the preview before anything is committed.
+ *
+ * Asked only when it matters: whether to **keep hyperlinks**. Kept is the
+ * default — a pasted link becomes `[label](url)` markup, editable later,
+ * rather than being silently read down to its label — but it is shown as a
+ * choice rather than applied quietly, and a table with no link in it is never
+ * asked at all.
  *
  * Two states, one modal: waiting for a paste, and previewing a grid.
  */
@@ -85,10 +91,11 @@ const ImportPreview = {
 
     try {
       if (html && /<table/i.test(html)) {
-        const grid = ImportHtml.parse(html);
+        const grid = ImportHtml.parse(html, { keepLinks: true });
         ImportPreview.show(grid, {
           filename: 'pasted-table',
-          origin: { kind: 'clipboard', label: 'pasted table', title: grid.caption || null }
+          origin: { kind: 'clipboard', label: 'pasted table', title: grid.caption || null },
+          html: html
         });
         return;
       }
@@ -117,9 +124,33 @@ const ImportPreview = {
     ImportPreview._state = {
       grid: grid,
       headerRows: grid.headerRows === undefined ? 1 : grid.headerRows,
+      keepLinks: true,
       meta: meta || {}
     };
     ImportPreview.render();
+  },
+
+  /**
+   * Re-read the pasted HTML with hyperlinks kept or stripped.
+   *
+   * A cell's markup is decided while `ImportHtml.parse` walks the DOM, not
+   * afterwards — there is no cheap way to add or remove `[label](url)` from
+   * already-flattened text — so flipping the choice re-parses the source
+   * rather than editing the grid in place. `meta.html` is only set for a
+   * clipboard paste, which is the one path that can carry a link at all.
+   */
+  setKeepLinks(keepLinks) {
+    const state = ImportPreview._state;
+    if (!state || !state.meta || !state.meta.html) return;
+    try {
+      const grid = ImportHtml.parse(state.meta.html, { keepLinks: keepLinks });
+      state.grid = grid;
+      state.keepLinks = keepLinks;
+      ImportPreview.render();
+    } catch (err) {
+      console.error(err);
+      Util.toast(err.message, 'error');
+    }
   },
 
   /* ================================================================
@@ -167,6 +198,15 @@ const ImportPreview = {
           ? 'Every row is data. The columns are named Column 1, Column 2 … and can be renamed under Structure.'
           : 'The first row names the columns.')
     }));
+
+    if (state.grid.hasLinks) {
+      nodes.push(Controls.field('Keep hyperlinks', Controls.checkbox('import.keepLinks',
+        state.keepLinks, (value) => ImportPreview.setKeepLinks(value)), {
+        hint: state.keepLinks
+          ? 'Links stay live and editable — open a cell’s amendment popover to change the text or address.'
+          : 'The link text is kept; the addresses are dropped.'
+      }));
+    }
 
     nodes.push(ImportPreview.gridTable(rows, state.headerRows, width));
 

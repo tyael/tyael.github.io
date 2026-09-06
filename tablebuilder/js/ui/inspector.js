@@ -118,12 +118,13 @@ const Inspector = {
     const step = Pipeline.find(spec, 'correct');
     const correction = Corrections.find((step && step.edits) || [], item.srcIndex, colId);
 
-    const nodes = [Controls.field('Value',
-      Controls.text('cell.value.' + key, raw, (next) => {
-        Store.update((draft) => {
-          Corrections.set(draft, item.srcIndex, colId, next);
-        }, { coalesce: 'cell.' + key, label: 'Edit ' + title });
-      }, { placeholder: '(empty)' }))];
+    const setValue = (next) => Store.update((draft) => {
+      Corrections.set(draft, item.srcIndex, colId, next);
+    }, { coalesce: 'cell.' + key, label: 'Edit ' + title });
+
+    const nodes = [MarkupEditor.field('Value',
+      Controls.text('cell.value.' + key, raw, setValue, { placeholder: '(empty)' }),
+      setValue, { editorHeading: title })];
 
     /* ---- What the table makes of it ---- */
 

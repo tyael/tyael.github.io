@@ -303,11 +303,21 @@ const StyleRules = {
    * *cell*: the same expression is true in one column and false in the next, so
    * it returns `rowsByCol`, a set per column. `resolve` reads whichever it got.
    *
+   * **`row` and `n` are about the table as it is drawn**, not about the file:
+   * `row` is the 0-based position a reader could count to and `n` the number
+   * of rows they can see, both after the filter and the sort. That is the same
+   * order `above()` and `below()` step through, and the same order
+   * `dplyr::arrange()` leaves the exported data in — so `export-rgt.js` can
+   * write `row` as `seq_along(<column>) - 1` and mean it. Read as source
+   * indices they were a fact about the file that gt has no way to ask for, and
+   * a sort made the preview and the R disagree without either being wrong on
+   * its own terms.
+   *
    * @param {Object} ctx {rows, columnsById} for the plain case; also
-   *   {sequence, bodyColumns, targetColumns} when neighbours are in play —
-   *   `sequence` is `[{row, srcIndex}]` in displayed order, `bodyColumns` the
-   *   body column ids in displayed order, `targetColumns` the ones this
-   *   location covers.
+   *   {sequence, count, bodyColumns, targetColumns} — `sequence` is
+   *   `[{row, srcIndex}]` in displayed order, `count` the number of rows drawn
+   *   before any preview truncation, `bodyColumns` the body column ids in
+   *   displayed order, `targetColumns` the ones this location covers.
    * @returns {{rows: ?Set, rowsByCol: ?Object, error: ?string}}
    */
   evalRowExpr(expr, ctx) {
@@ -345,10 +355,25 @@ const StyleRules = {
     };
     const none = () => undefined;
 
+    // The displayed sequence, not the source order: "the row above" is the one
+    // above it on the page, and `dplyr::arrange()` puts the exported data in
+    // that same order so the R agrees. A row the filter removed is not in the
+    // sequence and so is neither tested nor available as a neighbour, which is
+    // right — it is not on the page to be next to anything. `ctx.rows` is
+    // indexed by `srcIndex` and carries a placeholder where a filtered row
+    // used to be, which is why it is not what gets walked.
+    const sequence = (ctx.sequence || rows.map((row, i) => ({ row: row, srcIndex: i })));
+    // Not `sequence.length`: the preview stops at `Compute.MAX_PREVIEW_ROWS`
+    // and the export does not, so counting the sequence would make `n` mean
+    // one thing on screen and another in the file that leaves the app.
+    const count = ctx.count === undefined ? sequence.length : ctx.count;
+
     if (!StyleRules.usesCellRefs(expr)) {
-      for (let i = 0; i < rows.length; i += 1) {
+      for (let p = 0; p < sequence.length; p += 1) {
         try {
-          if (fn(scopeFor(rows[i]), i, rows.length, none, none, none, none, none)) set.add(i);
+          if (fn(scopeFor(sequence[p].row), p, count, none, none, none, none, none)) {
+            set.add(sequence[p].srcIndex);
+          }
         } catch (err) {
           return { rows: set, error: 'Evaluation error: ' + err.message };
         }
@@ -358,12 +383,6 @@ const StyleRules = {
 
     /* ---- Per cell, because the answer depends on which column is asked ---- */
 
-    // The displayed sequence, not the source order: "the row above" is the one
-    // above it on the page, and `dplyr::arrange()` puts the exported data in
-    // that same order so the R agrees. A row the filter removed is not in the
-    // sequence and so is neither tested nor available as a neighbour, which is
-    // right — it is not on the page to be next to anything.
-    const sequence = (ctx.sequence || rows.map((row, i) => ({ row: row, srcIndex: i })));
     const bodyColumns = ctx.bodyColumns || allIds;
     const targets = (ctx.targetColumns && ctx.targetColumns.length) ? ctx.targetColumns : bodyColumns;
 
@@ -383,7 +402,7 @@ const StyleRules = {
 
         try {
           const hit = fn(
-            scopeFor(sequence[p].row), sequence[p].srcIndex, sequence.length,
+            scopeFor(sequence[p].row), p, count,
             () => valueOf(sequence[p].row, colId),
             (k) => valueOf(at(-step(k)), colId),
             (k) => valueOf(at(step(k)), colId),

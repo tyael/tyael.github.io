@@ -17,7 +17,7 @@ const PanelContent = {
   label: 'Titles\u00A0& notes',
   hint: 'Title, subtitle, caption, footnotes and source notes',
 
-  MARKUP_HINT: '**bold**  *italic*  ^{sup}  _{sub}  `code`  <br>',
+  MARKUP_HINT: '**bold**  *italic*  ^{sup}  _{sub}  `code`  [text](url)  <br>',
 
   render(spec) {
     const panel = Util.el('div.panel');
@@ -48,11 +48,12 @@ const PanelContent = {
     }, { coalesce: 'parts.' + key });
 
     return Controls.section('Title & subtitle', [
-      Controls.field('Title', Controls.textarea('parts.title', parts.title, set('title'),
-        { rows: 2, placeholder: 'Table title' }), { wide: true }),
+      MarkupEditor.field('Title', Controls.textarea('parts.title', parts.title, set('title'),
+        { rows: 2, placeholder: 'Table title' }), set('title'), { wide: true }),
 
-      Controls.field('Subtitle', Controls.textarea('parts.subtitle', parts.subtitle, set('subtitle'),
-        { rows: 2, placeholder: 'Optional subtitle' }), { wide: true }),
+      MarkupEditor.field('Subtitle', Controls.textarea('parts.subtitle', parts.subtitle,
+        set('subtitle'), { rows: 2, placeholder: 'Optional subtitle' }),
+        set('subtitle'), { wide: true }),
 
       // This is `heading.align`, and it reaches the title and subtitle only.
       // It used to sit in a box that also held the caption and the row-label
@@ -72,11 +73,13 @@ const PanelContent = {
   captionSection(spec) {
     const parts = spec.parts;
 
+    const set = (value) => Store.update((draft) => { draft.parts.caption = value; },
+      { coalesce: 'parts.caption' });
+
     return Controls.section('Caption', [
-      Controls.field(null, Controls.textarea('parts.caption', parts.caption,
-        (value) => Store.update((draft) => { draft.parts.caption = value; },
-          { coalesce: 'parts.caption' }),
-        { rows: 2, placeholder: 'Figure caption, shown below the table' }), { wide: true }),
+      MarkupEditor.field(null, Controls.textarea('parts.caption', parts.caption, set,
+        { rows: 2, placeholder: 'Figure caption, shown below the table' }),
+        set, { wide: true, editorHeading: 'Caption' }),
 
       Controls.field('Align', Controls.select('parts.captionAlign',
         ['center', 'left', 'right'], parts.captionAlign || 'center',
@@ -97,12 +100,15 @@ const PanelContent = {
      ================================================================ */
 
   stubheadSection(spec) {
+    const set = (value) => Store.update((draft) => { draft.parts.stubhead = value; },
+      { coalesce: 'parts.stubhead' });
+
     return Controls.section('Row-label header', [
-      Controls.field(null, Controls.text('parts.stubhead', spec.parts.stubhead,
-        (value) => Store.update((draft) => { draft.parts.stubhead = value; },
-          { coalesce: 'parts.stubhead' }),
+      MarkupEditor.field(null, Controls.text('parts.stubhead', spec.parts.stubhead, set,
         { placeholder: 'Label for the row-label column' }),
+        set,
         {
+          editorHeading: 'Row-label header',
           wide: true,
           hint: 'The cell above the row labels — gt calls this the stubhead.',
           requires: {
@@ -129,10 +135,14 @@ const PanelContent = {
     const list = Controls.itemList(notes, (note, index) => {
       const body = Util.el('div');
 
-      body.appendChild(Controls.field(null, Controls.textarea('fn.text.' + note.id, note.text,
-        (value) => Store.update((draft) => { draft.parts.footnotes[index].text = value; },
-          { coalesce: 'fn.text.' + note.id }), { rows: 2, placeholder: 'Footnote text' }),
-        { wide: true }));
+      const setText = (value) => Store.update(
+        (draft) => { draft.parts.footnotes[index].text = value; },
+        { coalesce: 'fn.text.' + note.id });
+
+      body.appendChild(MarkupEditor.field(null,
+        Controls.textarea('fn.text.' + note.id, note.text, setText,
+          { rows: 2, placeholder: 'Footnote text' }),
+        setText, { wide: true, editorHeading: 'Footnote' }));
 
       // A note anchored before the header was hidden cannot be refused after
       // the fact, so it is reported instead: its text is still in the footer,
@@ -278,11 +288,16 @@ const PanelContent = {
   sourceSection(spec) {
     const notes = spec.parts.sourceNotes;
 
-    const list = Controls.itemList(notes, (note, index) =>
-      Controls.field(null, Controls.textarea('sn.text.' + note.id, note.text,
-        (value) => Store.update((draft) => { draft.parts.sourceNotes[index].text = value; },
-          { coalesce: 'sn.text.' + note.id }), { rows: 2, placeholder: 'Source: …' }),
-        { wide: true }),
+    const list = Controls.itemList(notes, (note, index) => {
+      const setText = (value) => Store.update(
+        (draft) => { draft.parts.sourceNotes[index].text = value; },
+        { coalesce: 'sn.text.' + note.id });
+
+      return MarkupEditor.field(null,
+        Controls.textarea('sn.text.' + note.id, note.text, setText,
+          { rows: 2, placeholder: 'Source: …' }),
+        setText, { wide: true, editorHeading: 'Source note' });
+    },
     {
       key: 'sourceNotes',
       title: (note) => Util.truncate(Markup.toPlain(note.text), 34) || '(empty)',

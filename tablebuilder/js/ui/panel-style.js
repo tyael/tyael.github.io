@@ -299,6 +299,159 @@ const PanelStyle = {
     ]);
   },
 
+  /**
+   * The controls behind "Specific rows".
+   *
+   * **There used to be none of this.** The mode offered a summary line and a
+   * *Set from selection* button — and the button was rendered only while
+   * something was selected, so choosing "Specific rows" with nothing selected
+   * showed the words "no row(s):" and nothing else at all. There was no way to
+   * name a row, no way to adjust a set once it was made, and nothing on screen
+   * saying a selection was what it wanted. It read as a mode that did not work.
+   *
+   * **The numbers are rows of the table, not rows of the file.** A location
+   * stores `srcIndex`, because that is what `StyleRules.resolve` matches and
+   * what `Selection` produces, but a source index is not a number anyone can
+   * see: under a sort the third row of the file is somewhere else entirely, and
+   * `export-rgt.js` has to convert to a displayed position anyway before gt can
+   * be told about it. So the box speaks the position a reader can count to, the
+   * same thing `row` means in a `where` expression, and converts on the way in
+   * and out.
+   *
+   * A row that is not on screen — filtered out, or past the row the preview
+   * stops at — has no position and so cannot be shown as a number. It is still
+   * in the rule, and dropping it would rewrite the rule for having looked at
+   * it, so it is counted and reported instead and an edit to the box leaves it
+   * where it is.
+   */
+  rowPicker(rule, locIndex, loc, update) {
+    const key = 'loc.rows.' + rule.id + '.' + locIndex;
+    const indices = (loc.rows && loc.rows.indices) || [];
+
+    // srcIndex -> the 1-based place it is drawn in, and back.
+    const drawn = Selection.dataRowIndices();
+    const positionOf = new Map();
+    drawn.forEach((srcIndex, i) => positionOf.set(srcIndex, i + 1));
+
+    const shown = indices.map((i) => positionOf.get(i)).filter((p) => p !== undefined);
+    const hidden = indices.length - shown.length;
+
+    // What the box does not show, it does not touch. A row the filter is holding
+    // back has no number to type, so an edit that dropped it would be removing a
+    // row the user cannot see and did not mention.
+    const keep = indices.filter((i) => !positionOf.has(i));
+
+    // Coalesced on the field's own key, as the `where` box is: typing out
+    // "1, 4, 7-9" is one action and belongs in the undo history as one entry,
+    // not as the four sets of rows it passes through on the way.
+    const write = (positions) => {
+      const named = positions.map((p) => drawn[p - 1]).filter((i) => i !== undefined);
+      const next = Util.unique(keep.concat(named)).sort((a, b) => a - b);
+      Store.update((draft) => {
+        const target = PanelStyle.locationIn(draft, rule.id, locIndex);
+        if (target) target.rows = { mode: 'index', indices: next, expr: target.rows.expr || '' };
+      }, { coalesce: key });
+    };
+
+    const nodes = [
+      Controls.field('Row numbers', Controls.text(key, PanelStyle.rowListText(shown),
+        (value) => write(PanelStyle.parseRowList(value)),
+        { placeholder: '1, 4, 7-9' }), { wide: true }),
+      Util.el('div.field-hint', {
+        text: 'Row numbers as the table is drawn — 1 is the top row, and a range ' +
+          'like 7-9 covers all three. A rule follows the rows it is given, so ' +
+          'sorting the table later moves the numbers rather than the rule.'
+      })
+    ];
+
+    if (hidden) {
+      // Two reasons a pinned row has no number, and the note claims neither:
+      // a filter is holding it back, or it is past the row the preview stops
+      // at. Naming the filter alone would be a confident wrong answer on a
+      // table longer than `Compute.MAX_PREVIEW_ROWS`.
+      nodes.push(Util.el('div.field-hint', {
+        text: hidden + ' more row' + (hidden === 1 ? ' is' : 's are') + ' in this rule and not ' +
+          'on screen — filtered out, or past the row the preview stops at. ' +
+          (hidden === 1 ? 'It stays' : 'They stay') + ' in the rule: editing the box above ' +
+          'leaves ' + (hidden === 1 ? 'it' : 'them') + ' alone, and “Set from selection” ' +
+          'replaces the lot.'
+      }));
+    }
+
+    if (Selection.current().length) {
+      nodes.push(Controls.actions([
+        Controls.button('Set from selection', () => {
+          const picked = Util.unique(Selection.current()
+            .map((s) => s.srcIndex)
+            .filter((i) => i !== undefined && i !== null)).sort((a, b) => a - b);
+          update((l) => { l.rows = { mode: 'index', indices: picked, expr: (l.rows && l.rows.expr) || '' }; });
+        }, { kind: 'ghost' })
+      ]));
+    }
+
+    return nodes;
+  },
+
+  /**
+   * "1, 4, 7-9" as [1, 4, 7, 8, 9].
+   *
+   * Deliberately forgiving about what separates the numbers, and about the
+   * dash: a range copied out of a document arrives with an en dash, and being
+   * told that is not a row number is no use to anyone. Anything else in the
+   * box is ignored rather than refused — the field commits on every burst of
+   * typing, so half of a number is a state it passes through on the way to all
+   * of it.
+   */
+  parseRowList(text) {
+    const out = [];
+    // The dash is closed up first, so "7 - 9" is the range it looks like rather
+    // than the two separate rows the split would otherwise make of it.
+    const parts = String(text || '')
+      .replace(/\s*[-\u2010-\u2015]\s*/g, '-')
+      .split(/[^0-9-]+/)
+      .filter(Boolean);
+
+    for (const part of parts) {
+      const range = part.match(/^(\d+)-(\d+)$/);
+      if (range) {
+        const from = parseInt(range[1], 10);
+        const to = parseInt(range[2], 10);
+        for (let i = Math.min(from, to); i <= Math.max(from, to); i += 1) out.push(i);
+        continue;
+      }
+      const one = part.match(/^\d+$/);
+      if (one) out.push(parseInt(part, 10));
+    }
+
+    return Util.unique(out).filter((n) => n >= 1).sort((a, b) => a - b);
+  },
+
+  /**
+   * [1, 4, 7, 8, 9] as "1, 4, 7-9".
+   *
+   * A run becomes a range because *Set from selection* over a whole column
+   * writes every row of the table into the box, and two hundred numbers in a
+   * text field is not something anyone can read or edit.
+   */
+  rowListText(numbers) {
+    const sorted = numbers.slice().sort((a, b) => a - b);
+    const runs = [];
+
+    for (const n of sorted) {
+      const last = runs[runs.length - 1];
+      if (last && n === last[1] + 1) last[1] = n;
+      else runs.push([n, n]);
+    }
+
+    return runs.map(([from, to]) => {
+      if (from === to) return String(from);
+      // Two in a row is not worth a range: "4-5" is no shorter than "4, 5" and
+      // reads as if something were left out of the middle.
+      if (to === from + 1) return from + ', ' + to;
+      return from + '-' + to;
+    }).join(', ');
+  },
+
   locationEditor(rule, ruleIndex, loc, locIndex, columns, byId) {
     const update = (fn) => Store.update((draft) => {
       const target = PanelStyle.locationIn(draft, rule.id, locIndex);
@@ -339,18 +492,8 @@ const PanelStyle = {
         mode, (value) => update((l) => { l.rows = { mode: value, indices: (l.rows && l.rows.indices) || [], expr: (l.rows && l.rows.expr) || '' }; }))));
 
       if (mode === 'index') {
-        nodes.push(Controls.field(null, Util.el('div', null, [
-          Util.el('div.item-sub', {
-            text: (loc.rows.indices.length || 'no') + ' row(s): ' +
-              Util.truncate(loc.rows.indices.map((i) => i + 1).join(', '), 40)
-          }),
-          Selection.current().length ? Controls.button('Set from selection', () => {
-            const indices = Util.unique(Selection.current()
-              .map((s) => s.srcIndex)
-              .filter((i) => i !== undefined && i !== null)).sort((a, b) => a - b);
-            update((l) => { l.rows = { mode: 'index', indices: indices, expr: l.rows.expr || '' }; });
-          }, { kind: 'ghost' }) : null
-        ]), { wide: true }));
+        nodes.push.apply(nodes,
+          PanelStyle.rowPicker(rule, locIndex, loc, update));
       }
 
       if (mode === 'expr') {

@@ -355,6 +355,38 @@ const Formatters = {
     },
 
     {
+      type: 'url',
+      label: 'Link',
+      hint: 'Draw a column of web or email addresses as links.',
+      params: [
+        { key: 'label', label: 'Link text', type: 'text', default: '',
+          hint: 'The same words on every row — “Report”, “DOI”. Blank shows the ' +
+            'address itself.' },
+        { key: 'hideScheme', label: 'Hide the scheme', type: 'bool', default: true,
+          hint: 'Draws epa.gov/co2 rather than https://epa.gov/co2, and a@b.org ' +
+            'rather than mailto:a@b.org. Ignored when Link text is set.' }
+      ],
+      apply(value, o) {
+        // `Markup.LINK_URL` itself, not `Markup.normaliseUrl`. The forgiving
+        // one turns `epa.gov` into an address, which is right when a person
+        // typed it into the editor's link box and wrong as a column-wide
+        // transform: gt's `fmt_url` links the cell's value as it stands, and a
+        // scheme this side invented would not be in the `href` that side.
+        // What is left is one test, emitted into the R as the `rows =`
+        // predicate, so the two link the same cells.
+        //
+        // Returning null leaves the cell showing what it held — which is what
+        // a stray `n/a`, or a note where an address should be, needs.
+        const url = String(value === null || value === undefined ? '' : value);
+        if (!Markup.LINK_URL.test(url)) return null;
+
+        const shown = o.label ||
+          (o.hideScheme ? url.replace(/^(?:https?:\/\/|mailto:)/i, '') : url);
+        return Markup.linkMarkup(shown, url);
+      }
+    },
+
+    {
       type: 'passthrough',
       label: 'Passthrough',
       params: [
@@ -644,7 +676,27 @@ const Formatters = {
   suggest(column, values) {
     if (!column) return 'passthrough';
     if (column.type === 'date') return 'date';
-    if (column.type !== 'number') return 'passthrough';
+    if (column.type !== 'number') {
+      // A column of addresses and nothing else. Two things this is stricter
+      // about than `Markup.normaliseUrl`, which is what the format rule itself
+      // uses once chosen.
+      //
+      // A scheme is required, where `normaliseUrl` would add one: `report.pdf`
+      // and `field_survey.csv` are host-shaped, and a column of filenames
+      // suggested as a column of links is a wrong guess made silently. A guess
+      // has to be right without being checked; a rule the user picked can
+      // afford to be forgiving.
+      //
+      // And every value, not most of them. `Csv.inferType` can afford 85%
+      // because it is deciding what a column *is*; this decides what happens
+      // to every cell in it, and one prose note among the addresses means the
+      // column is prose — where the answer is a link typed in the markup.
+      const present = values.filter((v) => !Util.isMissing(v));
+      if (present.length && present.every((v) => /^(?:https?:\/\/|mailto:)/i.test(String(v).trim()))) {
+        return 'url';
+      }
+      return 'passthrough';
+    }
 
     const nums = values.map(Util.toNumber).filter((n) => n !== null);
     if (!nums.length) return 'passthrough';

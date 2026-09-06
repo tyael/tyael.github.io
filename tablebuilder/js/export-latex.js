@@ -91,6 +91,15 @@ const ExportLatex = {
     out.push('\\end{' + environment + '}');
     out.push('');
 
+    // Asked of the finished text rather than of the model, because a link can
+    // arrive in a cell, a label, a spanner, a title, a caption, a footnote or a
+    // source note, and a list of those places here would be a second answer to
+    // the question `Markup.toLatex` has already settled. A `\href` with no
+    // hyperref loaded is an undefined control sequence, which stops the build.
+    if (out.some((line) => line.indexOf('\\href{') >= 0)) {
+      out.splice(1, 0, '% Requires: \\usepackage{hyperref}');
+    }
+
     return out.join('\n');
   },
 

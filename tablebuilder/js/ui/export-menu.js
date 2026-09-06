@@ -77,10 +77,19 @@ const ExportMenu = {
 
     wrap.appendChild(Controls.button('Download standalone page',
       Popover.act(() => ExportMenu.html(name, true)), { block: true }));
-    wrap.appendChild(Controls.button('Copy fragment (style + table)',
+    wrap.appendChild(Controls.button('Copy styled table',
       Popover.act(() => ExportMenu.copyFragment()), { block: true }));
     wrap.appendChild(Util.el('div.export-menu-hint', {
-      text: 'The fragment pastes into an existing page; the standalone page opens on its own.'
+      text: 'Pastes as a finished table into a document or a rich editor, and as source ' +
+        'into a code box. The standalone page opens on its own.'
+    }));
+
+    wrap.appendChild(Controls.button('Copy for WordPress',
+      Popover.act(() => ExportMenu.copyWordPress()), { block: true }));
+    wrap.appendChild(Util.el('div.export-menu-hint', {
+      text: 'Pastes into a post as one Custom HTML block with the styling intact. ' +
+        'WordPress’s own table block cannot hold this much of it, so the table arrives ' +
+        'as HTML rather than as something you can go on editing in place.'
     }));
 
     /* ---- Code ---- */
@@ -145,11 +154,38 @@ const ExportMenu = {
     Util.toast('HTML saved', 'ok');
   },
 
+  /**
+   * One copy, two flavours, because the two destinations want opposite things.
+   *
+   * Anything that pastes formatting reads the HTML flavour and has no
+   * stylesheet to put a `<style>` in, so it gets the flattened table. Anything
+   * that pastes text is a person about to read and edit HTML, so it gets the
+   * `<style>` and the table — the same look, said once instead of on every
+   * cell, and legible.
+   */
   copyFragment() {
     const model = ExportMenu.fullModel();
     if (!model) return;
-    Util.copy(RenderHtml.toFragment(model)).then((ok) => {
-      Util.toast(ok ? 'HTML fragment copied' : 'Copy failed', ok ? 'ok' : 'error');
+    Util.copyRich(RenderHtml.toInlineFragment(model), RenderHtml.toFragment(model)).then((ok) => {
+      Util.toast(ok ? 'Table copied' : 'Copy failed', ok ? 'ok' : 'error');
+    });
+  },
+
+  /**
+   * The same table again, in the one form WordPress will keep.
+   *
+   * Both flavours carry the delimiters here, where the other copy gives each
+   * flavour what its own kind of destination wants. Every place this is aimed
+   * at reads block markup: the post canvas takes the HTML flavour, the Code
+   * Editor takes the text one, and a Custom HTML box pasted into by hand gets
+   * two comments it renders as nothing.
+   */
+  copyWordPress() {
+    const model = ExportMenu.fullModel();
+    if (!model) return;
+    const block = RenderHtml.toWordPressBlock(model);
+    Util.copyRich(block, block).then((ok) => {
+      Util.toast(ok ? 'WordPress block copied' : 'Copy failed', ok ? 'ok' : 'error');
     });
   },
 

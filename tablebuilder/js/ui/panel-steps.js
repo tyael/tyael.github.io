@@ -488,8 +488,10 @@ const PanelSteps = {
     },
 
     spanner(wrap, step, index, ctx, update) {
-      wrap.appendChild(Controls.field('Label', Controls.text('st.splabel.' + step.id,
-        step.label, (value) => update((s) => { s.label = value; }, 'st.splabel.' + step.id))));
+      const setLabel = (value) => update((s) => { s.label = value; }, 'st.splabel.' + step.id);
+      wrap.appendChild(MarkupEditor.field('Label',
+        Controls.text('st.splabel.' + step.id, step.label, setLabel),
+        setLabel, { editorHeading: 'Column group label' }));
       wrap.appendChild(Controls.field('Level', Controls.number('st.splevel.' + step.id,
         Pipeline.spannerLevel(step.level),
         (value) => update((s) => { s.level = Pipeline.spannerLevel(value); }),

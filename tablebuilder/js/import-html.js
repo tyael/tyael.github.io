@@ -21,18 +21,35 @@ const ImportHtml = {
 
   /**
    * Parse an HTML string and return the grid of its best table.
-   * @returns {{rows: Array<Array<string>>, headerRows, caption, warnings, tables}}
+   * @param {{keepLinks?: boolean}} [opts] `keepLinks` writes a cell's anchors
+   *   into it as `[label](url)` markup instead of dropping them to label text.
+   * @returns {{rows: Array<Array<string>>, headerRows, caption, warnings, tables, hasLinks}}
    */
-  parse(html) {
+  parse(html, opts) {
     const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
     const tables = Util.qsa('table', doc);
     if (!tables.length) throw new Error('There is no table in what you pasted.');
 
     const table = ImportHtml.pick(tables);
-    const out = ImportHtml.expand(ImportHtml.read(table));
+    const out = ImportHtml.expand(ImportHtml.read(table, opts));
     out.caption = ImportHtml.captionOf(table);
     out.tables = tables.length;
+    out.hasLinks = ImportHtml.hasLinks(table);
     return out;
+  },
+
+  /**
+   * Whether the table carries a link `keepLinks` could actually keep.
+   *
+   * A relative `href` cannot be resolved into an address — a `DOMParser`
+   * document has no base URI to resolve it against — so it is not counted
+   * here, and `textOf` leaves such a link as its label text regardless of
+   * `keepLinks`. This is what decides whether the import dialog offers the
+   * choice at all.
+   */
+  hasLinks(table) {
+    return Util.qsa('a[href]', table)
+      .some((a) => Markup.LINK_URL.test(a.getAttribute('href') || ''));
   },
 
   /**
@@ -62,11 +79,26 @@ const ImportHtml = {
    * whitespace: `<br>` becomes a space rather than closing up the words
    * either side of it, and a non-breaking space becomes an ordinary one so it
    * does not survive into a column id or defeat a number parse.
+   *
+   * With `opts.keepLinks`, an anchor becomes `[label](url)` — this markup's
+   * own link construct — rather than being read down to its label text.
+   * `Markup.linkMarkup` both builds and validates it, so a label that cannot
+   * round-trip (an unmatched `]`, most likely) falls back to plain text the
+   * same way an unusable `href` does, rather than writing something broken
+   * into the cell.
    */
-  textOf(el) {
+  textOf(el, opts) {
     const copy = el.cloneNode(true);
     for (const br of Util.qsa('br', copy)) {
       br.parentNode.replaceChild(copy.ownerDocument.createTextNode(' '), br);
+    }
+    if (opts && opts.keepLinks) {
+      for (const a of Util.qsa('a[href]', copy)) {
+        const url = a.getAttribute('href');
+        const label = a.textContent;
+        const markup = url && Markup.LINK_URL.test(url) ? Markup.linkMarkup(label, url) : null;
+        a.parentNode.replaceChild(copy.ownerDocument.createTextNode(markup || label), a);
+      }
     }
     return String(copy.textContent || '')
       .replace(/ /g, ' ')
@@ -151,7 +183,7 @@ const ImportHtml = {
    * Walk a table element into raw rows of cells, spans intact.
    * @returns {Array<Array<{text, header, colspan, rowspan}>>}
    */
-  read(table) {
+  read(table, opts) {
     const span = (el, name) => {
       const n = parseInt(el.getAttribute(name), 10);
       // A colspan of 1000 is legal HTML and would build a grid nothing can
@@ -165,7 +197,7 @@ const ImportHtml = {
         // A cell belonging to a nested table is not this table's cell.
         .filter((cell) => cell.closest('table') === table)
         .map((cell) => {
-          const text = ImportHtml.textOf(cell);
+          const text = ImportHtml.textOf(cell, opts);
           return {
             text: ImportHtml.valueOf(cell, text),
             header: inHead || cell.tagName === 'TH',

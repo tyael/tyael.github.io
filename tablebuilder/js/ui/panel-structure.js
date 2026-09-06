@@ -87,11 +87,15 @@ const PanelStructure = {
       const col = byId[colId];
       const body = Util.el('div');
 
-      body.appendChild(Controls.field('Label',
-        Controls.text('col.label.' + colId, st.labels[colId] === undefined ? '' : st.labels[colId],
-          (value) => Store.update((draft) => { draft.structure.labels[colId] = value; },
-            { coalesce: 'col.label.' + colId }),
+      const setLabel = (value) => Store.update(
+        (draft) => { draft.structure.labels[colId] = value; },
+        { coalesce: 'col.label.' + colId });
+
+      body.appendChild(MarkupEditor.field('Label',
+        Controls.text('col.label.' + colId,
+          st.labels[colId] === undefined ? '' : st.labels[colId], setLabel,
           { placeholder: Spec.columnLabel(spec, col) || '(blank heading)' }),
+        setLabel,
         // Still editable — the label is kept, and the R export still carries
         // `cols_label()` — but nothing on the page is drawing it. No fix
         // button: the switch is at the top of this same panel.

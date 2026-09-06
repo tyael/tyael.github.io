@@ -1,0 +1,1400 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASPI Report Catalogue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
+<style>
+:root {
+  /* White #ffffff, black #030303, red #b10836 — everything else is a shade
+     of one of the three: neutral greys mixed from the first two, and reds
+     held at the same hue (344°), moved only in lightness. */
+  --ground:      #ffffff;
+  --surface:     #ffffff;
+  --surface-sunk:#f3f3f3;
+  --ink:         #030303;
+  --ink-soft:    #454545;
+  --ink-faint:   #7d7d7d;
+  --rule:        #e4e4e4;
+  --rule-strong: #c4c4c4;
+  --accent:      #b10836;
+  --accent-soft: #ffe0e8;
+  --accent-ink:  #ffffff;
+
+  --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --bar: 1100px;
+}
+/* #b10836 on near-black reaches a contrast ratio of only 2.9, so the dark
+   theme lifts the same hue to #ff4d76 (6.8) and darkens the tint behind a
+   search hit to match. The palette is otherwise the light one inverted. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #030303;
+    --surface:     #0e0e0e;
+    --surface-sunk:#171717;
+    --ink:         #ffffff;
+    --ink-soft:    #b0b0b0;
+    --ink-faint:   #828282;
+    --rule:        #242424;
+    --rule-strong: #3d3d3d;
+    --accent:      #ff4d76;
+    --accent-soft: #470e1e;
+    --accent-ink:  #030303;
+  }
+}
+:root[data-theme="dark"] {
+  --ground:      #030303;
+  --surface:     #0e0e0e;
+  --surface-sunk:#171717;
+  --ink:         #ffffff;
+  --ink-soft:    #b0b0b0;
+  --ink-faint:   #828282;
+  --rule:        #242424;
+  --rule-strong: #3d3d3d;
+  --accent:      #ff4d76;
+  --accent-soft: #470e1e;
+  --accent-ink:  #030303;
+}
+
+* { box-sizing: border-box; }
+/* An author-level `display` outranks the UA sheet's [hidden] rule, so
+   .state and .result-bar below both stayed on screen after being hidden. */
+[hidden] { display: none !important; }
+html { color-scheme: light dark; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+/* ---------- masthead ---------- */
+.masthead {
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface);
+}
+.wordmark b { font-weight: 600; color: var(--accent); font-style: normal; }
+.masthead-inner {
+  max-width: var(--bar);
+  margin: 0 auto;
+  padding: 18px 24px 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.wordmark {
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.wordmark span { color: var(--ink-faint); font-weight: 400; }
+.masthead-note {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  margin-left: auto;
+}
+.masthead-note b { font-family: var(--mono); font-weight: 500; color: var(--ink-soft); }
+
+/* ---------- controls ---------- */
+.controls {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+}
+.controls-inner {
+  max-width: var(--bar);
+  margin: 0 auto;
+  padding: 14px 24px 16px;
+  display: grid;
+  gap: 14px;
+}
+.filter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.4fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+@media (max-width: 760px) {
+  .filter-row { grid-template-columns: 1fr; }
+}
+.field { display: grid; gap: 5px; min-width: 0; }
+.field label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.field input,
+.field select {
+  font-family: var(--sans);
+  font-size: 14.5px;
+  line-height: 1.3;
+  height: 36px;
+  color: var(--ink);
+  background: var(--surface-sunk);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0 10px;
+  width: 100%;
+  min-width: 0;
+}
+button.ghost { height: 36px; padding: 0 12px; }
+.field input::placeholder { color: var(--ink-faint); }
+.field input:focus, .field select:focus { border-color: var(--accent); }
+
+.actions { display: flex; gap: 8px; align-items: end; }
+button.ghost {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  padding: 8px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+button.ghost:hover { color: var(--ink); border-color: var(--ink-faint); }
+button.ghost.tiny { height: 24px; padding: 0 9px; font-size: 11.5px; line-height: 1; }
+button.ghost.tiny:hover:not(:disabled) {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+button.ghost:disabled { opacity: 0.4; cursor: default; }
+.bar-tools { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.bar-tools .dl { display: inline-flex; gap: 6px; }
+.bar-tools .dl-label { color: var(--ink-faint); }
+
+/* ---------- year histogram ---------- */
+.years { display: grid; gap: 6px; }
+.years-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.years-head .range {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-soft);
+  font-weight: 500;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: default;
+}
+.years-head .range.clearable { cursor: pointer; color: var(--accent); }
+.years-head .range.clearable:hover { text-decoration: underline; text-underline-offset: 2px; }
+.years-head .legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 auto 0 12px;
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+.years-head .legend i { display: block; width: 8px; height: 8px; border-radius: 1px; }
+.years-head .legend i.k-all { background: var(--rule-strong); }
+.years-head .legend i.k-hit { background: var(--accent); margin-left: 6px; }
+
+/* Two tracks over one set of year columns: the whole corpus growing up from
+   the axis, the current result set hanging down from it. The lower track
+   carries its own scale — a filter matching four reports in a year still has
+   to be legible beside an unfiltered peak of sixty — so heights compare
+   within a track, never across the axis. */
+.hist-stack:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.hist-stack {
+  display: grid;
+  touch-action: none;
+  cursor: crosshair;
+  user-select: none;
+}
+.hist-track { display: flex; gap: 2px; }
+.hist-track.up { height: 46px; align-items: flex-end; border-bottom: 1px solid var(--rule); }
+.hist-track.down { height: 29px; padding-top: 3px; align-items: flex-start; }
+.hbar { flex: 1 1 0; position: relative; height: 100%; display: flex; min-width: 0; }
+.up .hbar { align-items: flex-end; }
+.down .hbar { align-items: flex-start; }
+.hbar i {
+  display: block;
+  width: 100%;
+  background: var(--rule-strong);
+  border-radius: 1px 1px 0 0;
+  min-height: 2px;
+  transition: background 90ms linear, height 110ms linear;
+}
+.up .hbar.on i { background: var(--ink); }
+.up .hbar.empty i { background: var(--rule); }
+.down .hbar i { background: var(--accent); border-radius: 0 0 1px 1px; }
+.down .hbar.empty i { display: none; }
+.year-axis {
+  display: flex;
+  gap: 2px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-faint);
+}
+.year-axis span { flex: 1 1 0; text-align: center; min-width: 0; overflow: hidden; }
+
+/* ---------- results ---------- */
+main { max-width: var(--bar); margin: 0 auto; padding: 0 24px 72px; }
+.result-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 0 10px;
+  font-size: 13px;
+  color: var(--ink-faint);
+  flex-wrap: wrap;
+}
+.result-bar strong {
+  font-family: var(--mono);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+ol.list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+li.entry {
+  display: grid;
+  grid-template-columns: 1fr 108px;
+  gap: 4px 20px;
+  padding: 13px 0 14px;
+  border-bottom: 1px solid var(--rule);
+  align-items: baseline;
+}
+li.entry {
+  padding-inline: 12px;
+  margin-inline: -12px;
+  transition: background 80ms linear;
+}
+li.entry:hover { background: var(--surface); }
+.entry-title {
+  font-family: var(--serif);
+  font-size: 17.5px;
+  font-weight: 500;
+  line-height: 1.32;
+  letter-spacing: -0.005em;
+  text-wrap: pretty;
+  margin: 0;
+  grid-column: 1;
+}
+.entry-title a { color: inherit; text-decoration: none; }
+.entry-title a:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.entry-authors {
+  grid-column: 1;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+.entry-authors.institutional { color: var(--ink-faint); font-style: italic; }
+.entry-date {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+  text-align: right;
+  white-space: nowrap;
+  align-self: start;
+  padding-top: 3px;
+}
+.entry-date .y { color: var(--ink); font-weight: 500; }
+.entry-links {
+  grid-column: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 5px;
+}
+.entry-links a {
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  text-decoration: none;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 3px 6px 4px;
+  white-space: nowrap;
+  transition: color 80ms linear, border-color 80ms linear;
+}
+.entry-links a:hover { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+/* The report itself, versus a catalogue that merely records it. */
+.entry-links a.primary { color: var(--ink-soft); border-color: var(--rule-strong); }
+
+/* The mode toggle sits beside the input, not in the label row — in the
+   label row its height pushed this field's label out of line with the
+   other two. */
+.search-row { display: flex; gap: 8px; min-width: 0; }
+.search-row input { flex: 1 1 auto; }
+.modes { display: inline-flex; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; flex: none; }
+.modes button {
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 0 11px;
+  border: 0;
+  background: var(--surface-sunk);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.modes button:hover { color: var(--ink); }
+.modes button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 500; }
+
+/* Relevance reads as a bar first and a number second. */
+.entry-score { display: flex; align-items: center; gap: 5px; justify-content: flex-end; margin-top: 3px; }
+.entry-score i { display: block; height: 3px; background: var(--accent); border-radius: 2px; }
+.entry-score b {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress {
+  display: block;
+  height: 3px;
+  width: 190px;
+  background: var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progress i { display: block; height: 100%; background: var(--accent); width: 0; transition: width 120ms linear; }
+.status { display: flex; align-items: center; gap: 9px; color: var(--accent); font-size: 12.5px; }
+
+kbd {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  border: 1px solid var(--rule-strong);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: var(--ink-soft);
+  background: var(--surface);
+}
+mark {
+  background: var(--accent-soft);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+@media (max-width: 560px) {
+  li.entry { grid-template-columns: 1fr; }
+  .entry-date { grid-column: 1; grid-row: auto; text-align: left; padding-top: 2px; }
+}
+
+/* ---------- states ---------- */
+.empty {
+  padding: 54px 0 64px;
+  text-align: center;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  color: var(--ink-soft);
+}
+.empty h2 { font-family: var(--serif); font-size: 19px; font-weight: 500; margin: 0; color: var(--ink); }
+.empty p { margin: 0; font-size: 13.5px; }
+.state {
+  max-width: 560px;
+  margin: 64px auto;
+  text-align: center;
+  color: var(--ink-soft);
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+}
+.state h2 { font-family: var(--serif); font-size: 21px; font-weight: 500; margin: 0; color: var(--ink); }
+.state p { margin: 0; font-size: 14px; text-wrap: pretty; }
+.state code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: var(--surface-sunk);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+label.filepick {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-radius: 3px;
+  padding: 9px 16px;
+  cursor: pointer;
+}
+label.filepick input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <h1 class="wordmark"><b>ASPI</b> Report Catalogue <span id="corpusSpan"></span></h1>
+    <p class="masthead-note" id="corpusNote"></p>
+  </div>
+</header>
+
+<section class="controls" id="controls" hidden>
+  <div class="controls-inner">
+    <div class="filter-row">
+      <div class="field">
+        <label for="q">Search titles and authors</label>
+        <div class="search-row">
+          <input id="q" type="search" autocomplete="off" spellcheck="false"
+                 placeholder="e.g. submarine, Antarctic, Hellyer&hellip;">
+          <span class="modes" role="group" aria-label="Search mode">
+            <button type="button" id="modeExact" aria-pressed="true">Exact</button>
+            <button type="button" id="modeSemantic" aria-pressed="false">Semantic</button>
+          </span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="author">Author</label>
+        <input id="author" type="search" autocomplete="off" spellcheck="false"
+               list="authorList" placeholder="Any author">
+        <datalist id="authorList"></datalist>
+      </div>
+      <div class="actions">
+        <div class="field">
+          <label for="sort">Sort</label>
+          <select id="sort">
+            <option value="relevance" hidden>Best match</option>
+            <option value="date-desc" selected>Newest first</option>
+            <option value="date-asc">Oldest first</option>
+            <option value="title">Title A&ndash;Z</option>
+            <option value="author">Author A&ndash;Z</option>
+          </select>
+        </div>
+        <button type="button" class="ghost" id="reset">Reset</button>
+      </div>
+    </div>
+
+    <div class="years">
+      <div class="years-head">
+        <span>Year published</span>
+        <span class="legend" id="legend" aria-hidden="true"><i class="k-all"></i>all<i class="k-hit"></i>matching</span>
+        <button type="button" class="range" id="yearRange"></button>
+      </div>
+      <div class="hist-stack" id="histogram" tabindex="0" role="group"
+           aria-label="Filter by year. Click a bar or drag across bars for a range; with this focused, arrow keys move the year, shift+arrow extends the range, Escape clears. Bars above the axis are the whole catalogue, bars below it the current results.">
+        <div class="hist-track up" id="histUp"></div>
+        <div class="hist-track down" id="histDown"></div>
+      </div>
+      <div class="year-axis" id="yearAxis"></div>
+    </div>
+  </div>
+</section>
+
+<main>
+  <div class="result-bar" id="resultBar" hidden>
+    <span id="resultCount" aria-live="polite"></span>
+    <span class="bar-tools">
+      <span><kbd>/</kbd> to search &middot; <kbd>Esc</kbd> to reset</span>
+      <span class="dl" role="group" aria-label="Download the filtered list">
+        <span class="dl-label">Download</span>
+        <button type="button" class="ghost tiny" id="dlBib">BibTeX</button>
+        <button type="button" class="ghost tiny" id="dlCsv">CSV</button>
+      </span>
+    </span>
+  </div>
+  <ol class="list" id="list"></ol>
+  <div class="state" id="state">
+    <h2>Loading the catalogue&hellip;</h2>
+  </div>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var ALL = [], VIEW = [], YEARS = [], COUNTS = {}, MINY = 0, MAXY = 0;
+  var MODE = "exact", SOURCE_BASE = "", LAST_FILTER = null;
+  var selFrom = null, selTo = null, dragging = false, dragAnchor = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var els = {
+    q: $("q"), author: $("author"), sort: $("sort"), reset: $("reset"),
+    list: $("list"), state: $("state"), controls: $("controls"),
+    resultBar: $("resultBar"), resultCount: $("resultCount"),
+    histogram: $("histogram"), yearAxis: $("yearAxis"),
+    dlBib: $("dlBib"), dlCsv: $("dlCsv"),
+    histUp: $("histUp"), histDown: $("histDown"),
+    yearRange: $("yearRange"), authorList: $("authorList"), corpusNote: $("corpusNote")
+  };
+
+  var MONTHS = ["", "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"];
+
+  function nameOf(a) {
+    if (!a) return "";
+    if (a.literal) return a.literal;
+    return [a.given, a.family, a.suffix].filter(Boolean).join(" ");
+  }
+
+  var SHORT = {
+    "Internet Archive": "IA archive",
+    "NLA web archive": "NLA archive",
+    "ASPI news": "News"
+  };
+  var PRIMARY = { "ASPI": 1, "JSTOR": 1, "PDF": 1 };
+
+  function prepare(payload) {
+    var rows = payload.entries || payload;
+    return rows.map(function (e, i) {
+      var names = e.authors || [];
+      return {
+        idx: i,
+        title: e.title || "",
+        names: names,
+        // csl_json.py split these and assigned the key; a catalogue.json
+        // predating that export still downloads, just with unsplit names.
+        nameParts: e.nameParts || names.map(function (n) { return { literal: n }; }),
+        key: e.key || ("aspi" + (e.year || "nd") + "entry" + i),
+        type: e.type || "",
+        number: e.number || "",
+        institutional: !!e.institutional || names.length === 0,
+        authorText: names.join(", "),
+        links: e.links || [],
+        year: e.year || 0,
+        month: e.month || 0,
+        day: e.day || 0,
+        sortKey: (e.year || 0) * 10000 + (e.month || 0) * 100 + (e.day || 0),
+        haystack: (e.title + " " + names.join(" ")).toLowerCase(),
+        authorHay: names.join(" ").toLowerCase(),
+        score: 0
+      };
+    });
+  }
+
+  function dateLabel(d) {
+    if (!d.year) return "n.d.";
+    if (!d.month) return String(d.year);
+    var m = MONTHS[d.month].slice(0, 3);
+    return d.day ? (d.day + " " + m) : m;
+  }
+
+  /* --- highlighting: escape first, then wrap matches --- */
+  function esc(s) {
+    return s.replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+  function rxEscape(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+  function highlight(text, terms) {
+    var out = esc(text);
+    if (!terms.length) return out;
+    var rx = new RegExp("(" + terms.map(rxEscape).join("|") + ")", "gi");
+    return out.replace(rx, "<mark>$1</mark>");
+  }
+
+  function terms() {
+    if (MODE === "semantic") return els.author.value.trim()
+      ? els.author.value.trim().toLowerCase().split(/\s+/).filter(Boolean) : [];
+    var t = els.q.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    var a = els.author.value.trim().toLowerCase();
+    if (a) t = t.concat(a.split(/\s+/).filter(Boolean));
+    return t;
+  }
+
+  function apply() {
+    var words = els.q.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    var auth = els.author.value.trim().toLowerCase();
+    var from = selFrom === null ? MINY : Math.min(selFrom, selTo);
+    var to = selFrom === null ? MAXY : Math.max(selFrom, selTo);
+
+    var query = els.q.value.trim();
+    var semantic = MODE === "semantic" && query && SEM_STATE === "ready" && scoreAll(query);
+
+    // A score belongs to a query, not to an entry. Anything that leaves us
+    // without a live ranking — an emptied query, a switch back to exact, an
+    // index that hasn't finished loading — has to clear the scores, or the
+    // previous query's percentages keep rendering beside rows that nothing
+    // has ranked.
+    if (!semantic) {
+      for (var si = 0; si < ALL.length; si++) ALL[si].score = 0;
+    }
+    syncSortOptions(semantic);
+
+    VIEW = ALL.filter(function (d) {
+      if (d.year < from || d.year > to) return false;
+      if (auth && d.authorHay.indexOf(auth) === -1) return false;
+      if (semantic) return true;         // relevance cut is applied below
+      for (var i = 0; i < words.length; i++) {
+        if (d.haystack.indexOf(words[i]) === -1) return false;
+      }
+      return true;
+    });
+
+    if (semantic) {
+      // Rank everything, then keep a relevance band rather than a fixed
+      // count: a sharp query should return few results and a vague one
+      // more, but always enough to judge whether the model understood.
+      VIEW.sort(function (a, b) { return b.score - a.score; });
+      var floor = Math.max(0.34, (VIEW[0] ? VIEW[0].score : 0) * 0.62);
+      var kept = VIEW.filter(function (d) { return d.score >= floor; });
+      VIEW = kept.length >= 10 ? kept.slice(0, 150) : VIEW.slice(0, 10);
+    }
+
+    var mode = els.sort.value;
+    if (!(semantic && mode === "relevance")) VIEW.sort(function (a, b) {
+      if (mode === "title") return a.title.localeCompare(b.title, "en");
+      if (mode === "author") {
+        var an = a.names[0] || "￿", bn = b.names[0] || "￿";
+        var as = an.split(" ").pop(), bs = bn.split(" ").pop();
+        return as.localeCompare(bs, "en") || b.sortKey - a.sortKey;
+      }
+      if (mode === "date-asc") return a.sortKey - b.sortKey || a.title.localeCompare(b.title);
+      return b.sortKey - a.sortKey || a.title.localeCompare(b.title);
+    });
+
+    render();
+    paintHistogram();
+    writeHash();
+
+    // When the result set changes, a reader half-way down the old list is
+    // looking at unrelated rows — bring them back to the top of the new one.
+    var signature = [els.q.value, els.author.value, MODE, selFrom, selTo].join("\u0000");
+    if (signature !== LAST_FILTER) {
+      LAST_FILTER = signature;
+      var top = els.list.getBoundingClientRect().top + window.scrollY - 220;
+      if (window.scrollY > top) window.scrollTo({ top: Math.max(0, top), behavior: "instant" });
+    }
+  }
+
+  var sortAutoDemoted = false;
+
+  function syncSortOptions(hasRanking) {
+    var opt = els.sort.querySelector('option[value="relevance"]');
+    opt.hidden = opt.disabled = !hasRanking;
+    if (!hasRanking && els.sort.value === "relevance") {
+      els.sort.value = "date-desc";
+      sortAutoDemoted = true;            // restore it when a ranking returns
+    } else if (hasRanking && sortAutoDemoted) {
+      els.sort.value = "relevance";
+      sortAutoDemoted = false;
+    }
+  }
+
+  function render() {
+    var t = terms();
+    var html = VIEW.map(function (d) {
+      var authors = d.institutional
+        ? '<div class="entry-authors institutional">Australian Strategic Policy Institute</div>'
+        : '<div class="entry-authors">' + highlight(d.authorText, t) + "</div>";
+      var title = highlight(d.title, t);
+      var titleHtml = d.url
+        ? '<a href="' + esc(d.url) + '" target="_blank" rel="noopener">' + title + "</a>"
+        : title;
+      var links = d.links.length
+        ? '<div class="entry-links">' + d.links.map(function (l) {
+            return '<a href="' + esc(l.url) + '" target="_blank" rel="noopener"' +
+                   (PRIMARY[l.label] ? ' class="primary"' : "") + ">" +
+                   esc(SHORT[l.label] || l.label) + "</a>";
+          }).join("") + "</div>"
+        : "";
+      var score = (MODE === "semantic" && d.score > 0)
+        ? '<div class="entry-score"><i style="width:' +
+            Math.max(2, Math.round(d.score * 46)) + 'px"></i><b>' +
+            Math.round(d.score * 100) + "%</b></div>"
+        : "";
+      return '<li class="entry">' +
+               '<h2 class="entry-title">' + titleHtml + "</h2>" +
+               authors + links +
+               '<div class="entry-date"><span class="y">' + d.year + "</span><br>" +
+                 esc(dateLabel(d)) + score + "</div>" +
+             "</li>";
+    }).join("");
+
+    els.resultBar.hidden = false;
+    els.list.innerHTML = html;
+
+    els.dlBib.disabled = els.dlCsv.disabled = VIEW.length === 0;
+    var what = VIEW.length === 1 ? "this report" : "these " + VIEW.length + " reports";
+    els.dlBib.title = "Download " + what + " as BibTeX (@techreport)";
+    els.dlCsv.title = "Download " + what + " as CSV";
+
+    if (VIEW.length === 0) {
+      els.list.innerHTML = '<div class="empty"><h2>Nothing matches those filters</h2>' +
+        "<p>Try a broader year range, a different author, or " +
+        (MODE === "exact" ? "semantic mode for a topic rather than a word." : "fewer words.") +
+        "</p></div>";
+      els.resultCount.innerHTML = "No matching reports";
+      return;
+    }
+    els.resultCount.innerHTML = MODE === "semantic" && els.q.value.trim()
+      ? "<strong>" + VIEW.length + "</strong> closest matches of " + ALL.length
+      : "<strong>" + VIEW.length + "</strong> of " + ALL.length + " reports";
+  }
+
+  /* --- year histogram --- */
+  function buildHistogram() {
+    var max = 0;
+    YEARS.forEach(function (y) { if (COUNTS[y] > max) max = COUNTS[y]; });
+
+    els.histUp.innerHTML = YEARS.map(function (y) {
+      var n = COUNTS[y] || 0;
+      var h = max ? Math.max(2, Math.round((n / max) * 100)) : 2;
+      return '<div class="hbar' + (n ? "" : " empty") + '" data-year="' + y +
+             '"><i style="height:' + h + '%"></i></div>';
+    }).join("");
+
+    // The lower track's heights belong to the filter, not the corpus, so the
+    // columns are built empty here and sized by paintHistogram.
+    els.histDown.innerHTML = YEARS.map(function (y) {
+      return '<div class="hbar empty" data-year="' + y + '"><i></i></div>';
+    }).join("");
+
+    els.yearAxis.innerHTML = YEARS.map(function (y, i) {
+      var show = (i === 0 || i === YEARS.length - 1 || y % 5 === 0);
+      return "<span>" + (show ? ("’" + String(y).slice(2)) : "") + "</span>";
+    }).join("");
+  }
+
+  function paintHistogram() {
+    var active = selFrom !== null;
+    var from = active ? Math.min(selFrom, selTo) : MINY;
+    var to = active ? Math.max(selFrom, selTo) : MAXY;
+    // Counts for the lower track come from VIEW itself — it is the list you
+    // are looking at, year filter included — scaled to its own peak so a
+    // three-report result still draws a shape rather than a flat line.
+    var hits = Object.create(null), peak = 0;
+    for (var v = 0; v < VIEW.length; v++) {
+      var hy = VIEW[v].year;
+      var c = hits[hy] = (hits[hy] || 0) + 1;
+      if (c > peak) peak = c;
+    }
+
+    var bars = els.histUp.children, mirror = els.histDown.children;
+    for (var i = 0; i < bars.length; i++) {
+      var y = +bars[i].getAttribute("data-year");
+      var total = COUNTS[y] || 0, hit = hits[y] || 0;
+      bars[i].classList.toggle("on", active && y >= from && y <= to);
+
+      var label = y + " \u00b7 " + total + " report" + (total === 1 ? "" : "s") +
+                  " \u00b7 " + hit + " matching";
+      bars[i].title = label;
+      mirror[i].title = label;
+      mirror[i].classList.toggle("empty", hit === 0);
+      mirror[i].firstChild.style.height =
+        hit ? Math.max(4, Math.round((hit / peak) * 100)) + "%" : "0";
+    }
+    els.yearRange.textContent = selFrom === null
+      ? "all years"
+      : (from === to ? String(from) : from + "–" + to);
+  }
+
+  function yearAt(evt) {
+    var el = evt.target.closest ? evt.target.closest(".hbar") : null;
+    return el ? +el.getAttribute("data-year") : null;
+  }
+
+  els.histogram.addEventListener("pointerdown", function (e) {
+    var y = yearAt(e);
+    if (y === null) return;
+    e.preventDefault();
+    dragging = true;
+    dragAnchor = y;
+    selFrom = selTo = y;
+    els.histogram.setPointerCapture(e.pointerId);
+    apply();
+  });
+  els.histogram.addEventListener("pointermove", function (e) {
+    if (!dragging) return;
+    // Pointer capture routes every move here, so hit-test by coordinate
+    // rather than trusting e.target, which stays pinned to the first bar.
+    var el = document.elementFromPoint(e.clientX, e.clientY);
+    var bar = el && el.closest ? el.closest(".hbar") : null;
+    if (!bar) return;
+    var yy = +bar.getAttribute("data-year");
+    if (yy === selTo) return;
+    selFrom = dragAnchor;
+    selTo = yy;
+    apply();
+  });
+  function endDrag() { dragging = false; }
+  els.histogram.addEventListener("pointerup", endDrag);
+  els.histogram.addEventListener("pointercancel", endDrag);
+
+  /* --- semantic search ---------------------------------------------------
+     A static embedding model (model2vec potion-base-8M): every token has
+     one fixed vector and a text's embedding is the mean of its tokens', so
+     the whole model is a lookup table. That is why the query can be
+     embedded here in plain JavaScript instead of loading a transformer
+     runtime — the vocabulary ships with the page and nothing is fetched at
+     query time. The 7.5 MB index loads lazily, only once semantic mode is
+     actually used. `build-embeddings` produces all three files; the
+     tokenizer below is a port of the BERT WordPiece tokenizer that module
+     records in semantic-meta.json, and is checked token-for-token
+     against it. */
+  var SEM = null, SEM_STATE = "idle", SEM_PENDING = null;
+
+  function fetchWithProgress(url, onProgress) {
+    return fetch(url).then(function (res) {
+      var total = +res.headers.get("content-length") || 0;
+      if (!res.body || !total) return res.arrayBuffer();
+      var reader = res.body.getReader(), chunks = [], done = 0;
+      return (function pump() {
+        return reader.read().then(function (r) {
+          if (r.done) {
+            var out = new Uint8Array(done), at = 0;
+            chunks.forEach(function (c) { out.set(c, at); at += c.length; });
+            return out.buffer;
+          }
+          chunks.push(r.value);
+          done += r.value.length;
+          onProgress(done / total);
+          return pump();
+        });
+      })();
+    });
+  }
+
+  function loadSemantic() {
+    if (SEM_STATE === "ready") return Promise.resolve();
+    if (SEM_STATE === "loading") return SEM_PENDING;
+    SEM_STATE = "loading";
+    var base = SOURCE_BASE;
+    setStatus("Loading the semantic index", 0);
+    SEM_PENDING = Promise.all([
+      fetch(base + "semantic-meta.json").then(function (r) { return r.json(); }),
+      fetchWithProgress(base + "semantic-vocab.i8", function (f) { setStatus("Loading the semantic index", f); }),
+      fetch(base + "semantic-titles.i8").then(function (r) { return r.arrayBuffer(); })
+    ]).then(function (parts) {
+      var meta = parts[0], lookup = Object.create(null);
+      for (var i = 0; i < meta.vocab.length; i++) lookup[meta.vocab[i]] = i;
+      SEM = {
+        meta: meta,
+        dim: meta.dim,
+        vocab: lookup,
+        vocabVecs: new Int8Array(parts[1]),
+        titleVecs: new Int8Array(parts[2]),
+        prefix: meta.continuingSubwordPrefix,
+        maxChars: meta.maxInputCharsPerWord,
+        unkId: lookup[meta.unkToken]
+      };
+      SEM_STATE = "ready";
+      setStatus("");
+    }).catch(function () {
+      SEM_STATE = "idle";
+      setStatus("");
+      els.resultCount.innerHTML =
+        "Semantic index missing \u2014 run <code>build-embeddings</code>, then reload.";
+    });
+    return SEM_PENDING;
+  }
+
+  function setStatus(label, fraction) {
+    if (!label) { apply(); return; }
+    els.resultBar.hidden = false;
+    els.resultCount.innerHTML =
+      '<span class="status">' + esc(label) +
+      ' <span class="progress"><i style="width:' + Math.round((fraction || 0) * 100) + '%"></i></span>' +
+      "</span>";
+  }
+
+  /* BertNormalizer: drop control chars (Unicode category "Other", keeping
+     \t \n \r), map whitespace to a space, isolate CJK, strip accents, then
+     lowercase — in that order, which is the order HF applies them. */
+  function normalizeText(str) {
+    var out = "";
+    for (var ch of str) {
+      if (ch === "\u0000" || ch === "\ufffd") continue;
+      if (ch !== "\t" && ch !== "\n" && ch !== "\r" && /\p{C}/u.test(ch)) continue;
+      if (/\s/u.test(ch)) { out += " "; continue; }
+      out += isCJK(ch.codePointAt(0)) ? " " + ch + " " : ch;
+    }
+    if (SEM.meta.stripAccents) out = out.normalize("NFD").replace(/\p{Mn}/gu, "");
+    return SEM.meta.lowercase ? out.toLowerCase() : out;
+  }
+
+  function isCJK(cp) {
+    return (cp >= 0x4e00 && cp <= 0x9fff) || (cp >= 0x3400 && cp <= 0x4dbf) ||
+           (cp >= 0x20000 && cp <= 0x2a6df) || (cp >= 0x2a700 && cp <= 0x2b73f) ||
+           (cp >= 0x2b740 && cp <= 0x2b81f) || (cp >= 0x2b820 && cp <= 0x2ceaf) ||
+           (cp >= 0xf900 && cp <= 0xfaff) || (cp >= 0x2f800 && cp <= 0x2fa1f);
+  }
+
+  /* HF splits on ASCII punctuation *or* Unicode category P — note ASCII
+     punctuation includes $ + < = > ^ ` | ~, which Unicode files under S. */
+  var ASCII_PUNCT = /[!-\/:-@\[-`{-~]/;
+  function isBertPunct(ch) { return ASCII_PUNCT.test(ch) || /\p{P}/u.test(ch); }
+
+  /* BertPreTokenizer: split on whitespace (removed), then on punctuation
+     (isolated as its own token). */
+  function preTokenize(text) {
+    var words = [];
+    text.split(/\s+/).forEach(function (chunk) {
+      if (!chunk) return;
+      var cur = "";
+      for (var ch of chunk) {
+        if (isBertPunct(ch)) {
+          if (cur) { words.push(cur); cur = ""; }
+          words.push(ch);
+        } else { cur += ch; }
+      }
+      if (cur) words.push(cur);
+    });
+    return words;
+  }
+
+  /* WordPiece: greedy longest-match-first, "##" on continuations, and the
+     whole word becomes [UNK] if any piece fails to match — [UNK] carries a
+     real vector and counts toward the mean, exactly as it does in Python. */
+  function wordpiece(word) {
+    var chars = Array.from(word);
+    if (chars.length > SEM.maxChars) return [SEM.unkId];
+    var ids = [], start = 0;
+    while (start < chars.length) {
+      var end = chars.length, id = -1, hitEnd = -1;
+      while (start < end) {
+        var piece = chars.slice(start, end).join("");
+        if (start > 0) piece = SEM.prefix + piece;
+        var found = SEM.vocab[piece];
+        if (found !== undefined) { id = found; hitEnd = end; break; }
+        end--;
+      }
+      if (id === -1) return [SEM.unkId];
+      ids.push(id);
+      start = hitEnd;
+    }
+    return ids;
+  }
+
+  function tokenize(text) {
+    var ids = [];
+    preTokenize(normalizeText(text)).forEach(function (w) {
+      wordpiece(w).forEach(function (id) { ids.push(id); });
+    });
+    return ids;
+  }
+
+  function embedQuery(text) {
+    var ids = tokenize(text);
+    if (!ids.length) return null;
+    var dim = SEM.dim, v = new Float32Array(dim), M = SEM.vocabVecs;
+    for (var i = 0; i < ids.length; i++) {
+      var off = ids[i] * dim;
+      for (var k = 0; k < dim; k++) v[k] += M[off + k];
+    }
+    var norm = 0;
+    for (var k2 = 0; k2 < dim; k2++) { v[k2] /= ids.length; norm += v[k2] * v[k2]; }
+    norm = Math.sqrt(norm);
+    if (!norm) return null;
+    for (var k3 = 0; k3 < dim; k3++) v[k3] /= norm;
+    return v;
+  }
+
+  /* Scores every title against the query. The int8 scale cancels, because
+     both sides are re-normalised before the dot product. */
+  function scoreAll(query) {
+    var q = embedQuery(query);
+    if (!q) return false;
+    var dim = SEM.dim, T = SEM.titleVecs;
+    for (var i = 0; i < ALL.length; i++) {
+      var off = ALL[i].idx * dim, dot = 0, mag = 0;
+      for (var k = 0; k < dim; k++) {
+        var t = T[off + k];
+        dot += q[k] * t;
+        mag += t * t;
+      }
+      ALL[i].score = mag ? dot / Math.sqrt(mag) : 0;
+    }
+    return true;
+  }
+
+  /* --- downloading the filtered set -------------------------------------
+     Whatever is on screen, in the order it is on screen, as either BibTeX
+     or CSV. Author splitting and citation keys are not recomputed here:
+     they arrive in catalogue.json from csl_json.py, so a key copied out of
+     this page is the key `export-csl-json` gives that same report. Every
+     report in this catalogue has the same publisher and place, so both are
+     written as constants rather than carried per entry. */
+  var INSTITUTION = "Australian Strategic Policy Institute";
+  var PLACE = "Canberra";
+  var BIB_MONTHS = ["", "jan", "feb", "mar", "apr", "may", "jun",
+                    "jul", "aug", "sep", "oct", "nov", "dec"];
+
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
+
+  function isoDate(d) {
+    if (!d.year) return "";
+    if (!d.month) return String(d.year);
+    return d.year + "-" + pad2(d.month) + (d.day ? "-" + pad2(d.day) : "");
+  }
+
+  function today() { return new Date().toISOString().slice(0, 10); }
+
+  function primaryUrl(d) { return d.links.length ? d.links[0].url : ""; }
+
+  // What the reader filtered to, as one line, so a file that leaves this
+  // page can still say where it came from.
+  function filterNote() {
+    var bits = [];
+    if (els.q.value.trim()) {
+      bits.push((MODE === "semantic" ? "semantic search " : "search ") +
+                '"' + els.q.value.trim() + '"');
+    }
+    if (els.author.value.trim()) bits.push('author "' + els.author.value.trim() + '"');
+    if (selFrom !== null) {
+      var a = Math.min(selFrom, selTo), b = Math.max(selFrom, selTo);
+      bits.push("years " + (a === b ? a : a + "\u2013" + b));
+    }
+    return bits.length ? bits.join("; ") : "no filter, whole catalogue";
+  }
+
+  function slug(text) {
+    return text.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+               .replace(/^-|-$/g, "").slice(0, 40);
+  }
+
+  function fileStem() {
+    var bits = [];
+    if (els.q.value.trim()) bits.push(slug(els.q.value.trim()));
+    if (els.author.value.trim()) bits.push(slug(els.author.value.trim()));
+    if (selFrom !== null) {
+      var a = Math.min(selFrom, selTo), b = Math.max(selFrom, selTo);
+      bits.push(a === b ? String(a) : a + "-" + b);
+    }
+    return "aspi-reports" + (bits.length ? "-" + bits.filter(Boolean).join("-") : "");
+  }
+
+  /* BibTeX's own metacharacters. Everything else stays as written: the file
+     is UTF-8 and says so, which biber reads directly, so "Australia\u2019s"
+     and the \u2074 in "C\u2074ISR(EW)" survive as themselves. */
+  function bibEscape(s) {
+    return String(s).replace(/[\\{}&%$#_~^]/g, function (c) {
+      if (c === "\\") return "\\textbackslash{}";
+      if (c === "~") return "\\textasciitilde{}";
+      if (c === "^") return "\\textasciicircum{}";
+      return "\\" + c;
+    });
+  }
+
+  function bibAuthors(d) {
+    var parts = d.nameParts.length ? d.nameParts : [{ literal: INSTITUTION }];
+    return parts.map(function (n) {
+      // A corporate or unsplittable name is braced whole, or BibTeX reads
+      // its last word as a surname.
+      if (n.literal || !n.family) return "{" + bibEscape(n.literal || nameOf(n)) + "}";
+      var family = bibEscape(n.family);
+      // BibTeX's three-part form is "von Last, Jr, First".
+      if (n.suffix) family += ", " + bibEscape(n.suffix);
+      return family + ", " + bibEscape(n.given || "");
+    }).join(" and ");
+  }
+
+  function bibEntry(d, stamp) {
+    var f = [
+      ["author", "{" + bibAuthors(d) + "}"],
+      // Doubled braces: these titles have been normalised carefully (ASPI,
+      // AUKUS, ADF, "VAMPIRE VAMPIRE VAMPIRE"), and a style that lowercases
+      // them would undo that.
+      ["title", "{{" + bibEscape(d.title) + "}}"],
+      ["institution", "{" + INSTITUTION + "}"],
+      ["address", "{" + PLACE + "}"]
+    ];
+    if (d.year) f.push(["year", "{" + d.year + "}"]);
+    if (d.month) f.push(["month", BIB_MONTHS[d.month]]);
+    if (d.year && d.month && d.day) f.push(["date", "{" + isoDate(d) + "}"]);
+    if (d.type) f.push(["type", "{" + bibEscape(d.type) + "}"]);
+    if (d.number) f.push(["number", "{" + bibEscape(d.number) + "}"]);
+    if (primaryUrl(d)) f.push(["url", "{" + primaryUrl(d) + "}"]);
+    f.push(["urldate", "{" + stamp + "}"]);
+    return "@techreport{" + d.key + ",\n" + f.map(function (kv) {
+      return "  " + (kv[0] + "           ").slice(0, 11) + " = " + kv[1] + ",";
+    }).join("\n") + "\n}\n";
+  }
+
+  function toBibtex(rows) {
+    var stamp = today();
+    return "% ASPI Report Catalogue \u2014 " + rows.length + " of " + ALL.length + " reports\n" +
+           "% Filter: " + filterNote() + "\n" +
+           "% Exported " + stamp + ". UTF-8; read with biber/biblatex, or " +
+           "bibtex with inputenc.\n\n" +
+           rows.map(function (d) { return bibEntry(d, stamp); }).join("\n");
+  }
+
+  var CSV_COLUMNS = [
+    ["Key", function (d) { return d.key; }],
+    ["Title", function (d) { return d.title; }],
+    ["Authors", function (d) { return d.names.join("; "); }],
+    ["Institutional author", function (d) { return d.institutional ? INSTITUTION : ""; }],
+    ["Year", function (d) { return d.year || ""; }],
+    ["Month", function (d) { return d.month || ""; }],
+    ["Day", function (d) { return d.day || ""; }],
+    ["Date", function (d) { return isoDate(d); }],
+    ["Type", function (d) { return d.type; }],
+    ["Number", function (d) { return d.number; }],
+    ["Publisher", function () { return INSTITUTION; }],
+    ["Place", function () { return PLACE; }],
+    ["URL", function (d) { return primaryUrl(d); }],
+    ["All sources", function (d) {
+      return d.links.map(function (l) { return l.label + ": " + l.url; }).join(" | ");
+    }]
+  ];
+
+  function csvCell(value) {
+    var v = value === null || value === undefined ? "" : String(value);
+    return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }
+
+  function toCsv(rows) {
+    var lines = [CSV_COLUMNS.map(function (c) { return csvCell(c[0]); }).join(",")];
+    rows.forEach(function (d) {
+      lines.push(CSV_COLUMNS.map(function (c) { return csvCell(c[1](d)); }).join(","));
+    });
+    // CRLF and a BOM: RFC 4180, and Excel reads the UTF-8 without it as
+    // Latin-1, which mangles every curly quote in these titles.
+    return "\ufeff" + lines.join("\r\n") + "\r\n";
+  }
+
+  function download(filename, mime, text) {
+    var blob = new Blob([text], { type: mime });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoking in the same tick cancels the download in some browsers.
+    setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+  }
+
+  els.dlBib.addEventListener("click", function () {
+    if (!VIEW.length) return;
+    download(fileStem() + ".bib", "application/x-bibtex;charset=utf-8", toBibtex(VIEW));
+  });
+  els.dlCsv.addEventListener("click", function () {
+    if (!VIEW.length) return;
+    download(fileStem() + ".csv", "text/csv;charset=utf-8", toCsv(VIEW));
+  });
+
+  /* --- wiring --- */
+  /* The whole filter state lives in the URL, so a search can be
+     bookmarked, reloaded or handed to someone else. Written with
+     replaceState so typing doesn't fill up the back button. */
+  var STATE_KEYS = ["q", "author", "sort", "mode", "from", "to"];
+
+  function writeHash() {
+    var st = {
+      q: els.q.value.trim(),
+      author: els.author.value.trim(),
+      sort: els.sort.value === "date-desc" ? "" : els.sort.value,
+      mode: MODE === "exact" ? "" : MODE,
+      from: selFrom === null ? "" : Math.min(selFrom, selTo),
+      to: selFrom === null ? "" : Math.max(selFrom, selTo)
+    };
+    var parts = STATE_KEYS.filter(function (k) { return st[k] !== "" && st[k] !== undefined; })
+      .map(function (k) { return k + "=" + encodeURIComponent(st[k]); });
+    var hash = parts.length ? "#" + parts.join("&") : "";
+    if (hash !== location.hash) history.replaceState(null, "", location.pathname + location.search + hash);
+  }
+
+  function readHash() {
+    var out = {};
+    location.hash.replace(/^#/, "").split("&").forEach(function (pair) {
+      if (!pair) return;
+      var i = pair.indexOf("=");
+      if (i > 0) out[pair.slice(0, i)] = decodeURIComponent(pair.slice(i + 1));
+    });
+    return out;
+  }
+
+  function restoreFromHash() {
+    var st = readHash();
+    if (st.q) els.q.value = st.q;
+    if (st.author) els.author.value = st.author;
+    var from = parseInt(st.from, 10), to = parseInt(st.to, 10);
+    if (from >= MINY && to <= MAXY && from <= to) { selFrom = from; selTo = to; }
+    if (st.sort) els.sort.value = st.sort;
+    if (st.mode === "semantic") { setMode("semantic"); return true; }
+    return false;
+  }
+
+  function debounce(fn, ms) {
+    var t; return function () { clearTimeout(t); t = setTimeout(fn, ms); };
+  }
+  var onType = debounce(apply, 110);
+  els.q.addEventListener("input", onType);
+  els.author.addEventListener("input", onType);
+  els.sort.addEventListener("change", apply);
+
+  // Clicking the range label clears the year filter — previously the only
+  // way to undo one was Reset, which also threw away the search.
+  els.yearRange.addEventListener("click", function () {
+    if (selFrom === null) return;
+    selFrom = selTo = null;
+    apply();
+  });
+
+  // Keyboard equivalent of the drag: the histogram takes focus as one
+  // control rather than 25 tab stops, one per bar.
+  els.histogram.addEventListener("keydown", function (e) {
+    var step = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
+    if (e.key === "Escape" && selFrom !== null) { selFrom = selTo = null; apply(); e.preventDefault(); return; }
+    if (!step) return;
+    e.preventDefault();
+    if (selFrom === null) { selFrom = selTo = step > 0 ? MINY : MAXY; }
+    else if (e.shiftKey) { selTo = Math.min(MAXY, Math.max(MINY, selTo + step)); }
+    else { selFrom = selTo = Math.min(MAXY, Math.max(MINY, selTo + step)); }
+    apply();
+  });
+
+  function setMode(next) {
+    MODE = next;
+    $("modeExact").setAttribute("aria-pressed", String(next === "exact"));
+    $("modeSemantic").setAttribute("aria-pressed", String(next === "semantic"));
+    if (next === "semantic") {
+      sortAutoDemoted = true;
+      els.q.placeholder = "Describe a topic \u2014 e.g. undersea warfare, foreign interference\u2026";
+      loadSemantic().then(apply);
+    } else {
+      els.q.placeholder = "e.g. submarine, Antarctic, Hellyer\u2026";
+      apply();
+    }
+  }
+  $("modeExact").addEventListener("click", function () { setMode("exact"); });
+  $("modeSemantic").addEventListener("click", function () { setMode("semantic"); });
+  els.reset.addEventListener("click", function () {
+    els.q.value = "";
+    els.author.value = "";
+    selFrom = selTo = null;
+    setMode("exact");
+    els.q.focus();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "/" && document.activeElement !== els.q && document.activeElement !== els.author) {
+      e.preventDefault();
+      els.q.focus();
+      els.q.select();
+    }
+    // Escape resets from wherever focus happens to be, not only from the
+    // search box — the hint in the result bar promises that much, and by the
+    // time you want it focus is usually on a link or nothing at all. The one
+    // exception is a focused histogram, which clears just its year range and
+    // calls preventDefault; clicking a bar does not focus it (pointerdown
+    // suppresses that), so a mouse-driven range clears with everything else.
+    if (e.key === "Escape" && !e.defaultPrevented && !els.controls.hidden) {
+      var dirty = els.q.value || els.author.value || selFrom !== null || MODE !== "exact";
+      if (dirty) { e.preventDefault(); els.reset.click(); }
+    }
+  });
+
+  function start(raw) {
+    ALL = prepare(raw);
+    var ys = ALL.map(function (d) { return d.year; }).filter(Boolean);
+    MINY = Math.min.apply(null, ys);
+    MAXY = Math.max.apply(null, ys);
+    YEARS = [];
+    for (var y = MINY; y <= MAXY; y++) { YEARS.push(y); COUNTS[y] = 0; }
+    ALL.forEach(function (d) { if (COUNTS[d.year] !== undefined) COUNTS[d.year]++; });
+
+    var seen = Object.create(null), names = [];
+    ALL.forEach(function (d) {
+      d.names.forEach(function (n) {
+        if (!seen[n] && n !== "Australian Strategic Policy Institute") { seen[n] = 1; names.push(n); }
+      });
+    });
+    names.sort(function (a, b) {
+      return (a.split(" ").pop()).localeCompare(b.split(" ").pop(), "en");
+    });
+    els.authorList.innerHTML = names.map(function (n) {
+      return '<option value="' + esc(n) + '"></option>';
+    }).join("");
+
+    $("corpusSpan").textContent = MINY + "\u2013" + MAXY;
+    els.corpusNote.innerHTML = "<b>" + ALL.length + "</b> reports \u00b7 <b>" +
+      names.length + "</b> named authors";
+
+    els.state.hidden = true;
+    els.controls.hidden = false;
+    buildHistogram();
+    if (!restoreFromHash()) apply();
+  }
+
+  function needFile(reason) {
+    els.state.innerHTML =
+      '<h2>Point me at the catalogue</h2>' +
+      "<p>" + esc(reason) + " Browsers block a page opened straight from disk from reading " +
+      "neighbouring files, so either pick the file below, or serve the folder with " +
+      "<code>python3 -m http.server</code> from the repository root and open " +
+      "<code>/webview/</code>.</p>" +
+      '<label class="filepick">Choose catalogue.json<input type="file" accept=".json,application/json" id="picker"></label>';
+    els.state.hidden = false;
+    $("picker").addEventListener("change", function (e) {
+      var f = e.target.files && e.target.files[0];
+      if (!f) return;
+      var fr = new FileReader();
+      fr.onload = function () {
+        try { start(JSON.parse(fr.result)); }
+        catch (err) { needFile("That file could not be read as JSON."); }
+      };
+      fr.readAsText(f);
+    });
+  }
+
+  // Verification hook. The JS tokenizer below has to agree with the Python
+  // one in embeddings.py token-for-token, or query vectors land in a
+  // different space from the title vectors and semantic ranking quietly
+  // degrades. This exposes just enough to check that from outside.
+  window.aspiCatalogue = {
+    semanticState: function () { return SEM_STATE; },
+    tokenize: function (t) { return tokenize(t); },
+    embedQuery: function (t) { return Array.from(embedQuery(t) || []); },
+    search: function (t) { scoreAll(t); return ALL.slice().sort(function (a, b) { return b.score - a.score; })
+      .slice(0, 10).map(function (d) { return [Math.round(d.score * 1000) / 1000, d.title]; }); },
+    bibtex: function () { return toBibtex(VIEW); },
+    csv: function () { return toCsv(VIEW); }
+  };
+
+  var sources = ["catalogue.json", "webview/catalogue.json"];
+  (function tryNext(i) {
+    if (i >= sources.length) {
+      needFile("I could not load catalogue.json automatically.");
+      return;
+    }
+    fetch(sources[i])
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (payload) {
+        SOURCE_BASE = sources[i].replace(/catalogue\.json$/, "");
+        start(payload);
+      })
+      .catch(function () { tryNext(i + 1); });
+  })(0);
+})();
+</script>
+</body>
+</html>

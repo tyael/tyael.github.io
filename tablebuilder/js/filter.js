@@ -24,48 +24,58 @@ const Filter = {
    *   test    (cell, a, b, numeric) -> boolean, for the preview
    *   r       (col, a, b, numeric) -> R source, for the export
    *
-   * Text comparison is case-insensitive throughout, and `tolower()` goes into
-   * the R so both agree. Someone filtering for "north" means the rows that say
-   * "North", and a filter that is quietly case-sensitive reads as a filter
-   * that is quietly broken.
+   * Text comparison is case-insensitive throughout, and **both sides of it are
+   * folded in the R as well as in the test**. `tolower()` went around the
+   * column alone, and the operand went over as the user typed it: a filter for
+   * `HIGH` kept every `high` row in the preview and emitted
+   * `tolower(note) == "HIGH"`, which is true of nothing. The table on screen
+   * had rows in it and the exported one came out empty — the exact failure the
+   * note above says is the worst this app can be. Every text operator now
+   * writes its operand through `Filter.lower`, which is the same function the
+   * test uses, rather than through a `toLowerCase` remembered per operator:
+   * two of the eleven remembered it and the rest did not.
    */
   OPS: [
     { id: 'eq', label: 'is', arity: 1,
       test: (v, a, num) => (num ? Util.toNumber(v) === Util.toNumber(a) : Filter.lower(v) === Filter.lower(a)),
-      r: (col, a, b, num) => (num ? col + ' == ' + a : 'tolower(' + col + ') == ' + Filter.rStr(a)) },
+      r: (col, a, b, num) => (num ? col + ' == ' + a
+        : 'tolower(' + col + ') == ' + Filter.rStr(Filter.lower(a))) },
 
     { id: 'ne', label: 'is not', arity: 1,
       test: (v, a, num) => (num ? Util.toNumber(v) !== Util.toNumber(a) : Filter.lower(v) !== Filter.lower(a)),
-      r: (col, a, b, num) => (num ? col + ' != ' + a : 'tolower(' + col + ') != ' + Filter.rStr(a)) },
+      r: (col, a, b, num) => (num ? col + ' != ' + a
+        : 'tolower(' + col + ') != ' + Filter.rStr(Filter.lower(a))) },
 
     { id: 'contains', label: 'contains', arity: 1,
       test: (v, a) => Filter.lower(v).indexOf(Filter.lower(a)) >= 0,
-      r: (col, a) => 'grepl(' + Filter.rStr(String(a).toLowerCase()) + ', tolower(' + col + '), fixed = TRUE)' },
+      r: (col, a) => 'grepl(' + Filter.rStr(Filter.lower(a)) +
+        ', tolower(' + col + '), fixed = TRUE)' },
 
     { id: 'not_contains', label: 'does not contain', arity: 1,
       test: (v, a) => Filter.lower(v).indexOf(Filter.lower(a)) < 0,
-      r: (col, a) => '!grepl(' + Filter.rStr(String(a).toLowerCase()) + ', tolower(' + col + '), fixed = TRUE)' },
+      r: (col, a) => '!grepl(' + Filter.rStr(Filter.lower(a)) +
+        ', tolower(' + col + '), fixed = TRUE)' },
 
     { id: 'gt', label: 'is greater than', arity: 1,
       test: (v, a, num) => Filter.compare(v, a, num) > 0,
-      r: (col, a, b, num) => col + ' > ' + (num ? a : Filter.rStr(a)) },
+      r: (col, a, b, num) => Filter.rOrder('gt', '>', col, a, num) },
 
     { id: 'gte', label: 'is at least', arity: 1,
       test: (v, a, num) => Filter.compare(v, a, num) >= 0,
-      r: (col, a, b, num) => col + ' >= ' + (num ? a : Filter.rStr(a)) },
+      r: (col, a, b, num) => Filter.rOrder('ge', '>=', col, a, num) },
 
     { id: 'lt', label: 'is less than', arity: 1,
       test: (v, a, num) => Filter.compare(v, a, num) < 0,
-      r: (col, a, b, num) => col + ' < ' + (num ? a : Filter.rStr(a)) },
+      r: (col, a, b, num) => Filter.rOrder('lt', '<', col, a, num) },
 
     { id: 'lte', label: 'is at most', arity: 1,
       test: (v, a, num) => Filter.compare(v, a, num) <= 0,
-      r: (col, a, b, num) => col + ' <= ' + (num ? a : Filter.rStr(a)) },
+      r: (col, a, b, num) => Filter.rOrder('le', '<=', col, a, num) },
 
     { id: 'between', label: 'is between', arity: 2,
       test: (v, a, num, b) => Filter.compare(v, a, num) >= 0 && Filter.compare(v, b, num) <= 0,
-      r: (col, a, b, num) => col + ' >= ' + (num ? a : Filter.rStr(a)) +
-        ' & ' + col + ' <= ' + (num ? b : Filter.rStr(b)) },
+      r: (col, a, b, num) => Filter.rOrder('ge', '>=', col, a, num) +
+        ' & ' + Filter.rOrder('le', '<=', col, b, num) },
 
     { id: 'empty', label: 'is empty', arity: 0,
       test: (v) => Util.isMissing(v),
@@ -86,12 +96,78 @@ const Filter = {
     return Filter.OPS.find((op) => op.id === id) || Filter.OPS[0];
   },
 
+  /**
+   * A value as every text operator compares it: what it draws, trimmed and
+   * case-folded.
+   *
+   * Through `Markup.toPlain`, so a cell showing CO₂ is found by searching
+   * for `CO2` rather than for `CO_{2}` — nobody can see the second one. It
+   * normalises the operand as well as the cell, which is what makes the two
+   * ends of every comparison the same kind of thing.
+   */
   lower(value) {
-    return String(value === null || value === undefined ? '' : value).trim().toLowerCase();
+    return Markup.toPlain(value).trim().toLowerCase();
+  },
+
+  /** The column as the ordering operators compare it. */
+  rSide(col, numeric) {
+    return numeric ? col : 'tolower(' + col + ')';
   },
 
   /**
-   * Compare a cell against a operand, numerically when both look like numbers
+   * ICU's spelling of `Filter.COLLATE`, for the R.
+   *
+   * `numeric = TRUE` is `{numeric: true}` and `strength = 1L` is
+   * `{sensitivity: 'base'}` — the same two settings, named the way the library
+   * on that side names them. Written out at each use rather than assigned to a
+   * variable at the top of the script: `dplyr::filter()` evaluates in a data
+   * mask, so a column called `text_order` would be found in place of the
+   * options and the comparison would fail on something nobody could see. A
+   * function like `plain_text` is safe there — R skips non-function bindings
+   * when it resolves a call — but a value is not.
+   */
+  R_COLLATOR: 'stringi::stri_opts_collator(numeric = TRUE, strength = 1L)',
+
+  /**
+   * One ordering comparison, as R.
+   *
+   * A number column compares with the operator itself. A text column cannot:
+   * R's `>` on a character vector collates by the reader's locale, which reads
+   * the digits in `Study 10` as characters and would put it before `Study 2`
+   * — the order the preview stopped using. `stringi` is where R keeps the same
+   * ICU collation the browser compares with, and it takes the two settings by
+   * name.
+   *
+   * Fully qualified rather than added to the preamble, as `stringr::str_rank`
+   * is: a table with no text ordering carries no dependency it does not use.
+   * `stringi` is `stringr`'s own, so a script that can sort text can run this.
+   */
+  rOrder(name, symbol, col, value, numeric) {
+    if (numeric) return Filter.rSide(col, true) + ' ' + symbol + ' ' + Filter.rOperand(value, true);
+    return 'stringi::stri_cmp_' + name + '(' + Filter.rSide(col, false) + ', ' +
+      Filter.rOperand(value, false) + ', opts_collator = ' + Filter.R_COLLATOR + ')';
+  },
+
+  /** The operand, folded the same way the cell it is compared against is. */
+  rOperand(value, numeric) {
+    return numeric ? value : Filter.rStr(Filter.lower(value));
+  },
+
+  /**
+   * Ordering options: `Compute.sortRows`'s, because there is one right answer
+   * to "which of these two comes first" and a table may not hold two.
+   *
+   * This used to be a bare `localeCompare`, and the table contradicted itself
+   * in public: sorted ascending it drew Study 2 above Study 10, while "is at
+   * least Study 10" *kept* Study 2 — the sort read the digits as a number and
+   * the filter read them as characters. The kept rows were then not a suffix
+   * of the sorted order, on screen, at the same time. `café` and `cafe` were
+   * the same value to one and different to the other.
+   */
+  COLLATE: { numeric: true, sensitivity: 'base' },
+
+  /**
+   * Compare a cell against an operand, numerically when the column is numbers
    * and as text otherwise — so `>` on a number column does what it should, and
    * on a text column still orders sensibly rather than throwing.
    */
@@ -102,7 +178,7 @@ const Filter = {
       if (a === null || b === null) return NaN;
       return a < b ? -1 : (a > b ? 1 : 0);
     }
-    return Filter.lower(cell).localeCompare(Filter.lower(operand));
+    return Filter.lower(cell).localeCompare(Filter.lower(operand), undefined, Filter.COLLATE);
   },
 
   /** An R string literal. */

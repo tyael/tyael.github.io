@@ -77,7 +77,7 @@ const RenderHtml = {
     table.appendChild(tbody);
     if (tfoot.childNodes.length) table.appendChild(tfoot);
 
-    const css = RenderHtml.buildCss(model, id, opt);
+    const css = RenderHtml.buildCss(model, id, opt, opts.selectable);
 
     return { node: table, table: table, css: css, grid: grid, id: id };
   },
@@ -379,7 +379,7 @@ const RenderHtml = {
    * a part lives here; only per-cell values (borders, colours, rule styles) are
    * inline, which keeps the exported HTML legible.
    */
-  buildCss(model, id, opt) {
+  buildCss(model, id, opt, selectable) {
     const sel = '#' + id;
     const out = [];
     const rule = (selector, decls) => {
@@ -436,10 +436,13 @@ const RenderHtml = {
       // `edges.js` so that all of them resolve through one precedence path —
       // an element border is a second mechanism, and two mechanisms drawing
       // the same edge stack rather than one winning.
-      'border-top': null,
-      'border-bottom': null,
-      'border-left': null,
-      'border-right': null,
+      //
+      // Said out loud rather than left unset, because unset only holds where
+      // nothing else has an opinion. Pasted into a page whose own stylesheet
+      // gives every table a border, the table takes it — outside the edges
+      // `edges.js` drew, so it gains an outline nothing in the editor asked
+      // for and nothing in the editor can remove.
+      'border': '0 none transparent',
       '-webkit-font-smoothing': 'antialiased',
       'text-rendering': 'optimizeLegibility'
     }, margins));
@@ -448,12 +451,33 @@ const RenderHtml = {
     // `box-sizing` is set explicitly rather than inherited: the editor's own
     // reset would otherwise make the preview lay out differently from the
     // exported file, which has no reset of its own.
+    //
+    // Every declaration here is already what the cell effectively had, so none
+    // of them changes a table this app draws. They exist for the one that is
+    // drawn somewhere else: pasted into a page, the table is laid out by that
+    // page's stylesheet as much as by this one, and `.entry-content td { … }`
+    // is among the most common lines a stylesheet writes. Anything left unset
+    // is that stylesheet's to decide.
+    //
+    // The inherited properties say `inherit` rather than restating the table's
+    // value, because restating a font stack on every cell of a large table is
+    // most of the file. That blocks a rule aimed at the cells, which is what
+    // themes write; a rule aimed at `tr` or `tbody` would still be inherited
+    // through, and nothing here can stop that without the restating.
     rule(sel + ' th, ' + sel + ' td', {
       'box-sizing': 'border-box',
       'margin': '0',
+      'padding': '0',
+      'background-color': 'transparent',
+      'color': 'inherit',
+      'font-family': 'inherit',
+      'font-size': 'inherit',
+      'font-style': 'inherit',
+      'font-weight': 'inherit',
+      'line-height': 'inherit',
+      'text-transform': 'none',
       'vertical-align': 'middle',
       'overflow': 'visible',
-      'font-weight': 'inherit',
       'text-align': 'left'
     });
 
@@ -596,6 +620,29 @@ const RenderHtml = {
     rule(sel + ' sub', { 'vertical-align': 'sub' });
     rule(sel + ' code', { 'font-family': OptionsSchema.fontStack('system-mono'), 'font-size': '0.92em' });
 
+    // A link is drawn in the surrounding text's colour and underlined, rather
+    // than left to whatever the page it lands in says a link looks like. A
+    // pasted table reaches pages that have an opinion, and the SVG exporter
+    // bakes in whatever the preview happened to show — `Measure.collectRuns`
+    // reads the computed colour and `text-decoration` off each run — so an
+    // inherited link colour is how the HTML and the SVG of one table come out
+    // different from each other.
+    rule(sel + ' a', {
+      color: 'inherit',
+      'text-decoration': 'underline'
+    });
+
+    // Inert in the preview only. The cell underneath is a selection target and
+    // a live link would navigate the editor away mid-edit.
+    //
+    // Withheld from the export rather than scoped to `.is-selectable` and left
+    // in it: the selector would match nothing there, but it would still be in
+    // the `<style>` block of a file someone reads, naming a class that table
+    // does not have and describing a behaviour it does not want. Suppressing
+    // the pointer rather than withholding the `href` keeps the preview DOM
+    // identical to the exported one, which is what the SVG exporter measures.
+    if (selectable) rule(sel + ' a', { 'pointer-events': 'none' });
+
     return out.join('\n\n');
   },
 
@@ -645,6 +692,61 @@ const RenderHtml = {
       '</figure>\n' +
       '</body>\n' +
       '</html>\n';
+  },
+
+  /**
+   * The same table with the stylesheet flattened onto its cells, and no
+   * `<style>` at all — for pasting somewhere a stylesheet does not reach.
+   *
+   * That is most places that accept a formatted paste. A word processor takes
+   * the clipboard's HTML flavour and keeps `style=""` while dropping the
+   * sheet; a CMS filters saved content through an allow-list with no `<style>`
+   * element in it. Both leave a table that draws its borders — those were
+   * always inline — and nothing else, which looks like a broken export rather
+   * than a missing stylesheet.
+   *
+   * The id goes out with the stylesheet that needed it. Nothing refers to it
+   * once the declarations have landed, and dropping it is what lets two of
+   * these sit on one page without one of them being a duplicate id.
+   */
+  toInlineFragment(model, opts) {
+    opts = opts || {};
+    const rendered = RenderHtml.render(model, { selectable: false, tableId: opts.tableId || 'gt-table' });
+    const clean = RenderHtml.strip(rendered.table);
+
+    // Every selector in the sheet is scoped to the table's own id, so the
+    // table has to be matched from outside itself.
+    const host = Util.el('div');
+    host.appendChild(clean);
+    InlineCss.flatten(host, rendered.css);
+    clean.removeAttribute('id');
+
+    return clean.outerHTML + '\n';
+  },
+
+  /**
+   * The flattened table wrapped as one WordPress block, for pasting into a post.
+   *
+   * WordPress does not paste HTML — it matches what arrives against each
+   * block's transform schema and keeps only the attributes that schema names.
+   * Its table block names content, tag, scope, colspan, rowspan and a cell
+   * alignment; neither `style` nor `class` is in that list, so a styled table
+   * pasted onto a post canvas arrives whole and plain, which reads as the
+   * styling never having been copied.
+   *
+   * Block delimiters take a different branch of that handler entirely: content
+   * carrying them is parsed as block markup rather than filtered against the
+   * schemas, so `wp:html` is a way of saying *do not interpret this as a
+   * table*. What lands is one Custom HTML block holding every declaration.
+   *
+   * That is the whole trade, and it is not recoverable by emitting better
+   * HTML: the table block's attributes are a smaller vocabulary than a
+   * `ResolvedModel`, so a table both fully styled and editable in place is not
+   * reachable through a paste at all. Styled and inert is the side worth
+   * taking, because the other one is a table nobody would keep.
+   */
+  toWordPressBlock(model, opts) {
+    return '<!-- wp:html -->\n' + RenderHtml.toInlineFragment(model, opts) + '<!-- /wp:html -->\n';
   },
 
   /** Just the `<style>` plus `<table>`, for pasting into an existing page. */

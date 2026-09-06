@@ -38,6 +38,16 @@ const ExportRgt = {
     out.push('');
 
     const pipeline = ExportRgt.pipeline(spec, model, working);
+
+    // Asked of the finished pipeline rather than worked out again: whether a
+    // comparator ended up reading a markup column is a question the pipeline
+    // has already answered, and answering it twice is how the definition and
+    // its use come apart.
+    if (pipeline.some((line) => line.indexOf('plain_text(') >= 0)) {
+      out.push.apply(out, ExportRgt.PLAIN_TEXT_FN);
+      out.push('');
+    }
+
     out.push('tbl <- data |>');
     out.push(pipeline.map((line, i) => '  ' + line + (i < pipeline.length - 1 ? ' |>' : '')).join('\n'));
     out.push('');
@@ -137,6 +147,43 @@ const ExportRgt = {
     }
 
     return out;
+  },
+
+  /**
+   * The R that reads a markup column back as the text it draws.
+   *
+   * Those columns reach the script as HTML — `ExportRgt.value` writes them
+   * that way so `fmt_passthrough(escape = FALSE)` can render them — so a
+   * filter or a sort on the column as it stands is a filter or a sort on the
+   * tags. `CO<sub>2</sub>` ranks under `<`, which is not where CO₂ appears on
+   * the page, and the preview and the export then order the same table two
+   * ways.
+   *
+   * Undoing `Markup.toHtml`, which is a much smaller job than undoing the
+   * markup itself: tags come out with one expression, where the markup would
+   * need the parser. `<br>` becomes a space rather than nothing, because
+   * `Markup.toPlain` makes it one. The entities are unescaped last and `&amp;`
+   * last of all, or `&amp;lt;` would resolve twice and come out as `<`.
+   */
+  PLAIN_TEXT_FN: [
+    '# The text a cell draws, for comparing rather than for showing. Columns',
+    '# carrying markup arrive as HTML, and a filter or a sort on the tags is',
+    '# one on something nobody can see.',
+    'plain_text <- function(x) {',
+    '  x <- gsub("<br\\\\s*/?>", " ", x, perl = TRUE, ignore.case = TRUE)',
+    '  x <- gsub("<[^>]*>", "", x, perl = TRUE)',
+    '  x <- gsub("&lt;", "<", x, fixed = TRUE)',
+    '  x <- gsub("&gt;", ">", x, fixed = TRUE)',
+    '  x <- gsub("&quot;", "\\"", x, fixed = TRUE)',
+    '  x <- gsub("&#39;", "\'", x, fixed = TRUE)',
+    '  gsub("&amp;", "&", x, fixed = TRUE)',
+    '}'
+  ],
+
+  /** A column reference as the comparators should read it. */
+  comparable(colId, markupCols) {
+    const symbol = ExportRgt.symbol(colId);
+    return (markupCols && markupCols.has(colId)) ? 'plain_text(' + symbol + ')' : symbol;
   },
 
   /**
@@ -247,7 +294,7 @@ const ExportRgt = {
   },
 
   /** `dplyr::filter()` for a filter step, or null when nothing is applicable. */
-  filterCall(step, columnsById) {
+  filterCall(step, columnsById, markupCols) {
     const conditions = Filter.active(step, columnsById);
     if (!conditions.length) return null;
 
@@ -256,7 +303,11 @@ const ExportRgt = {
       const op = Filter.get(condition.op);
       const column = columnsById[condition.col];
       const numeric = !!(column && column.type === 'number');
-      const expr = op.r(ExportRgt.symbol(condition.col), condition.value, condition.value2, numeric);
+      // The operators take the column as a piece of R rather than as an id,
+      // so a markup column reaches every one of them already unwrapped and
+      // none of them has to know that markup exists.
+      const expr = op.r(ExportRgt.comparable(condition.col, markupCols),
+        condition.value, condition.value2, numeric);
       // `any` joins with `|`, so anything that is itself a compound (between,
       // is empty) has to be parenthesised or the precedence changes.
       return (joiner === ' | ' && /[|&]/.test(expr)) ? '(' + expr + ')' : expr;
@@ -274,6 +325,12 @@ const ExportRgt = {
     // The pipeline's *output* — everything below `gt()` names the columns the
     // table ends up with, while each data step above names its own.
     const columnsById = model.columnsById || {};
+
+    // One answer for the whole export. The data stage's comparators need it to
+    // know which columns arrive as HTML, and the `fmt_passthrough` below is
+    // what puts them that way — asked twice, the two could disagree about a
+    // column and the script would sort by tags it never rendered.
+    const markupCols = new Set(ExportRgt.markupColumns(working, spec));
 
     /* ---- The data stage, in the order the pipeline puts it ---- */
 
@@ -294,7 +351,9 @@ const ExportRgt = {
       const byId = {};
       for (const col of at.columns) byId[col.id] = col;
 
-      const call = def.r(step, { byId: byId, applied: model.corrections || [] });
+      const call = def.r(step, {
+        byId: byId, markupCols: markupCols, applied: model.corrections || []
+      });
       if (call) lines.push(call);
     });
 
@@ -495,18 +554,20 @@ const ExportRgt = {
      * still wins, and skipped entirely for a column that has one — two fmt
      * calls fighting over a column is worse than the markup staying raw.
      */
-    const markupCols = ExportRgt.markupColumns(working, spec);
-    if (markupCols.length) {
-      lines.push('fmt_passthrough(columns = ' + ExportRgt.columnVector(markupCols) +
-        ', escape = FALSE)');
+    if (markupCols.size) {
+      lines.push('fmt_passthrough(columns = ' +
+        ExportRgt.columnVector(Array.from(markupCols)) + ', escape = FALSE)');
     }
 
     for (const rule of spec.format) {
       if (!Spec.isEnabled(rule)) continue;
       const cols = rule.columns.filter((id) => columnsById[id]);
       if (!cols.length) continue;
-      const call = ExportRgt.formatCall(rule, cols);
-      if (call) lines.push(call);
+      const call = ExportRgt.formatCall(rule, cols, model);
+      // A link rule is one call per column rather than one for the set, so it
+      // comes back as a list; everything else is a single stage.
+      if (Array.isArray(call)) lines.push.apply(lines, call);
+      else if (call) lines.push(call);
     }
 
     if (spec.subs.missing.enabled) {
@@ -676,7 +737,7 @@ const ExportRgt = {
      Call builders
      ================================================================ */
 
-  formatCall(rule, cols) {
+  formatCall(rule, cols, model) {
     const opts = Formatters.resolveOpts(rule.type, rule.opts);
     const args = ['columns = ' + ExportRgt.columnVector(cols)];
 
@@ -752,6 +813,9 @@ const ExportRgt = {
         return 'fmt_datetime(' + args.join(', ') + ')';
       }
 
+      case 'url':
+        return ExportRgt.urlCalls(opts, cols, model);
+
       case 'markdown':
         return 'fmt_markdown(' + args.join(', ') + ')';
 
@@ -778,6 +842,67 @@ const ExportRgt = {
       default:
         return null;
     }
+  },
+
+  /**
+   * A link rule, as one `fmt_url()` per column.
+   *
+   * **Per column, because `rows =` selects rows and not cells.** The rule may
+   * cover several, and a cell holding a note instead of an address has to keep
+   * its note — one call over three columns could only ask about one of them,
+   * and would link the other two wherever that one happened to be an address.
+   *
+   * The predicate is `Markup.LINK_URL` itself rather than a regular expression
+   * written to look like it. `Formatters.apply` links exactly the cells that
+   * pattern matches, so restating it here in R would be two tests that agree
+   * until the day one of them is edited — and the symptom would be gt linking
+   * a cell the preview left as prose, which nobody would think to look for.
+   *
+   * `color` has to be a literal: gt validates it against the CSS colour names
+   * and rejects `inherit`, which is what the app's own stylesheet gives a
+   * link. The table's text colour is what that inherits from, so it is what
+   * goes over — exact wherever the column has no per-cell colour of its own,
+   * and gt's default dark cyan is not the alternative worth having.
+   */
+  urlCalls(opts, cols, model) {
+    const options = (model && model.options) || {};
+
+    return cols.map((colId) => {
+      const symbol = ExportRgt.symbol(colId);
+      const args = ['columns = ' + symbol,
+        'rows = grepl(' + ExportRgt.linkUrlPattern() + ', ' + symbol +
+          ', perl = TRUE, ignore.case = TRUE)'];
+
+      if (opts.label) {
+        args.push('label = ' + ExportRgt.str(opts.label));
+      } else if (opts.hideScheme) {
+        // Both schemes, and `ignore.case`: the preview strips them with one
+        // case-insensitive expression, so a column of `HTTP://` or of
+        // `mailto:` would otherwise read differently on the two sides.
+        args.push('label = function(x) ' +
+          'sub("^(https?://|mailto:)", "", x, ignore.case = TRUE)');
+      }
+
+      args.push('color = ' + ExportRgt.str(options['table.font.color'] || '#333333'));
+      args.push('show_underline = TRUE');
+
+      return 'fmt_url(' + args.join(', ') + ')';
+    });
+  },
+
+  /**
+   * `Markup.LINK_URL` as an R string literal.
+   *
+   * Derived from the pattern rather than transcribed from it, so there is one
+   * statement of what this app treats as an address and the R cannot drift
+   * from it. Only R's own string escaping is applied — the expression is
+   * emitted with `perl = TRUE`, where the JavaScript syntax it is written in
+   * means the same thing.
+   */
+  linkUrlPattern() {
+    return '"' + Markup.LINK_URL.source
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"') + '"';
   },
 
   /**
@@ -946,42 +1071,110 @@ const ExportRgt = {
       '  )';
   },
 
+  /**
+   * Where a row sits in the data frame gt is handed, by source index.
+   *
+   * `model.rowSequence` is the pipeline's output in display order, which is
+   * the order the emitted `dplyr::filter()` and `dplyr::arrange()` leave the
+   * data in — so a row's position here is its gt row number, 1-based. A row
+   * the filter removed has none, and is not in the map at all.
+   */
+  rowPositions(model) {
+    const at = new Map();
+    ((model && model.rowSequence) || []).forEach((item, position) => {
+      at.set(item.srcIndex, position + 1);
+    });
+    return at;
+  },
+
+  /**
+   * Any column of the exported data, for the row expressions that need one.
+   *
+   * `row` and `n` reach a position through `seq_along()` — see
+   * `translateExpr` — and every column is the same length, so the first is as
+   * good as any and makes the emitted script say the same thing throughout.
+   */
+  dataColumn(columnsById, model) {
+    const columns = (model && model.columns) || [];
+    if (columns.length) return columns[0].id;
+    const ids = Object.keys(columnsById || {});
+    return ids.length ? ids[0] : null;
+  },
+
+  /**
+   * The `rows =` argument for a location, or `null` when it names every row.
+   *
+   * **`false` is not `null`.** A location naming rows that are all gone —
+   * filtered out — matches nothing in the preview, and dropping back to no
+   * `rows =` argument would style *every* row in the export instead. The
+   * caller emits no location at all for that.
+   */
+  rowsArg(loc, model) {
+    if (!loc.rows) return null;
+
+    if (loc.rows.mode === 'index' && loc.rows.indices.length) {
+      // Not `srcIndex + 1`: gt counts rows in the data frame it was handed,
+      // which `dplyr::filter()` and `dplyr::arrange()` have already put in
+      // display order, so a filter or a sort above moves every later number.
+      // `tab_stub_indent` goes through the displayed position for the same
+      // reason.
+      const at = ExportRgt.rowPositions(model);
+      const positions = loc.rows.indices
+        .map((i) => at.get(i))
+        .filter((p) => p !== undefined)
+        .sort((a, b) => a - b);
+      return positions.length ? 'rows = c(' + positions.join(', ') + ')' : false;
+    }
+
+    if (loc.rows.mode === 'expr' && loc.rows.expr) {
+      // A neighbouring cell is a fact about a *column*, and `cells_body()` is
+      // the only location that has one — which is why `locationCall` sends the
+      // body case to `cellRefLocations` before ever reaching here. Anything
+      // else that gets here with `above()` in it matches nothing in the
+      // preview either: `resolve` looks a `rowsByCol` set up by `colId`, and a
+      // stub cell has none. Emitting the expression untranslated would be a
+      // script that does not run.
+      if (StyleRules.usesCellRefs(loc.rows.expr)) return false;
+      return 'rows = ' + ExportRgt.translateExpr(loc.rows.expr,
+        ExportRgt.dataColumn(null, model));
+    }
+
+    return null;
+  },
+
   /** A style rule location as a `cells_*()` call. */
   locationCall(loc, columnsById, model) {
     const args = [];
     const cols = (loc.columns || []).filter((id) => columnsById[id]);
 
-    const rowsArg = () => {
-      if (!loc.rows) return null;
-      if (loc.rows.mode === 'index' && loc.rows.indices.length) {
-        // gt rows are 1-based.
-        return 'rows = c(' + loc.rows.indices.map((i) => i + 1).join(', ') + ')';
-      }
-      if (loc.rows.mode === 'expr' && loc.rows.expr) {
-        return 'rows = ' + ExportRgt.translateExpr(loc.rows.expr);
-      }
-      return null;
-    };
+    // An expression naming a neighbouring cell means something different in
+    // each column, so it cannot be one `cells_body()`. gt takes a *list* of
+    // locations and each may carry its own `rows`, so it becomes one
+    // `cells_body()` per column — unrolled here rather than emitted as a loop
+    // over `names(data)`, because the column list is known at export time and
+    // a pipeline of plain calls is what the rest of this file writes and what
+    // a person reading the R expects.
+    if (loc.part === 'body' && loc.rows && loc.rows.mode === 'expr' &&
+        StyleRules.usesCellRefs(loc.rows.expr)) {
+      return ExportRgt.cellRefLocations(loc, cols, model);
+    }
+
+    // Only the parts that *have* rows are asked about them. A location switched
+    // from Body cells to Column labels keeps the `rows` it was carrying, and
+    // it is inert there — reading it anyway would let a stale row scope decide
+    // whether a column-label location is emitted at all.
+    const part = StyleRules.PARTS.find((p) => p.id === loc.part);
+    const rows = part && part.rows ? ExportRgt.rowsArg(loc, model) : null;
+    if (rows === false) return null;
 
     switch (loc.part) {
-      case 'body': {
-        // An expression naming a neighbouring cell means something different in
-        // each column, so it cannot be one `cells_body()`. gt takes a *list* of
-        // locations and each may carry its own `rows`, so it becomes one
-        // `cells_body()` per column — unrolled here rather than emitted as a
-        // loop over `names(data)`, because the column list is known at export
-        // time and a pipeline of plain calls is what the rest of this file
-        // writes and what a person reading the R expects.
-        if (loc.rows && loc.rows.mode === 'expr' && StyleRules.usesCellRefs(loc.rows.expr)) {
-          return ExportRgt.cellRefLocations(loc, cols, model);
-        }
+      case 'body':
         if (cols.length) args.push('columns = ' + ExportRgt.columnVector(cols));
-        if (rowsArg()) args.push(rowsArg());
+        if (rows) args.push(rows);
         return 'cells_body(' + args.join(', ') + ')';
-      }
 
       case 'stub':
-        if (rowsArg()) args.push(rowsArg());
+        if (rows) args.push(rows);
         return 'cells_stub(' + args.join(', ') + ')';
 
       case 'column_labels':
@@ -1063,29 +1256,81 @@ const ExportRgt = {
    * Only the common operators are handled — enough for the conditions people
    * actually write. Anything unrecognised is passed through with a comment so
    * the R is at least reviewable rather than silently wrong.
+   *
+   * **One pass, not a chain of `replace` calls.** Every rule below can write
+   * text that a later rule would read again, and two of them do it for real:
+   * `v['n']` expands to a column called `n`, which a second sweep looking for
+   * the row count would take straight back out, and `x != "n/a"` loses the `n`
+   * out of the middle of its own string. So string literals are matched too
+   * and handed back untouched, and nothing this produces is rescanned.
+   *
+   * @param {string} expr
+   * @param {?string} dataColumn - any column of the exported data, for `row`
+   *   and `n`. Without one they are left as they stand, which will not run —
+   *   but a table with no columns has no cells to style either.
+   * @param {?Function} cellRef - `(name, arg) => string|null` resolving
+   *   `self()`, `above(k)`, `below(k)`, `left(k)` and `right(k)` against the
+   *   column being styled; `null` means the reference lands off the table.
+   *   **These are resolved here rather than beforehand** because a resolution
+   *   writes a column name into the expression, and a column may be called
+   *   `n`: substituted first, `above()` on a column called `n` became
+   *   `lag(n, 1)` and this pass then read that `n` back as the row count.
    */
-  translateExpr(expr) {
-    const translated = String(expr)
-      // `v['x']` is how the app reaches a column whose id is not a bare name —
-      // `StyleRules.ref` emits it, and every seeded expression uses it for a
-      // reserved or non-identifier id. There is no `v` in a `dplyr` mask, so
-      // this reached R as "object 'v' not found" and killed the whole script.
-      .replace(/\bv\s*\[\s*(['"])((?:\\.|(?!\1)[^\\])*)\1\s*\]/g,
-        (whole, quote, id) => ExportRgt.symbol(id.replace(/\\(.)/g, '$1')))
-      .replace(/&&/g, '&')
-      .replace(/\|\|/g, '|')
-      .replace(/===/g, '==')
-      .replace(/!==/g, '!=')
-      .replace(/\bnull\b/g, 'NA')
-      .replace(/\btrue\b/g, 'TRUE')
-      .replace(/\bfalse\b/g, 'FALSE')
-      .replace(/Math\.abs\(/g, 'abs(')
-      .replace(/Math\.max\(/g, 'max(')
-      .replace(/Math\.min\(/g, 'min(')
-      .replace(/"/g, '"');
+  translateExpr(expr, dataColumn, cellRef) {
+    // `row` and `n` have no counterpart in gt's `rows =`: it is a plain data
+    // mask, so `dplyr::row_number()` and `dplyr::n()` both abort with "must
+    // only be used inside data-masking verbs". A column of the data is the
+    // way to a position — every column is the same length, so any one will do
+    // — and `seq_along()` counts the rows the table actually has, after the
+    // `dplyr::filter()` and `dplyr::arrange()` above it. `row` is 0-based on
+    // this side and `seq_along` is 1-based, hence the shift.
+    const col = dataColumn ? ExportRgt.symbol(dataColumn) : null;
+    const WORDS = { null: 'NA', true: 'TRUE', false: 'FALSE' };
+    const OPS = { '&&': '&', '||': '|', '===': '==', '!==': '!=' };
 
-    return translated;
+    return String(expr).replace(ExportRgt.EXPR_TOKENS,
+      (whole, dq, sq, vDouble, vSingle, ref, refArg, op, word, math) => {
+        if (dq !== undefined || sq !== undefined) return whole;
+
+        // `v['x']` is how the app reaches a column whose id is not a bare name
+        // — `StyleRules.ref` emits it, and every seeded expression uses it for
+        // a reserved or non-identifier id. There is no `v` in a `dplyr` mask,
+        // so this reached R as "object 'v' not found" and killed the script.
+        if (vDouble !== undefined || vSingle !== undefined) {
+          const id = (vDouble === undefined ? vSingle : vDouble).replace(/\\(.)/g, '$1');
+          return ExportRgt.symbol(id);
+        }
+
+        if (ref) {
+          if (!cellRef) return whole;
+          const resolved = cellRef(ref, refArg);
+          return resolved === null ? 'NA' : resolved;
+        }
+
+        if (op) return OPS[op];
+        if (math) return math;
+        if (word === 'row') return col ? '(seq_along(' + col + ') - 1)' : whole;
+        if (word === 'n') return col ? 'length(' + col + ')' : whole;
+        return WORDS[word];
+      });
   },
+
+  /**
+   * Everything `translateExpr` rewrites, and the string literals it must not.
+   *
+   * Built once: it is applied per location per rule, and `RegExp` compilation
+   * is not free.
+   */
+  EXPR_TOKENS: new RegExp([
+    '("(?:\\\\.|[^"\\\\])*")',                                   // 1 a double-quoted string
+    "('(?:\\\\.|[^'\\\\])*')",                                   // 2 a single-quoted one
+    'v\\s*\\[\\s*(?:"((?:\\\\.|[^"\\\\])*)"' +                   // 3 v["id"]
+      "|'((?:\\\\.|[^'\\\\])*)')\\s*\\]",                        // 4 v['id']
+    '\\b(' + StyleRules.CELL_REFS.join('|') + ')\\s*\\(\\s*([^)]*?)\\s*\\)', // 5/6 above(2)
+    '(&&|\\|\\||===|!==)',                                       // 7 operators
+    '\\b(row|n|null|true|false)\\b',                             // 8 bare words
+    '\\bMath\\.(abs|max|min)\\b'                                 // 9 Math.f
+  ].join('|'), 'g'),
 
   /* ================================================================
      Literals
@@ -1137,13 +1382,15 @@ const ExportRgt = {
     const targets = cols.length ? cols : body;
     const out = [];
 
+    const dataColumn = ExportRgt.dataColumn(null, model);
+
     for (const colId of targets) {
       const index = body.indexOf(colId);
       let impossible = false;
 
       const sideways = (offset) => {
         const neighbour = index < 0 ? undefined : body[index + offset];
-        if (neighbour === undefined) { impossible = true; return 'NA'; }
+        if (neighbour === undefined) { impossible = true; return null; }
         return ExportRgt.symbol(neighbour);
       };
       const step = (raw) => {
@@ -1151,18 +1398,23 @@ const ExportRgt = {
         return isFinite(k) ? k : 1;
       };
 
-      const resolved = String(loc.rows.expr)
-        .replace(/\bself\s*\(\s*\)/g, () => ExportRgt.symbol(colId))
-        .replace(/\babove\s*\(\s*([^)]*)\s*\)/g,
-          (whole, k) => 'lag(' + ExportRgt.symbol(colId) + ', ' + step(k) + ')')
-        .replace(/\bbelow\s*\(\s*([^)]*)\s*\)/g,
-          (whole, k) => 'lead(' + ExportRgt.symbol(colId) + ', ' + step(k) + ')')
-        .replace(/\bleft\s*\(\s*([^)]*)\s*\)/g, (whole, k) => sideways(-step(k)))
-        .replace(/\bright\s*\(\s*([^)]*)\s*\)/g, (whole, k) => sideways(step(k)));
+      // Handed to `translateExpr` rather than substituted first: a resolution
+      // writes a column name into the expression, and `self()` on a column
+      // called `n` produced a bare `n` that the translation then read as the
+      // row count.
+      const resolved = ExportRgt.translateExpr(loc.rows.expr, dataColumn, (name, arg) => {
+        switch (name) {
+          case 'self': return ExportRgt.symbol(colId);
+          case 'above': return 'lag(' + ExportRgt.symbol(colId) + ', ' + step(arg) + ')';
+          case 'below': return 'lead(' + ExportRgt.symbol(colId) + ', ' + step(arg) + ')';
+          case 'left': return sideways(-step(arg));
+          default: return sideways(step(arg));
+        }
+      });
 
       if (impossible) continue;
       out.push('cells_body(columns = ' + ExportRgt.symbol(colId) +
-        ', rows = ' + ExportRgt.translateExpr(resolved) + ')');
+        ', rows = ' + resolved + ')');
     }
 
     return out;
@@ -1266,13 +1518,16 @@ const ExportRgt = {
    * Fully qualified rather than adding `library(stringr)` to the preamble, so
    * a table with no text sort carries no dependency it does not use.
    */
-  sortCall(sort, columnsById) {
+  sortCall(sort, columnsById, markupCols) {
     const keys = (sort || []).filter((key) => columnsById[key.col]);
     if (!keys.length) return null;
 
     const terms = keys.map((key) => {
       const column = columnsById[key.col];
-      const symbol = ExportRgt.symbol(key.col);
+      // A number or a date is never written as HTML, so only the text branch
+      // below can see a difference — but the wrapping is decided here, once,
+      // rather than in the one branch that happens to need it today.
+      const symbol = ExportRgt.comparable(key.col, markupCols);
       let term;
 
       if (column.type === 'number') {

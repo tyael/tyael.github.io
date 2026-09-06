@@ -257,7 +257,7 @@ const Pipeline = {
         });
       },
       r(step, ctx) {
-        return ExportRgt.filterCall(step, ctx.byId);
+        return ExportRgt.filterCall(step, ctx.byId, ctx.markupCols);
       },
       describe(step, ctx) {
         const active = Filter.active(step, ctx.byId);
@@ -285,7 +285,7 @@ const Pipeline = {
         });
       },
       r(step, ctx) {
-        return ExportRgt.sortCall(step.keys, ctx.byId);
+        return ExportRgt.sortCall(step.keys, ctx.byId, ctx.markupCols);
       },
       describe(step, ctx) {
         const keys = step.keys || [];

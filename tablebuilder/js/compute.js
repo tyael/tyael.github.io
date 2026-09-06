@@ -270,6 +270,12 @@ const Compute = {
       rows: rows,
       columnsById: columnsById,
       sequence: displayRows,
+      // `n` is how many rows the table has, which is not how many the preview
+      // draws: `displayRows` is already cut to `MAX_PREVIEW_ROWS` here, while
+      // the export computes with `limitRows: false` and sees every one. Left
+      // to count the sequence, `n > 1900` would be true on screen and false in
+      // the R for the same table.
+      count: model.totalRows,
       bodyColumns: Compute.bodyColumnIds(model)
     };
 
@@ -510,7 +516,16 @@ const Compute = {
           if (ma && mb) cmp = 0;
           else if (ma) return 1;
           else if (mb) return -1;
-          else cmp = String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' });
+          // By what the cell draws, not by the markup that draws it: a column
+          // of `CO_{2}` and `^{13}C` sorted under `_` and `^`, which land
+          // among the punctuation and nowhere near the letters on screen.
+          // The emitted `stringr::str_rank` reads the same text: a markup
+          // column reaches the script as HTML and goes through `plain_text()`
+          // there, which is this call written in the other language.
+          else {
+            cmp = Markup.toPlain(av).localeCompare(Markup.toPlain(bv),
+              undefined, { numeric: true, sensitivity: 'base' });
+          }
         }
 
         if (cmp !== 0) return key.dir === 'desc' ? -cmp : cmp;
