@@ -47,8 +47,19 @@ const App = {
   model: null,
   zoom: 1,
 
-  /** The surface behind the table: 'light', 'dark' or 'checker'. */
-  canvasSurface: 'light',
+  /**
+   * The surfaces the canvas offers, in the order the control lists them.
+   *
+   * White and the checkerboard answer "what will this look like where it is
+   * going" and "is this actually transparent"; both only show where the
+   * table's own background is. Background is the other question — it takes the
+   * table's background colour, so the table sits on its own paper with no edge
+   * against it.
+   */
+  CANVAS_SURFACES: ['white', 'background', 'checker'],
+
+  /** The surface behind the table: one of `App.CANVAS_SURFACES`. */
+  canvasSurface: 'white',
 
   /**
    * Whether that surface is a sheet the size of the table, or the whole stage.
@@ -270,8 +281,10 @@ const App = {
      * asked to get rid of.
      */
     const filling = !!App.canvasFill;
-    const surface = App.canvasSurface || 'light';
-    const paper = Util.el('div.paper' + (filling ? '.is-flat' : '.surface-' + surface));
+    const paper = Util.el('div.paper' + (filling ? '.is-flat' : ''));
+    // Flat means the stage is carrying the surface, and a sheet painted as
+    // well would draw its edge over one that is supposed to have none.
+    if (!filling) App.dressSurface(paper, App.canvasSurface || 'white');
     const rendered = RenderHtml.render(model, { selectable: App.selectMode !== false, tableId: 'gt-preview' });
 
     App.setPreviewStyle(rendered.css);
@@ -738,9 +751,12 @@ const App = {
       if (e.key === 'Escape') {
         // Innermost surface first: the menu sits above the rail but below a
         // modal, and the modal is the only one of the three that can be open
-        // while the menu is not.
+        // while the menu is not. A pinned line card is over the table and
+        // under all three, and comes off before the selection does — it is the
+        // more recent thing the user put there.
         if (!Util.qs('#modal-backdrop').hidden) { App.closeModal(); return; }
         if (Popover.isOpen()) { Popover.dismiss(); return; }
+        if (LineInfo.isPinned()) { LineInfo.hide(); return; }
         if (!inField) Selection.clear();
         return;
       }
@@ -1255,11 +1271,44 @@ const App = {
   paintCanvasSurface() {
     const stage = document.getElementById('stage-canvas');
     if (!stage) return;
-    for (const name of ['light', 'dark', 'checker']) {
-      stage.classList.remove('surface-' + name);
-    }
     stage.classList.toggle('is-filled', !!App.canvasFill);
-    if (App.canvasFill) stage.classList.add('surface-' + (App.canvasSurface || 'light'));
+    App.dressSurface(stage, App.canvasFill ? (App.canvasSurface || 'white') : null);
+  },
+
+  /**
+   * Paint one element with a canvas surface, or with none.
+   *
+   * The sheet and the stage take the same three dresses and only ever one of
+   * them at a time, so this is written once: the caller says which element is
+   * carrying the surface today, and passes `null` for the one that is not.
+   *
+   * `background` is the only one with a colour to compute. It is the table's
+   * own `table.background.color`, which makes the table edgeless against what
+   * it sits on — you see the design rather than the sheet. A table with no
+   * background of its own has no colour to lend, and white is what a
+   * transparent table lands on nearly everywhere it goes.
+   */
+  dressSurface(node, surface) {
+    for (const name of App.CANVAS_SURFACES) node.classList.remove('surface-' + name);
+    node.classList.remove('is-dark-surface');
+    node.style.backgroundColor = '';
+    if (!surface) return;
+
+    node.classList.add('surface-' + surface);
+    if (surface !== 'background') return;
+
+    const color = App.surfaceColor();
+    node.style.backgroundColor = color;
+    // Which surfaces are dark used to be a fixed list of one. Now it is
+    // whatever the table carries, so the notice that has to read against it
+    // asks the colour rather than the name of the choice.
+    if (Palettes.luminance(color) < 0.4) node.classList.add('is-dark-surface');
+  },
+
+  /** The colour the `background` surface paints. */
+  surfaceColor() {
+    const options = (App.model && App.model.options) || {};
+    return options['table.background.color'] || '#ffffff';
   },
 
   /** Row-group labels in display order. */

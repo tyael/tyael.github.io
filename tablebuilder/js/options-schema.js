@@ -122,6 +122,18 @@ const OptionsSchema = {
     { key: 'table.font.color', group: 'table', label: 'Text colour', type: 'color', default: '#333333' },
     { key: 'table.font.color.light', group: 'table', label: 'Light text colour', type: 'color', default: '#FFFFFF',
       hint: 'Used when auto-contrast flips text over a dark fill.' },
+    // How a link is drawn, wherever one appears — a cell, a label, a title, a
+    // footnote. Table-wide and no finer: a link is styled as a kind of thing,
+    // not one at a time.
+    //
+    // Neither key is a `tab_options()` argument. gt has no link options at all
+    // and no rule for `a` in its stylesheet either, so a markdown link comes
+    // out of gt bare and takes whatever the page it lands in says a link looks
+    // like. `ExportRgt.linkCss` says these with `opt_css()`, the way the
+    // spanner keys are said with `tab_style()`.
+    { key: 'link.color', group: 'table', label: 'Link colour', type: 'color', default: '', nullable: true,
+      hint: 'Unset draws a link in the colour of the text around it.' },
+    { key: 'link.underline', group: 'table', label: 'Underline links', type: 'bool', default: true },
     ...borderTriplet('table.border.top', 'table', 'Top border', 'solid', '2px', '#A8A8A8'),
     ...borderTriplet('table.border.bottom', 'table', 'Bottom border', 'solid', '2px', '#A8A8A8'),
     ...borderTriplet('table.border.left', 'table', 'Left border', 'none', '2px', '#D3D3D3'),
@@ -393,14 +405,18 @@ const OptionsSchema = {
    *
    * The other 149 keys in this schema *are* gt's argument names — that is why
    * they are spelled with dots — and `export-rgt.js` passes them straight
-   * through. These five have no counterpart: `tab_options()` carries nothing
-   * about spanners at all, and `row_group.font.style` is not among its
-   * `row_group.*` set either. Emitting them made the call fail on an unused
-   * argument, and `tab_options()` has no `...` to absorb it.
+   * through. These seven have no counterpart: `tab_options()` carries nothing
+   * about spanners at all, `row_group.font.style` is not among its
+   * `row_group.*` set either, and gt has no link options of any kind. Emitting
+   * them made the call fail on an unused argument, and `tab_options()` has no
+   * `...` to absorb it.
    *
-   * They are not dropped — each maps to a `tab_style()` on the part it governs,
-   * which is how gt expresses these. The value is the gt call fragment's
-   * ingredient; `ExportRgt.optionStyleCalls` assembles them.
+   * They are not dropped. Five map to a `tab_style()` on the part they govern,
+   * which is how gt expresses those; the two link keys map to the `opt_css()`
+   * rule `ExportRgt.linkCss` writes, because a stylesheet is the only place gt
+   * lets anything reach an `<a>`. The value names the call that carries the
+   * key: `ExportRgt.optionStyleCalls` assembles the first kind, and the
+   * pipeline emits the second.
    */
   NOT_IN_TAB_OPTIONS: {
     'column_labels.spanner.border.bottom.style': 'spannerBorder',
@@ -413,7 +429,9 @@ const OptionsSchema = {
     // object `google_font()` returns — which that argument rejects. gt's own
     // route for a font is `opt_table_font()`, which accepts either, so the
     // export uses it for every font rather than switching on the kind.
-    'table.font.names': 'tableFont'
+    'table.font.names': 'tableFont',
+    'link.color': 'linkCss',
+    'link.underline': 'linkCss'
   },
 
 
@@ -469,6 +487,27 @@ const OptionsSchema = {
    */
   fontStack(idOrStack) {
     return Fonts.stack(idOrStack);
+  },
+
+  /**
+   * How a link is drawn, as the two CSS declarations that say it.
+   *
+   * One answer for every renderer: `render-html.js` puts it in the stylesheet,
+   * the SVG exporter reads it back off the rendered run, and `export-rgt.js`
+   * writes it into the `opt_css()` rule that carries it into gt. Written out
+   * twice, the preview and the export would drift the first time either is
+   * edited — and a link colour is exactly the kind of difference nobody looks
+   * for.
+   *
+   * `inherit` is the unset colour rather than the table's text colour: it is
+   * what makes a link inside a red cell red, which is what the app has always
+   * drawn and what a per-cell style rule expects.
+   */
+  linkStyle(options) {
+    return {
+      color: (options && options['link.color']) || 'inherit',
+      'text-decoration': (options && options['link.underline'] === false) ? 'none' : 'underline'
+    };
   },
 
 

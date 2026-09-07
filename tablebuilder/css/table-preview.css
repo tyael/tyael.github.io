@@ -19,14 +19,16 @@
   display: inline-block;
 }
 
-/* The surface behind the table. It shows through wherever the table's own
-   background is transparent, which is the whole point of offering a choice:
-   a dark page and a checkerboard answer "what does this look like where it is
-   going" and "is this actually transparent" respectively. */
+/* The surface behind the table. Two of the three show through wherever the
+   table's own background is transparent, which is the point of offering a
+   choice: white is the page it is probably going onto, and the checkerboard
+   answers "is this actually transparent".
 
-.paper.surface-dark {
-  background: #10151c;
-}
+   Background is the third and it is the other question — it paints the surface
+   in the table's *own* background colour, so the table has no edge against what
+   it sits on and you see the design rather than the sheet. That colour is the
+   table's, so it arrives as an inline style from `App.dressSurface`, and there
+   is no rule for it here. */
 
 .paper.surface-checker {
   background-color: #ffffff;
@@ -46,17 +48,13 @@
   box-shadow: none;
 }
 
-/* The same three surfaces, painted on the stage instead of the sheet. They live
-   here rather than in app.css because they *are* the preview canvas — the same
-   three answers to "what is behind this table", drawn at a different size. The
-   stage is outside the zoom transform, so these do not scale, which is the
-   whole reason the fill is not just a bigger sheet. */
-.stage-canvas.surface-light {
+/* The same surfaces, painted on the stage instead of the sheet. They live here
+   rather than in app.css because they *are* the preview canvas — the same
+   answers to "what is behind this table", drawn at a different size. The stage
+   is outside the zoom transform, so these do not scale, which is the whole
+   reason the fill is not just a bigger sheet. */
+.stage-canvas.surface-white {
   background: #ffffff;
-}
-
-.stage-canvas.surface-dark {
-  background: #10151c;
 }
 
 .stage-canvas.surface-checker {
@@ -167,10 +165,12 @@
   display: inline-block;
 }
 
-/* The dark surface can be the sheet's or the stage's, and the notice has to
-   read on either. */
-.paper.surface-dark .preview-notice,
-.stage-canvas.surface-dark .preview-notice {
+/* A dark surface can be the sheet's or the stage's, and the notice has to read
+   on either. Which surfaces are dark is no longer a fixed list — Background
+   takes whatever colour the table carries — so the class is set from the
+   colour's luminance rather than from the choice's name. */
+.paper.is-dark-surface .preview-notice,
+.stage-canvas.is-dark-surface .preview-notice {
   color: #e0c37a;
   background: rgba(224, 163, 62, 0.12);
   border-color: rgba(224, 163, 62, 0.4);

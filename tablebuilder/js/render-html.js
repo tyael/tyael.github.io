@@ -620,17 +620,18 @@ const RenderHtml = {
     rule(sel + ' sub', { 'vertical-align': 'sub' });
     rule(sel + ' code', { 'font-family': OptionsSchema.fontStack('system-mono'), 'font-size': '0.92em' });
 
-    // A link is drawn in the surrounding text's colour and underlined, rather
-    // than left to whatever the page it lands in says a link looks like. A
-    // pasted table reaches pages that have an opinion, and the SVG exporter
-    // bakes in whatever the preview happened to show — `Measure.collectRuns`
-    // reads the computed colour and `text-decoration` off each run — so an
-    // inherited link colour is how the HTML and the SVG of one table come out
-    // different from each other.
-    rule(sel + ' a', {
-      color: 'inherit',
-      'text-decoration': 'underline'
-    });
+    // A link is drawn the way this table says, rather than left to whatever the
+    // page it lands in says a link looks like. A pasted table reaches pages
+    // that have an opinion, and the SVG exporter bakes in whatever the preview
+    // happened to show — `Measure.collectRuns` reads the computed colour and
+    // `text-decoration` off each run — so a link left to the page is how the
+    // HTML and the SVG of one table come out different from each other.
+    //
+    // The two declarations are `OptionsSchema.linkStyle`'s rather than this
+    // file's, because the R exporter writes the same pair into an `opt_css()`
+    // rule and the two have to be the same pair. Unset, they say what this rule
+    // said outright before there was an option for it.
+    rule(sel + ' a', OptionsSchema.linkStyle(opt));
 
     // Inert in the preview only. The cell underneath is a selection target and
     // a live link would navigate the editor away mid-edit.

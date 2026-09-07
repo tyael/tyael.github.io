@@ -1600,6 +1600,14 @@ select {
   pointer-events: auto;
 }
 
+/* Pinned by a click on the line, rather than following the pointer. The
+   accent border is the only thing that says so at a glance; the card's own
+   last line says it in words. */
+.line-card.is-pinned {
+  border-color: var(--accent-strong);
+  box-shadow: var(--shadow-pop), 0 0 0 1px var(--accent-strong);
+}
+
 .line-card-title {
   font-weight: 600;
   color: var(--text-bright);

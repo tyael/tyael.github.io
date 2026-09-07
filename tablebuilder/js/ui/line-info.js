@@ -301,7 +301,43 @@ const LineInfo = {
    */
   HIDE_DELAY: 120,
 
+  /**
+   * How far the pointer may travel between `mousedown` and `click` and still
+   * count as a click, in screen px.
+   *
+   * A vertical line *is* the column's resize handle, so the same pixels carry
+   * two gestures: a drag sets the width, a click pins the card. Without a slop
+   * figure every resize ended with a pinned card sitting over the column that
+   * had just been dragged.
+   */
+  DRAG_SLOP: 4,
+
   _hideTimer: null,
+
+  /**
+   * The edge the card on screen describes, as `axis + r + ',' + c`.
+   *
+   * **The card used to be rebuilt on every `mousemove` that found a line**, at
+   * the pointer's new position — so it slid along beside the cursor, and
+   * reaching it meant leaving the line first and then catching it before the
+   * grace period ran out. Pointing at the same edge now leaves the card exactly
+   * where it was put.
+   */
+  _shownKey: null,
+
+  /**
+   * Whether the card is pinned: put up by a click on a line rather than by
+   * hovering one, and staying until it is dismissed.
+   *
+   * A hover card is a glance and a pinned one is a thing you are working with —
+   * it survives the pointer moving anywhere at all, including onto other lines,
+   * and goes away on Escape, on a click that is not on the card or another
+   * line, or on the next render.
+   */
+  _pinned: false,
+
+  /** The edge key of the pinned card, so clicking the same line again unpins. */
+  _pinnedKey: null,
 
   /** Cancel a pending grace-period hide, if one is armed. Idempotent. */
   _cancelHideTimer() {
@@ -375,6 +411,66 @@ const LineInfo = {
    *   this file resolving borders a second time on every render just to
    *   discard the result. Rebuilt only if omitted.
    */
+  /**
+   * The edge under a pointer event, or null — the one hit test both the hover
+   * and the click go through.
+   *
+   * Written once because the two have to agree exactly: a click that pinned a
+   * different line from the one the card under the cursor was naming would be
+   * the strangest possible bug to look at.
+   */
+  hitFor(e, host) {
+    const live = Util.qs('.gt-table', host);
+    if (!live || !App.model || !App.model.ok) return null;
+
+    const cache = LineInfo._cache;
+    // `grid` depends only on `App.model`, not on the live DOM, and `attach()`
+    // already primes it fresh on every render — so the only reason to rebuild
+    // it here is a cache `invalidateCache()` missed (defensive, should not
+    // happen in practice). `geo` is the one that genuinely needs the live
+    // table: if the node is not the one it was measured from — a render this
+    // file was not told about, or simply the first move after one, when the
+    // cache starts empty — rebuild once rather than trust stale geometry.
+    if (!cache.grid) cache.grid = Edges.build(App.model);
+    if (cache.table !== live || !cache.geo) cache.geo = LineInfo.geometry(live, cache.grid);
+    cache.table = live;
+
+    const rect = live.getBoundingClientRect();
+    const zoom = App.zoom || 1;
+    const point = {
+      x: (e.clientX - rect.left) / zoom,
+      y: (e.clientY - rect.top) / zoom
+    };
+
+    return LineInfo.edgeAt(point, cache.geo, cache.grid, LineInfo.THRESHOLD / zoom);
+  },
+
+  /** Which line a hit is, for comparing one hit against another. */
+  edgeKey(hit) {
+    return hit ? hit.axis + hit.r + ',' + hit.c : null;
+  },
+
+  /** Is a pinned card up? Read by the Escape handler in `main.js`. */
+  isPinned() {
+    return LineInfo._pinned && !!LineInfo._node;
+  },
+
+  /**
+   * Put the card up and leave it up, for a line that was clicked.
+   *
+   * Clicking the line that is already pinned takes the pin off, so the gesture
+   * that opens it is also the one that closes it.
+   */
+  pin(hit, clientX, clientY) {
+    const key = LineInfo.edgeKey(hit);
+    if (LineInfo.isPinned() && LineInfo._pinnedKey === key) { LineInfo.hide(); return; }
+
+    LineInfo.hide();
+    LineInfo._pinned = true;
+    LineInfo._pinnedKey = key;
+    LineInfo.show(LineInfo.describe(hit, App.model), hit, clientX, clientY);
+  },
+
   attach(host, table, model, grid) {
     LineInfo.hide();
     LineInfo.invalidateCache();
@@ -385,43 +481,67 @@ const LineInfo = {
     if (host.dataset.lineInfo !== '1') {
       host.dataset.lineInfo = '1';
       host.addEventListener('mousemove', (e) => {
-        const live = Util.qs('.gt-table', host);
-        if (!live || !App.model || !App.model.ok) { LineInfo.hide(); return; }
+        // A pinned card is not a hover card: nothing the pointer does to the
+        // table replaces it, which is the whole point of having pinned it.
+        if (LineInfo.isPinned()) return;
 
-        const cache = LineInfo._cache;
-        // `grid` depends only on `App.model`, not on the live DOM, and
-        // `attach()` already primes it fresh on every render — so the only
-        // reason to rebuild it here is a cache `invalidateCache()` missed
-        // (defensive, should not happen in practice). `geo` is the one that
-        // genuinely needs the live table: if the node is not the one it was
-        // measured from — a render this file was not told about, or simply
-        // the first move after one, when the cache starts empty — rebuild
-        // once rather than trust stale geometry.
-        if (!cache.grid) cache.grid = Edges.build(App.model);
-        if (cache.table !== live || !cache.geo) cache.geo = LineInfo.geometry(live, cache.grid);
-        cache.table = live;
+        if (!Util.qs('.gt-table', host) || !App.model || !App.model.ok) {
+          LineInfo.hide();
+          return;
+        }
 
-        const rect = live.getBoundingClientRect();
-        const zoom = App.zoom || 1;
-        const point = {
-          x: (e.clientX - rect.left) / zoom,
-          y: (e.clientY - rect.top) / zoom
-        };
-
-        const hit = LineInfo.edgeAt(point, cache.geo, cache.grid,
-          LineInfo.THRESHOLD / zoom);
+        const hit = LineInfo.hitFor(e, host);
         // No edge under the cursor here — this fires repeatedly for a
         // pointer crossing bare table between a line and the card that
         // named it, so hide on a delay rather than on the spot; a hit
         // found here or a card entered directly cancels it (see below).
         if (!hit) { LineInfo._scheduleHide(); return; }
 
+        // Still the same line: leave the card where it was first put. Moving
+        // it to follow the pointer is what made it unreachable — every step
+        // toward it moved it, and the only way to catch it was to step off
+        // the line and hope the grace period outlasted the transit.
+        if (LineInfo._node && LineInfo._shownKey === LineInfo.edgeKey(hit)) {
+          LineInfo._cancelHideTimer();
+          return;
+        }
+
         LineInfo.show(LineInfo.describe(hit, App.model), hit, e.clientX, e.clientY);
       });
+
+      // Where the pointer went down, so the click below can tell a click on a
+      // line from the end of a resize drag along one.
+      host.addEventListener('mousedown', (e) => {
+        LineInfo._downAt = { x: e.clientX, y: e.clientY };
+      }, true);
+
+      // **Clicking a line pins its card.** In the capture phase, and swallowing
+      // the click when it lands on a line: within `THRESHOLD` of an edge the
+      // thing under the pointer is the line — the card naming it is on screen
+      // saying so — and letting the click through would select the cell behind
+      // it and swap the whole rail out from under a card you were reading.
+      // Everywhere else the click is untouched, so cell selection, alt-click
+      // and click-to-clear all behave exactly as before.
+      host.addEventListener('click', (e) => {
+        const down = LineInfo._downAt;
+        LineInfo._downAt = null;
+        if (down && (Math.abs(e.clientX - down.x) > LineInfo.DRAG_SLOP ||
+            Math.abs(e.clientY - down.y) > LineInfo.DRAG_SLOP)) {
+          return;
+        }
+
+        const hit = LineInfo.hitFor(e, host);
+        if (!hit) return;
+
+        e.stopPropagation();
+        e.preventDefault();
+        LineInfo.pin(hit, e.clientX, e.clientY);
+      }, true);
 
       // The pointer leaving `host` toward the card is not "leaving the
       // line" — it is `relatedTarget`, the element the pointer is entering.
       host.addEventListener('mouseleave', (e) => {
+        if (LineInfo.isPinned()) return;
         if (LineInfo._node && e.relatedTarget && LineInfo._node.contains(e.relatedTarget)) return;
 
         // `relatedTarget` is null only when the pointer leaves the window
@@ -441,13 +561,27 @@ const LineInfo = {
         if (e.relatedTarget) { LineInfo._scheduleHide(); return; }
         LineInfo.hide();
       });
+
+      // The way out of a pinned card, along with Escape (see `main.js`) and
+      // clicking the same line again. A click on a *line* never reaches here:
+      // the capture handler above stops it, which is what lets one click move
+      // the pin from one line to the next. A click on the card itself is
+      // someone using it — its own buttons close it when they mean to.
+      document.addEventListener('click', (e) => {
+        if (!LineInfo.isPinned()) return;
+        if (LineInfo._node.contains(e.target)) return;
+        LineInfo.hide();
+      });
     }
   },
 
   show(info, hit, clientX, clientY) {
-    LineInfo.hide();
+    // `_teardown` rather than `hide`, which would take the pin off the card
+    // this call is about to put up — `pin()` sets the flag and then shows.
+    LineInfo._teardown();
+    LineInfo._shownKey = LineInfo.edgeKey(hit);
 
-    const card = Util.el('div.line-card');
+    const card = Util.el('div.line-card' + (LineInfo._pinned ? '.is-pinned' : ''));
     card.appendChild(Util.el('div.line-card-title', { text: info.title }));
     if (info.detail) card.appendChild(Util.el('div.line-card-detail', { text: info.detail }));
     card.appendChild(Util.el('div.line-card-values', { text: info.values }));
@@ -480,9 +614,16 @@ const LineInfo = {
         { kind: 'ghost', block: true }));
     }
 
-    if (hit.axis === 'v') {
-      card.appendChild(Util.el('div.line-card-hint', { text: 'drag to resize the column' }));
-    }
+    // What to do with the card, and it changes once it is pinned: the hover
+    // card's offer is to keep it, the pinned card's is how to be rid of it.
+    // A vertical line carries the resize gesture as well, and it is worth
+    // saying either way — the pinned card is the one you are most likely to be
+    // reading while deciding to drag.
+    const hints = LineInfo._pinned
+      ? ['pinned — Esc or click away to close']
+      : ['click the line to keep this open'];
+    if (hit.axis === 'v') hints.push('drag to resize the column');
+    card.appendChild(Util.el('div.line-card-hint', { text: hints.join('  ·  ') }));
 
     // Offset from the pointer so the card is never under it.
     card.style.left = (clientX + 14) + 'px';
@@ -493,7 +634,10 @@ const LineInfo = {
     // does dismiss it — moving off the card in any direction, including back
     // toward the table, where the next `mousemove` on `host` re-shows it.
     // This is a deliberate exit, so it hides immediately — no grace period.
-    card.addEventListener('mouseleave', () => LineInfo.hide());
+    // A pinned card stays: it was put up by a click and it takes one to go.
+    card.addEventListener('mouseleave', () => {
+      if (!LineInfo._pinned) LineInfo.hide();
+    });
 
     // Reaching the card cancels any grace-period timer armed by the
     // no-edge `mousemove`s crossing the table on the way here — entering
@@ -513,18 +657,36 @@ const LineInfo = {
     }
   },
 
-  hide() {
-    // Every path to the card going away — a real exit, a new render, a
-    // zoom change, `show()` replacing it for a different edge — runs
-    // through here, so this is the one place that has to clear a pending
-    // grace-period timer. Leaving one armed against a card that no longer
-    // exists would just fire hide() again harmlessly, but leaving one armed
-    // against a *different* card `show()` puts up right after would hide
-    // that new one out from under the pointer.
+  /**
+   * Take the card off the screen, leaving the pin flag alone.
+   *
+   * Every path to the card going away — a real exit, a new render, a zoom
+   * change, `show()` replacing it for a different edge — runs through here, so
+   * this is the one place that has to clear a pending grace-period timer.
+   * Leaving one armed against a card that no longer exists would just fire
+   * `hide()` again harmlessly, but leaving one armed against a *different* card
+   * `show()` puts up right after would hide that new one out from under the
+   * pointer.
+   */
+  _teardown() {
     LineInfo._cancelHideTimer();
+    LineInfo._shownKey = null;
     if (LineInfo._node) {
       LineInfo._node.remove();
       LineInfo._node = null;
     }
+  },
+
+  /**
+   * The card goes, pin and all.
+   *
+   * Which is why a render calls it: `attach()` has just replaced the table the
+   * pinned card's line was measured on, and a card left over from the previous
+   * one would be pointing at a line that may no longer be there.
+   */
+  hide() {
+    LineInfo._pinned = false;
+    LineInfo._pinnedKey = null;
+    LineInfo._teardown();
   }
 };

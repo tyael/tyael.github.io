@@ -97,10 +97,38 @@ const ExportLatex = {
     // the question `Markup.toLatex` has already settled. A `\href` with no
     // hyperref loaded is an undefined control sequence, which stops the build.
     if (out.some((line) => line.indexOf('\\href{') >= 0)) {
-      out.splice(1, 0, '% Requires: \\usepackage{hyperref}');
+      out.splice.apply(out, [1, 0].concat(ExportLatex.linkNotes(model)));
     }
 
     return out.join('\n');
+  },
+
+  /**
+   * The preamble note a table with a link in it carries.
+   *
+   * **A link's look is the preamble's business in LaTeX, not the table's.**
+   * hyperref decides what every link in a document looks like, and a fragment
+   * that set it would silently recolour the links in whatever document
+   * included the fragment — so the table's own `link.color` is passed on as
+   * advice rather than emitted as code. The underline has no line to advise:
+   * hyperref's coloured links are not underlined and cannot be made so without
+   * `ulem`, which is a package to make somebody load for a rule.
+   *
+   * gt's own LaTeX does none of this — `as_latex()` emits a bare `\href` too —
+   * so a table that takes the advice is ahead of gt rather than behind it.
+   */
+  linkNotes(model) {
+    const out = ['% Requires: \\usepackage{hyperref}'];
+    const color = (model.options || {})['link.color'];
+    if (color) {
+      // `\definecolor` takes six hex digits, and the option may hold any CSS
+      // colour a theme or an imported project put there.
+      const hex = Palettes.toHexInput(color, '#000000').slice(1).toUpperCase();
+      out.push('% Link colour: \\usepackage{xcolor}, then');
+      out.push('%   \\definecolor{tblink}{HTML}{' + hex + '}');
+      out.push('%   \\hypersetup{colorlinks=true, urlcolor=tblink}');
+    }
+    return out;
   },
 
   /**

@@ -181,7 +181,30 @@ const RenderSvg = {
     // `xml:space` keeps meaningful leading and trailing spaces (footnote marks
     // sitting against their text, for one).
     return '<text ' + attrs.join(' ') + ' xml:space="preserve">' +
-      Util.escapeXml(run.text) + '</text>';
+      Util.escapeXml(RenderSvg.cased(run)) + '</text>';
+  },
+
+  /**
+   * The run's text as the browser drew it, with `text-transform` applied.
+   *
+   * SVG has no `text-transform`, so the case has to be in the characters. The
+   * run was measured *after* the transform — the rect a range reports is the
+   * width of the uppercase text — so emitting the untransformed string put
+   * lowercase glyphs into a box cut for capitals: every uppercase column label
+   * in the app came out of the SVG and the PNG in the case it was typed in,
+   * loose in its column, while the preview and the HTML export showed capitals.
+   *
+   * `capitalize` follows CSS in acting on the first letter of each word rather
+   * than on the first letter of the run.
+   */
+  cased(run) {
+    const text = String(run.text);
+    if (run.transform === 'uppercase') return text.toUpperCase();
+    if (run.transform === 'lowercase') return text.toLowerCase();
+    if (run.transform === 'capitalize') {
+      return text.replace(/(^|\s)(\S)/g, (all, space, first) => space + first.toUpperCase());
+    }
+    return text;
   },
 
   /** Underline, overline or strike-through as a real line. */

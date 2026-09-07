@@ -160,66 +160,6 @@ const Themes = {
     'row.striping.include_table_body': false
   },
 
-  /**
-   * A grey line around every cell.
-   *
-   * Not *every* line, which is what **Lined** is for: this leaves the header
-   * band, the footer and the grand-summary double rule as they come, because it
-   * is a look rather than a base.
-   */
-  grid: {
-    'table.border.top.style': 'solid',
-    'table.border.bottom.style': 'solid',
-    'table.border.left.style': 'solid',
-    'table.border.right.style': 'solid',
-    'table.border.left.width': '1px',
-    'table.border.right.width': '1px',
-    'column_labels.vlines.style': 'solid',
-    'column_labels.background.color': '#f2f2f2',
-    'column_labels.font.weight': 'bold',
-    // Every band is enclosed, heading and footer included — which is the whole
-    // point of this theme, and now has to be said rather than falling out of a
-    // border on the element.
-    'column_labels.border.lr.style': 'solid',
-    'column_labels.border.lr.width': '1px',
-    'heading.border.lr.style': 'solid',
-    'heading.border.lr.width': '1px',
-    'footnotes.border.lr.style': 'solid',
-    'footnotes.border.lr.width': '1px',
-    'source_notes.border.lr.style': 'solid',
-    'source_notes.border.lr.width': '1px',
-    'table_body.hlines.style': 'solid',
-    'table_body.vlines.style': 'solid',
-    'table_body.hlines.width': '1px',
-    'table_body.vlines.width': '1px'
-  },
-
-  /** Nothing but the data — no rules at all, striping for legibility. */
-  plain: {
-    'table.border.top.style': 'none',
-    'table.border.bottom.style': 'none',
-    'table.border.left.style': 'none',
-    'table.border.right.style': 'none',
-    'heading.border.bottom.style': 'none',
-    'column_labels.border.top.style': 'none',
-    'column_labels.border.bottom.style': 'solid',
-    'column_labels.border.bottom.width': '1px',
-    'column_labels.border.bottom.color': '#cccccc',
-    'column_labels.vlines.style': 'none',
-    'column_labels.font.weight': '600',
-    'table_body.border.top.style': 'none',
-    'table_body.border.bottom.style': 'none',
-    'table_body.hlines.style': 'none',
-    'table_body.vlines.style': 'none',
-    'stub.border.style': 'none',
-    'row_group.border.top.style': 'none',
-    'row_group.border.bottom.style': 'none',
-    'row.striping.include_table_body': true,
-    'row.striping.include_stub': true,
-    'footnotes.border.bottom.style': 'none',
-    'source_notes.border.bottom.style': 'none'
-  },
-
   /** For slides and dark documents. */
   dark: {
     'table.background.color': '#12161d',
@@ -269,88 +209,13 @@ const Themes = {
   /* ================================================================
      Structure, not hue
 
-     These five replaced Blue/Green/Red/Grey, which were one table in four
-     colours. Each of these is a different *shape* — where the emphasis sits,
-     whether there are verticals, whether the reader is helped by striping or
-     by a frame, how dense it is — so choosing one is a decision about the
-     table rather than about a colour. Recolouring any of them is two clicks in
-     Options, and "Save current look" keeps it.
+     These replaced Blue/Green/Red/Grey, which were one table in four colours.
+     Each is a different *shape* — where the emphasis sits, whether there are
+     verticals, whether the reader is helped by striping or by a frame, how
+     dense it is — so choosing one is a decision about the table rather than
+     about a colour. Recolouring any of them is two clicks in Options, and
+     "Save current look" keeps it.
      ================================================================ */
-
-  /** A frame around a light interior grid — every cell enclosed, nothing shouted. */
-  boxed: {
-    'table.font.color': '#1F2328',
-    'table.border.top.style': 'solid',
-    'table.border.top.width': '2px',
-    'table.border.top.color': '#5A6270',
-    'table.border.bottom.style': 'solid',
-    'table.border.bottom.width': '2px',
-    'table.border.bottom.color': '#5A6270',
-    'table.border.left.style': 'solid',
-    'table.border.left.width': '2px',
-    'table.border.left.color': '#5A6270',
-    'table.border.right.style': 'solid',
-    'table.border.right.width': '2px',
-    'table.border.right.color': '#5A6270',
-    'heading.align': 'left',
-    'heading.title.font.weight': 'bold',
-    'heading.border.bottom.style': 'solid',
-    'heading.border.bottom.width': '1px',
-    'heading.border.bottom.color': '#D5D8DE',
-    // The frame goes round everything, so each band carries its own sides.
-    'heading.border.lr.style': 'solid',
-    'heading.border.lr.width': '2px',
-    'heading.border.lr.color': '#5A6270',
-    'footnotes.border.lr.style': 'solid',
-    'footnotes.border.lr.width': '2px',
-    'footnotes.border.lr.color': '#5A6270',
-    'source_notes.border.lr.style': 'solid',
-    'source_notes.border.lr.width': '2px',
-    'source_notes.border.lr.color': '#5A6270',
-    'column_labels.font.weight': 'bold',
-    'column_labels.background.color': '#F2F3F5',
-    'column_labels.border.top.style': 'none',
-    'column_labels.border.bottom.style': 'solid',
-    'column_labels.border.bottom.width': '2px',
-    'column_labels.border.bottom.color': '#5A6270',
-    'column_labels.vlines.style': 'solid',
-    'column_labels.vlines.width': '1px',
-    'column_labels.vlines.color': '#D5D8DE',
-    'column_labels.spanner.border.bottom.style': 'solid',
-    'column_labels.spanner.border.bottom.width': '1px',
-    'column_labels.spanner.border.bottom.color': '#D5D8DE',
-    'data_row.padding': '6px',
-    'table_body.hlines.style': 'solid',
-    'table_body.hlines.width': '1px',
-    'table_body.hlines.color': '#D5D8DE',
-    'table_body.vlines.style': 'solid',
-    'table_body.vlines.width': '1px',
-    'table_body.vlines.color': '#D5D8DE',
-    'table_body.border.top.style': 'none',
-    'table_body.border.bottom.style': 'none',
-    'stub.border.style': 'solid',
-    'stub.border.width': '1px',
-    'stub.border.color': '#D5D8DE',
-    'stub.font.weight': 'bold',
-    'stub_row_group.border.style': 'none',
-    'row_group.background.color': '#F2F3F5',
-    'row_group.font.weight': 'bold',
-    'row_group.border.top.style': 'solid',
-    'row_group.border.top.width': '1px',
-    'row_group.border.top.color': '#D5D8DE',
-    'row_group.border.bottom.style': 'solid',
-    'row_group.border.bottom.width': '1px',
-    'row_group.border.bottom.color': '#D5D8DE',
-    'summary_row.border.style': 'solid',
-    'summary_row.border.width': '1px',
-    'summary_row.border.color': '#5A6270',
-    'grand_summary_row.background.color': '#E9EBEE',
-    'grand_summary_row.border.style': 'solid',
-    'grand_summary_row.border.width': '2px',
-    'grand_summary_row.border.color': '#5A6270',
-    'footnotes.border.bottom.style': 'none',
-    'source_notes.border.bottom.style': 'none'
-  },
 
   /**
    * Monograph — a scholarly serif table: EB Garamond, a double rule under the
@@ -428,56 +293,6 @@ const Themes = {
     'source_notes.border.bottom.style': 'none'
   },
 
-  /** A near-black band over a white body: corporate, and prints as grey. */
-  inverse: {
-    'table.font.color': '#1F2328',
-    'table.border.top.style': 'none',
-    'table.border.bottom.style': 'solid',
-    'table.border.bottom.width': '2px',
-    'table.border.bottom.color': '#1F2328',
-    'table.border.left.style': 'none',
-    'table.border.right.style': 'none',
-    'heading.align': 'left',
-    'heading.title.font.weight': 'bold',
-    'heading.border.bottom.style': 'none',
-    'column_labels.background.color': '#1F2328',
-    'column_labels.font.weight': 'bold',
-    'column_labels.padding': '7px',
-    'column_labels.border.top.style': 'none',
-    'column_labels.border.bottom.style': 'none',
-    'column_labels.vlines.style': 'solid',
-    'column_labels.vlines.width': '1px',
-    'column_labels.vlines.color': '#4A5058',
-    'column_labels.spanner.border.bottom.style': 'solid',
-    'column_labels.spanner.border.bottom.width': '1px',
-    'column_labels.spanner.border.bottom.color': '#4A5058',
-    'data_row.padding': '6px',
-    'table_body.hlines.style': 'solid',
-    'table_body.hlines.width': '1px',
-    'table_body.hlines.color': '#DCDEE2',
-    'table_body.vlines.style': 'none',
-    'table_body.border.top.style': 'none',
-    'table_body.border.bottom.style': 'none',
-    'stub.border.style': 'none',
-    'stub_row_group.border.style': 'none',
-    'row_group.background.color': '#EDEEF0',
-    'row_group.font.weight': 'bold',
-    'row_group.border.top.style': 'solid',
-    'row_group.border.top.width': '1px',
-    'row_group.border.top.color': '#DCDEE2',
-    'row_group.border.bottom.style': 'solid',
-    'row_group.border.bottom.width': '1px',
-    'row_group.border.bottom.color': '#DCDEE2',
-    'summary_row.border.style': 'solid',
-    'summary_row.border.width': '1px',
-    'summary_row.border.color': '#DCDEE2',
-    'grand_summary_row.border.style': 'solid',
-    'grand_summary_row.border.width': '2px',
-    'grand_summary_row.border.color': '#1F2328',
-    'footnotes.border.bottom.style': 'none',
-    'source_notes.border.bottom.style': 'none'
-  },
-
   /**
    * Green-bar paper: the striping does all the work and there are no rules at
    * all. The one theme here where the row label is the emphasis.
@@ -530,6 +345,271 @@ const Themes = {
     'grand_summary_row.border.color': '#5E7A52',
     'footnotes.border.bottom.style': 'none',
     'source_notes.border.bottom.style': 'none'
+  },
+
+  /* ================================================================
+     A pair, and they are opposites
+
+     Everything above answers to a document: a journal's convention, a printed
+     report, a specification. These two answer to a screen — a deck, a docs
+     page, a dashboard someone screenshots — where a table is looked at before
+     it is read, and the first impression is the whole of the impression.
+
+     They are two rather than one because there is no single slick: the light
+     one gets its authority from restraint and the dark one from richness, and
+     a theme that tried to be both would be neither. Each is built on the
+     opposite of the other's device — Aperture rules every row and fills
+     nothing, Nocturne fills the page and rules almost nothing — so the pair
+     covers the ground that one of them alone would only gesture at.
+
+     Both put their accent in exactly three places and then stop. An accent
+     used four times is a colour scheme, and a colour scheme is what the
+     Blue/Green/Red/Grey themes were before they were deleted.
+     ================================================================ */
+
+  /**
+   * Aperture — white, wide-set and quiet: micro-caps heads over a hairline a
+   * row, one near-black rule top and bottom of the body, and indigo used three
+   * times.
+   *
+   * **The device is the padding, not the lines.** 12px vertical against a 15px
+   * body is nearly double the schema's, and it is what makes a hairline enough
+   * to separate two rows — at gt's default padding the same hairline reads as a
+   * grid. Every line here is 1px: the hierarchy is carried by their colour
+   * (near-black bookends, `#E8EAED` between rows) rather than by weight, which
+   * is what keeps a dense table from turning into a fence.
+   *
+   * The heads are `#5F6672` rather than the body's near-black. A column label
+   * is a signpost and reading it twice is the failure — set small, spaced and
+   * grey, it is found when looked for and invisible when not.
+   *
+   * Inter, because the whole look rests on the small uppercase heads and Inter
+   * is the one loaded family drawn for exactly that size on a screen. Its 600
+   * is a real weight in the file `index.html` asks for; nothing here is
+   * synthesised.
+   */
+  aperture: {
+    'table.font.names': 'inter',
+    'table.font.size': '15px',
+    'table.font.color': '#1A1D23',
+    'table.font.color.light': '#FFFFFF',
+    'table.background.color': '#FFFFFF',
+    // Left, with the heading: a screen table sits in a column of text rather
+    // than in the middle of a page.
+    'table.align': 'left',
+    'table.border.top.style': 'none',
+    'table.border.bottom.style': 'none',
+    'table.border.left.style': 'none',
+    'table.border.right.style': 'none',
+
+    'heading.align': 'left',
+    'heading.title.font.size': '132%',
+    'heading.title.font.weight': '600',
+    'heading.subtitle.font.size': '100%',
+    'heading.padding': '6px',
+    'heading.padding.horizontal': '0px',
+    'heading.border.bottom.style': 'none',
+    'heading.border.lr.style': 'none',
+
+    'column_labels.font.size': '78%',
+    'column_labels.font.weight': '600',
+    'column_labels.text_transform': 'uppercase',
+    'column_labels.padding': '9px',
+    'column_labels.padding.horizontal': '14px',
+    'column_labels.border.top.style': 'none',
+    // The strongest line in the table, and the only near-black one besides its
+    // twin under the last row.
+    'column_labels.border.bottom.style': 'solid',
+    'column_labels.border.bottom.width': '1px',
+    'column_labels.border.bottom.color': '#1A1D23',
+    'column_labels.border.lr.style': 'none',
+    'column_labels.vlines.style': 'none',
+    'column_labels.spanner.underline': true,
+    'column_labels.spanner.border.bottom.style': 'solid',
+    'column_labels.spanner.border.bottom.width': '1px',
+    'column_labels.spanner.border.bottom.color': '#C9CED6',
+
+    'data_row.padding': '12px',
+    'data_row.padding.horizontal': '14px',
+    'table_body.hlines.style': 'solid',
+    'table_body.hlines.width': '1px',
+    'table_body.hlines.color': '#E8EAED',
+    'table_body.vlines.style': 'none',
+    'table_body.border.top.style': 'none',
+    'table_body.border.bottom.style': 'solid',
+    'table_body.border.bottom.width': '1px',
+    'table_body.border.bottom.color': '#1A1D23',
+
+    'stub.font.weight': '600',
+    'stub.border.style': 'none',
+    'stub_row_group.border.style': 'none',
+
+    // A section heading is the column labels again, one indent up the
+    // hierarchy: same size, same caps, the accent instead of the grey.
+    'row_group.font.size': '78%',
+    'row_group.font.weight': '600',
+    'row_group.text_transform': 'uppercase',
+    'row_group.padding': '16px',
+    'row_group.padding.horizontal': '14px',
+    'row_group.border.top.style': 'solid',
+    'row_group.border.top.width': '1px',
+    'row_group.border.top.color': '#E8EAED',
+    'row_group.border.bottom.style': 'none',
+
+    // Off, and in the accent at 4% for whoever turns it on — the schema's grey
+    // is the one colour in the app this theme has no use for.
+    'row.striping.include_table_body': false,
+    'row.striping.include_stub': false,
+    'row.striping.background_color': 'rgba(61,70,168,0.04)',
+
+    'summary_row.padding': '12px',
+    'summary_row.padding.horizontal': '14px',
+    'summary_row.border.style': 'solid',
+    'summary_row.border.width': '1px',
+    'summary_row.border.color': '#E8EAED',
+    'grand_summary_row.padding': '12px',
+    'grand_summary_row.padding.horizontal': '14px',
+    'grand_summary_row.border.style': 'solid',
+    'grand_summary_row.border.width': '1.5px',
+    'grand_summary_row.border.color': '#3D46A8',
+
+    // The horizontal padding matches the body's, so a note's first character
+    // sits under the first column's rather than under the table's edge.
+    'footnotes.font.size': '82%',
+    'footnotes.padding': '6px',
+    'footnotes.padding.horizontal': '14px',
+    'footnotes.border.bottom.style': 'none',
+    'source_notes.font.size': '82%',
+    'source_notes.padding': '6px',
+    'source_notes.padding.horizontal': '14px',
+    'source_notes.border.bottom.style': 'none',
+
+    'link.color': '#3D46A8',
+    'link.underline': false
+  },
+
+  /**
+   * Nocturne — warm black, Libre Baskerville, and gold hairlines above and
+   * below a body with no lines in it at all.
+   *
+   * **The opposite bet to Aperture's.** There, space is cheap and every row is
+   * ruled; here the body is ruled nowhere and the space between rows is the
+   * only thing separating them. That only works on a dark ground, where the
+   * eye tracks a line of light text without help — and it is why the two gold
+   * hairlines have to be the only ones: a third would make them a grid, and a
+   * grid on black is a cage.
+   *
+   * Warm black rather than the blue-black the **Dark** theme uses. Dark is for
+   * slides, sans and gridded; this is for the page a report opens on. `#14120F`
+   * against `#EFE9DF` is the ink-and-paper pair inverted rather than a screen
+   * palette dimmed, and the gold sits inside that warmth instead of on top of
+   * it.
+   *
+   * Libre Baskerville because a light-on-dark serif loses stroke weight — the
+   * face has to have a heavy one to give up. It carries a true italic at 400,
+   * which is what a section heading is set in; Merriweather, the other sturdy
+   * option, has no italic in the file `index.html` asks for and the browser
+   * would have slanted it. 13px because Baskerville runs large: it sets about
+   * the size Inter does at 15.
+   */
+  nocturne: {
+    'table.font.names': 'libre-baskerville',
+    'table.font.size': '13px',
+    'table.font.color': '#EFE9DF',
+    // The ink `data_color` reaches for over a fill too light for the main one,
+    // which on a dark table is the paper.
+    'table.font.color.light': '#14120F',
+    'table.background.color': '#14120F',
+    'table.border.top.style': 'none',
+    'table.border.bottom.style': 'none',
+    'table.border.left.style': 'none',
+    'table.border.right.style': 'none',
+
+    // A title set large and regular. Bold on a dark ground blooms, and at 150%
+    // the size is already the emphasis.
+    'heading.align': 'left',
+    'heading.title.font.size': '150%',
+    'heading.title.font.weight': 'normal',
+    'heading.subtitle.font.size': '100%',
+    'heading.padding': '8px',
+    'heading.padding.horizontal': '0px',
+    'heading.border.bottom.style': 'none',
+    'heading.border.lr.style': 'none',
+
+    'column_labels.font.size': '76%',
+    'column_labels.font.weight': 'normal',
+    'column_labels.text_transform': 'uppercase',
+    'column_labels.padding': '10px',
+    'column_labels.padding.horizontal': '12px',
+    // The two gold rules, and between them the one dim line the header needs to
+    // stand off the body.
+    'column_labels.border.top.style': 'solid',
+    'column_labels.border.top.width': '1px',
+    'column_labels.border.top.color': '#D8A657',
+    'column_labels.border.bottom.style': 'solid',
+    'column_labels.border.bottom.width': '1px',
+    'column_labels.border.bottom.color': '#3A342C',
+    'column_labels.border.lr.style': 'none',
+    'column_labels.vlines.style': 'none',
+    'column_labels.spanner.underline': true,
+    'column_labels.spanner.border.bottom.style': 'solid',
+    'column_labels.spanner.border.bottom.width': '1px',
+    'column_labels.spanner.border.bottom.color': '#3A342C',
+
+    'data_row.padding': '12px',
+    'data_row.padding.horizontal': '12px',
+    'table_body.hlines.style': 'none',
+    'table_body.vlines.style': 'none',
+    'table_body.border.top.style': 'none',
+    'table_body.border.bottom.style': 'solid',
+    'table_body.border.bottom.width': '1px',
+    'table_body.border.bottom.color': '#D8A657',
+
+    'stub.font.weight': 'normal',
+    'stub.border.style': 'none',
+    'stub_row_group.border.style': 'none',
+
+    // Italic at 400, in gold, over a dim rule. The one place the body is
+    // interrupted, and it is interrupted by a change of voice rather than by a
+    // band of colour.
+    'row_group.font.style': 'italic',
+    'row_group.font.size': '100%',
+    'row_group.padding': '16px',
+    'row_group.padding.horizontal': '12px',
+    'row_group.border.top.style': 'solid',
+    'row_group.border.top.width': '1px',
+    'row_group.border.top.color': '#3A342C',
+    'row_group.border.bottom.style': 'none',
+
+    'row.striping.include_table_body': false,
+    'row.striping.include_stub': false,
+    'row.striping.background_color': 'rgba(239,233,223,0.045)',
+
+    'summary_row.padding': '12px',
+    'summary_row.padding.horizontal': '12px',
+    'summary_row.border.style': 'solid',
+    'summary_row.border.width': '1px',
+    'summary_row.border.color': '#3A342C',
+    'grand_summary_row.padding': '12px',
+    'grand_summary_row.padding.horizontal': '12px',
+    'grand_summary_row.border.style': 'solid',
+    'grand_summary_row.border.width': '1px',
+    'grand_summary_row.border.color': '#D8A657',
+
+    'footnotes.font.size': '80%',
+    'footnotes.padding': '6px',
+    'footnotes.padding.horizontal': '12px',
+    'footnotes.border.bottom.style': 'none',
+    'source_notes.font.size': '80%',
+    'source_notes.padding': '6px',
+    'source_notes.padding.horizontal': '12px',
+    'source_notes.border.bottom.style': 'none',
+
+    // Underlined, unlike Aperture's: gold on black is not enough on its own to
+    // say a word is a link, and the underline is the only other thing a link
+    // has to say it with.
+    'link.color': '#D8A657',
+    'link.underline': true
   },
 
   /* ================================================================
@@ -1200,11 +1280,6 @@ const Themes = {
    * suite asserts every built-in rule through that same predicate.
    */
   RULES: {
-    inverse: [
-      { label: 'Inverse header', part: 'column_labels', text: { color: '#FFFFFF' } },
-      { label: 'Inverse spanner', part: 'column_spanners', text: { color: '#FFFFFF' } },
-      { label: 'Inverse stubhead', part: 'stubhead', text: { color: '#FFFFFF' } }
-    ],
     sydney: [
       { label: 'Sydney header', part: 'column_labels', text: { color: '#FFFFFF', weight: '300' } },
       { label: 'Sydney spanner', part: 'column_spanners', text: { color: '#FFFFFF', weight: '300' } },
@@ -1244,6 +1319,34 @@ const Themes = {
       // source. Size alone did not separate it far enough.
       { label: 'John Adam footnotes', part: 'footnotes', text: { color: '#636363' } },
       { label: 'John Adam source', part: 'source_notes', text: { color: '#636363' } }
+    ],
+    // Three parts of the header, the section headings, the notes and the
+    // subtitle — every one of them a text colour `tab_options()` has no
+    // argument for. The accent appears on the sections and nowhere else in
+    // this list; the grand total takes weight instead, because a total that is
+    // both bigger and a different colour is a total shouting.
+    aperture: [
+      { label: 'Aperture heads', part: 'column_labels', text: { color: '#5F6672' } },
+      { label: 'Aperture groups', part: 'column_spanners', text: { color: '#5F6672' } },
+      { label: 'Aperture stubhead', part: 'stubhead', text: { color: '#5F6672' } },
+      { label: 'Aperture subtitle', part: 'subtitle', text: { color: '#5F6672' } },
+      { label: 'Aperture sections', part: 'row_groups', text: { color: '#3D46A8' } },
+      { label: 'Aperture totals', part: 'grand_summary', text: { weight: '600' } },
+      { label: 'Aperture footnotes', part: 'footnotes', text: { color: '#5F6672' } },
+      { label: 'Aperture source', part: 'source_notes', text: { color: '#5F6672' } }
+    ],
+    // The same seven places, one hierarchy down: `#A79C89` is the paper colour
+    // walked most of the way back to the ground, so the header and the footer
+    // recede without going grey — a neutral grey on a warm black reads as dirt.
+    nocturne: [
+      { label: 'Nocturne heads', part: 'column_labels', text: { color: '#A79C89' } },
+      { label: 'Nocturne groups', part: 'column_spanners', text: { color: '#A79C89' } },
+      { label: 'Nocturne stubhead', part: 'stubhead', text: { color: '#A79C89' } },
+      { label: 'Nocturne subtitle', part: 'subtitle', text: { color: '#A79C89' } },
+      { label: 'Nocturne sections', part: 'row_groups', text: { color: '#D8A657' } },
+      { label: 'Nocturne totals', part: 'grand_summary', text: { color: '#D8A657' } },
+      { label: 'Nocturne footnotes', part: 'footnotes', text: { color: '#A79C89' } },
+      { label: 'Nocturne source', part: 'source_notes', text: { color: '#A79C89' } }
     ],
     russell: [
       // The body sits at 300, so a total only has to reach 400 to read as
@@ -1327,8 +1430,6 @@ const Themes = {
     { id: 'gt-default', label: 'gt default', hint: 'The gt package’s own look.' },
     { id: 'booktabs', label: 'Booktabs', hint: 'Three lines, no verticals — the LaTeX journal convention.' },
     { id: 'apa', label: 'APA 7', hint: 'APA table style: sans-serif, lines top and bottom, lettered notes.' },
-    { id: 'plain', label: 'Plain', hint: 'Striped rows under one hairline, and nothing else.' },
-    { id: 'grid', label: 'Grid', hint: 'A grey line around every cell.' },
     { id: 'dark', label: 'Dark', hint: 'Light text on a dark table, for slides.' },
 
     /* Bases rather than looks — see the block above. */
@@ -1337,10 +1438,14 @@ const Themes = {
     { id: 'lined', label: 'Lined',
       hint: 'A 1px black line everywhere one can be drawn. A base to take away from.' },
     { id: 'lined-dark', label: 'Lined dark', hint: 'Every line, 1px white on black.' },
-    { id: 'boxed', label: 'Boxed', hint: 'A frame around a light interior grid.' },
     { id: 'monograph', label: 'Monograph', hint: 'Garamond with a double rule under the heads — a book table.' },
-    { id: 'inverse', label: 'Inverse', hint: 'Near-black header band over a white body.' },
     { id: 'ledger', label: 'Ledger', hint: 'Green-bar paper: striped rows, bold labels, no rules.' },
+
+    /* Screen-first, and opposites — see the block above. */
+    { id: 'aperture', label: 'Aperture',
+      hint: 'White and wide-set: micro-caps heads, a hairline a row, indigo sections.' },
+    { id: 'nocturne', label: 'Nocturne',
+      hint: 'Warm black and Baskerville: gold rules above and below, none between.' },
 
     /* Reproductions — see the Placenames block above. */
     { id: 'canberra', label: 'Canberra', hint: 'Arial 8pt, black hairlines, shaded totals.' },

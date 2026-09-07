@@ -452,6 +452,27 @@ const Markup = {
   },
 
   /**
+   * True when the string draws at least one link.
+   *
+   * Asked by the R exporter of text that has already been written into a gt
+   * call, so the answer has to come from the parser rather than from a pattern
+   * resembling it: whether `[1](2)` is a link is `LINK_URL`'s decision, made in
+   * one place. The R around the string is text the parser walks past.
+   */
+  hasLink(text) {
+    const str = String(text === null || text === undefined ? '' : text);
+    // Cheap first, because this runs over every emitted line of an export: no
+    // `](` means no link form, whatever else the string is carrying.
+    if (str.indexOf('](') < 0) return false;
+    return Markup._anyLink(Markup.parse(str));
+  },
+
+  _anyLink(nodes) {
+    return nodes.some((node) => node.type === 'link' ||
+      (node.children ? Markup._anyLink(node.children) : false));
+  },
+
+  /**
    * Apply a gt footnote spec to a mark. The spec is a string of flags:
    * `i` italic, `b` bold, `^` superscript, `(` and `)` wrapping parentheses.
    * @returns {string} the mark wrapped in this module's own markup

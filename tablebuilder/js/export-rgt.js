@@ -15,6 +15,16 @@ const ExportRgt = {
   MAX_INLINE_ROWS: 300,
 
   /**
+   * The id the exported table is given, on the one occasion it needs one.
+   *
+   * `opt_css()` is the only call here that has to name the table it styles, and
+   * only a table carrying a link gets that far — so everything else still
+   * exports a bare `gt()`. The name is the one `RenderHtml.toStandalone` gives
+   * the same table, so a person reading both files reads one name.
+   */
+  TABLE_ID: 'gt-table',
+
+  /**
    * @param {Object} spec
    * @param {Object} model - the resolved model, for derived values
    * @returns {string} R source
@@ -365,6 +375,10 @@ const ExportRgt = {
     const gtArgs = [];
     if (model.stubCol) gtArgs.push('rowname_col = ' + ExportRgt.name(model.stubCol));
     if (model.groupCol) gtArgs.push('groupname_col = ' + ExportRgt.name(model.groupCol));
+    // The index is kept because the link rule below may have to add an `id =`
+    // to this call, and whether it does is not known until every call that
+    // could carry a link has been emitted.
+    const gtLine = lines.length;
     lines.push('gt(' + gtArgs.join(', ') + ')');
 
     // A hand-ordered group sequence was preview-only until now: nothing
@@ -730,6 +744,38 @@ const ExportRgt = {
       lines.push('tab_options(\n    ' + optionArgs.join(',\n    ') + '\n  )');
     }
 
+    /* ---- Links ---- */
+
+    // **gt gives a markdown link no styling at all.** Its stylesheet carries no
+    // rule for `a`, and `cell_text(color = )` lands on the `<td>`, which an
+    // anchor does not inherit from — so a link the preview drew in the text's
+    // own colour came out of gt in whatever blue the page around it uses. The
+    // preview's rule has to go over as CSS, and `opt_css()` is gt's route for
+    // that. It needs an id to scope to, and `gt(id = )` is the only place gt
+    // takes one, which is why the call above is rewritten rather than built
+    // with an answer it could not yet have had.
+    //
+    // An `fmt_url` column needs none of this: gt writes that colour and
+    // underline into the anchor's own `style`, which beats a stylesheet rule
+    // either way. `ExportRgt.urlCalls` passes it the same two options.
+    //
+    // Whether there *is* a link is asked of the finished pipeline, for the
+    // reason `export-latex.js` asks it of the finished text: a link arrives in
+    // a cell, a label, a spanner, a title, a caption, a footnote or a source
+    // note, and a list of those places here would be a second answer to a
+    // question `Markup` has already settled. The markup columns are asked
+    // separately, because a link in a body cell is in the tibble above rather
+    // than in any call.
+    const linked = lines.some(ExportRgt.carriesLink) ||
+      Array.from(markupCols).some((id) =>
+        working.rows.some((row) => ExportRgt.carriesLink(row[id])));
+
+    if (linked) {
+      lines[gtLine] = 'gt(' +
+        gtArgs.concat('id = ' + ExportRgt.str(ExportRgt.TABLE_ID)).join(', ') + ')';
+      lines.push('opt_css(css = ' + ExportRgt.str(ExportRgt.linkCss(spec.options)) + ')');
+    }
+
     return lines;
   },
 
@@ -859,10 +905,11 @@ const ExportRgt = {
    * a cell the preview left as prose, which nobody would think to look for.
    *
    * `color` has to be a literal: gt validates it against the CSS colour names
-   * and rejects `inherit`, which is what the app's own stylesheet gives a
-   * link. The table's text colour is what that inherits from, so it is what
-   * goes over — exact wherever the column has no per-cell colour of its own,
-   * and gt's default dark cyan is not the alternative worth having.
+   * and rejects `inherit`, which is what an unset `link.color` gives a link in
+   * the preview. The table's text colour is what that inherits from, so it is
+   * what goes over — exact wherever the column has no per-cell colour of its
+   * own, and gt's default dark cyan is not the alternative worth having. A
+   * link colour that *is* set has no such trouble and goes over as itself.
    */
   urlCalls(opts, cols, model) {
     const options = (model && model.options) || {};
@@ -883,8 +930,9 @@ const ExportRgt = {
           'sub("^(https?://|mailto:)", "", x, ignore.case = TRUE)');
       }
 
-      args.push('color = ' + ExportRgt.str(options['table.font.color'] || '#333333'));
-      args.push('show_underline = TRUE');
+      args.push('color = ' + ExportRgt.str(options['link.color'] ||
+        options['table.font.color'] || '#333333'));
+      args.push('show_underline = ' + (options['link.underline'] === false ? 'FALSE' : 'TRUE'));
 
       return 'fmt_url(' + args.join(', ') + ')';
     });
@@ -903,6 +951,34 @@ const ExportRgt = {
     return '"' + Markup.LINK_URL.source
       .replace(/\\/g, '\\\\')
       .replace(/"/g, '\\"') + '"';
+  },
+
+  /**
+   * The `opt_css()` rule that carries the link options into gt.
+   *
+   * The declarations are `OptionsSchema.linkStyle`'s, which is also what
+   * `render-html.js` puts in the preview's stylesheet — the same pair of words
+   * in both places, or the exported table draws its links differently from the
+   * table they were designed on.
+   */
+  linkCss(options) {
+    const style = OptionsSchema.linkStyle(options);
+    return '#' + ExportRgt.TABLE_ID + ' a { color: ' + style.color +
+      '; text-decoration: ' + style['text-decoration'] + '; }';
+  },
+
+  /**
+   * True when a string carries a link gt will draw as an `<a>`.
+   *
+   * Both forms `ExportRgt.md` can emit: markdown for a plain link, and HTML
+   * when the same text also carries a sup or a sub. The markdown side is asked
+   * of `Markup` rather than of an expression written to look like `LINK_URL` —
+   * one statement of what an address is, and the R around the string is text
+   * the parser walks past.
+   */
+  carriesLink(text) {
+    const str = String(text === null || text === undefined ? '' : text);
+    return /<a\s/i.test(str) || Markup.hasLink(str);
   },
 
   /**
